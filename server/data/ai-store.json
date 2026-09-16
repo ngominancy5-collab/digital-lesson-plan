@@ -1,0 +1,439 @@
+{
+  "conversations": {
+    "demo-user": [
+      {
+        "id": "convo-1789545387594-go1m9n",
+        "title": "Database Management",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hey",
+            "time": "2026-09-16T07:56:27.593Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Hello Nancy. I can tutor you, quiz you, build revision notes, or help plan teaching work. What subject are you working on today?",
+            "time": "2026-09-16T07:56:27.594Z"
+          },
+          {
+            "role": "user",
+            "content": "i need help",
+            "time": "2026-09-16T07:56:27.632Z"
+          },
+          {
+            "role": "assistant",
+            "content": "I'm here, Nancy. What do you need help with — a subject, an upcoming exam, an assignment, or a topic you are stuck on?",
+            "time": "2026-09-16T07:56:27.632Z"
+          },
+          {
+            "role": "user",
+            "content": "Hi, I have an exam coming up and I need help studying Database Management.",
+            "time": "2026-09-16T07:56:27.643Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Absolutely — I can help you prepare for Database Management. Which topics are you currently struggling with?",
+            "time": "2026-09-16T07:56:27.643Z"
+          }
+        ],
+        "session": {
+          "difficulty": "Intermediate",
+          "subject": "Database Management",
+          "topics": [
+            "Database Management"
+          ],
+          "mode": "exam-prep",
+          "materialName": ""
+        },
+        "materialName": "",
+        "createdAt": "2026-09-16T07:56:27.594Z",
+        "userId": "demo-user",
+        "updatedAt": "2026-09-16T07:56:27.644Z"
+      }
+    ],
+    "user-1789466222607-0u5nnv": [
+      {
+        "id": "convo-1789546702672-jpbulh",
+        "title": "Kd?_\u000fSbv\u0011³cðÅ\u0012·L`ç[ee;köù\u000f8«w",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": "Hello liah. I am your learning assistant. Tell me what you are studying, ask a question, or upload notes and we can work through them together."
+          },
+          {
+            "role": "assistant",
+            "content": "I've analysed File_Handling_in_PHP.pdf. I found topics including Kd?_\u000fSbv\u0011³cðÅ\u0012·L`ç[ee;köù\u000f8«w, RIXÆÔj¿~×n \tÅ¨{A¹>çúãkèóóþýÍ§[àp}{\u0003¿â\u0003gs!%7`$Ds¨ò8úq\fE\u001c\txØÖp, JX°ÕwKWLª­TÞÅYê\u0015Ûµ7Ù¼izÜ=è·(Kaåääüå/éïï×ÖÈÂ\u0002}}}Èmu\u0017D°ÜÑLèxWay\u0003>, LÂ\u001a£°\b!D VÂzKa\u0011B\b4(,B\b!Q\u0001E\b!$* °\b!D\u0005\u0014\u0016!¨Â\"\u0010\u0012\u0015PX\u0010B¢\u0002, PT\u0005(ª\u0002\u0014áFZw­ \bÈñÙ\fÉØ:À¼ç\u0003#6Õ@\u0011oIÃE9C, Eµø·ºÒ. What would you like to study first?"
+          },
+          {
+            "role": "user",
+            "content": "Quiz me on this.",
+            "time": "2026-09-16T08:18:22.672Z"
+          },
+          {
+            "role": "assistant",
+            "content": "I can also save a formal version for your class after we finish. Let's check your understanding of Kd?_\u000fSbv\u0011³cðÅ\u0012·L`ç[ee;köù\u000f8«w. I will ask one question at a time.\n\nQuestion 1 of 10:\n\nWhich statement best captures the deeper implication of this idea: “1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c”?\n\nA. A O Q V h t   ¡ ½ É Õ á í\u0001\u0004\u0001 \u0004 ÿÿ \u0013 4 B W \\ u ~  « ð ø\u0001 \u0010 \u0002BOS @SRB p ÿÿ \u0015 \u0001 \u0015 !\nB. M T f r    ¼ Ç Ó ß ë\u0001\u0002\u0001\u0007 ÿÿ \u0011 \u001e - @ N U g s   È Ô à ì\u0001\u0003\u0001\b ÿÿ \u0013 \u001f .\nC. 1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c!\nD. 9².!\u0010¸\u0002o´'\u0004\u0004 -¸\u0002%·\u0016+\u0010![.\u001b'¸\u0001vµ\u0010] `\u0004] ???í22?\u00129\u0001/íÍ9/3í2201%\u0014\u0006##\u0015\u0014\u000e\u0002#\".\u000255!\".\u000254>\u00027\u0001>\u000332\u001e\u0002\u0015\u001132\u0016\u0001#\u0001!\u0004B\u0016\u0012« \u001e0&...",
+            "time": "2026-09-16T08:18:22.672Z"
+          },
+          {
+            "role": "user",
+            "content": "Regenerate this analysis at Advanced level.",
+            "time": "2026-09-16T08:18:50.536Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Not quite. The expected answer is: 1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c!\n\nWhy: 1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c!\n\nLet's move to question 2.\n\nQuestion 2 of 10:\n\nTrue or false: M T f r    ¼ Ç Ó ß ë\u0001\u0002\u0001\u0007 ÿÿ \u0011 \u001e - @ N U g s   È Ô à ì\u0001\u0003\u0001\b ÿÿ \u0013 \u001f .\n\nA. True\nB. False",
+            "time": "2026-09-16T08:18:50.536Z"
+          }
+        ],
+        "session": {
+          "mode": "quiz",
+          "difficulty": "Advanced",
+          "topics": [
+            "Kd?_\u000fSbv\u0011³cðÅ\u0012·L`ç[ee;köù\u000f8«w",
+            "RIXÆÔj¿~×n \tÅ¨{A¹>çúãkèóóþýÍ§[àp}{\u0003¿â\u0003gs!%7`$Ds¨ò8úq\fE\u001c\txØÖp",
+            "JX°ÕwKWLª­TÞÅYê\u0015Ûµ7Ù¼izÜ=è·(Kaåääüå/éïï×ÖÈÂ\u0002}}}Èmu\u0017D°ÜÑLèxWay\u0003>",
+            "LÂ\u001a£°\b!D VÂzKa\u0011B\b4(,B\b!Q\u0001E\b!$* °\b!D\u0005\u0014\u0016!¨Â\"\u0010\u0012\u0015PX\u0010B¢\u0002",
+            "PT\u0005(ª\u0002\u0014áFZw­ \bÈñÙ\fÉØ:À¼ç\u0003#6Õ@\u0011oIÃE9C",
+            "Eµø·ºÒ",
+            "TÃ\u001drÕPºÊCRû\u0003¦qf¾7þ­8\u0001\u001fç\u001c²R\t\u0012¥ò ô7>\u0015òOAy\u0007\u0002Õ/\u001c¢î£g wâè ýÍ+\f³\u0006Â }Ó=¬à\u0016ÖP¨æoâ",
+            "Wÿ5\u001bò\u0015M¨ÒBe?PiM\b¨TCèôÉ\u0011uõµ\u0001:/Y¥\u001ff.úè"
+          ],
+          "subject": "Kd?_\u000fSbv\u0011³cðÅ\u0012·L`ç[ee;köù\u000f8«w",
+          "materialName": "File_Handling_in_PHP.pdf",
+          "quiz": {
+            "id": "livequiz-1789546702671-m30kfy",
+            "questions": [
+              {
+                "id": "q-1789546702668-iivvth",
+                "type": "multiple-choice",
+                "prompt": "Which statement best captures the deeper implication of this idea: “1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c”?",
+                "marks": 2,
+                "topic": "+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014",
+                "sourceExcerpt": "1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c!",
+                "options": [
+                  "A O Q V h t   ¡ ½ É Õ á í\u0001\u0004\u0001 \u0004 ÿÿ \u0013 4 B W \\ u ~  « ð ø\u0001 \u0010 \u0002BOS @SRB p ÿÿ \u0015 \u0001 \u0015 !",
+                  "M T f r    ¼ Ç Ó ß ë\u0001\u0002\u0001\u0007 ÿÿ \u0011 \u001e - @ N U g s   È Ô à ì\u0001\u0003\u0001\b ÿÿ \u0013 \u001f .",
+                  "1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c!",
+                  "9².!\u0010¸\u0002o´'\u0004\u0004 -¸\u0002%·\u0016+\u0010![.\u001b'¸\u0001vµ\u0010] `\u0004] ???í22?\u00129\u0001/íÍ9/3í2201%\u0014\u0006##\u0015\u0014\u000e\u0002#\".\u000255!\".\u000254>\u00027\u0001>\u000332\u001e\u0002\u0015\u001132\u0016\u0001#\u0001!\u0004B\u0016\u0012« \u001e0&..."
+                ],
+                "answer": "1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c!"
+              },
+              {
+                "id": "q-1789546702669-k7bo0u",
+                "type": "true-false",
+                "prompt": "True or false: M T f r    ¼ Ç Ó ß ë\u0001\u0002\u0001\u0007 ÿÿ \u0011 \u001e - @ N U g s   È Ô à ì\u0001\u0003\u0001\b ÿÿ \u0013 \u001f .",
+                "marks": 2,
+                "topic": "M T f r    ¼ Ç Ó ß ë\u0001\u0002\u0001\u0007 ÿÿ \u0011 \u001e",
+                "sourceExcerpt": "M T f r    ¼ Ç Ó ß ë\u0001\u0002\u0001\u0007 ÿÿ \u0011 \u001e - @ N U g s   È Ô à ì\u0001\u0003\u0001\b ÿÿ \u0013 \u001f .",
+                "options": [
+                  "True",
+                  "False"
+                ],
+                "answer": "True"
+              },
+              {
+                "id": "q-1789546702669-3s397o",
+                "type": "short-answer",
+                "prompt": "Briefly explain the significance of this idea from the material: A O Q V h t   ¡ ½ É Õ á í\u0001\u0004\u0001 \u0004 ÿÿ \u0013 4 B W \\ u ~  « ð ø\u0001 \u0010 \u0002BOS @SRB p ÿÿ \u0015 \u0001 \u0015 .",
+                "marks": 2,
+                "topic": "A O Q V h t   ¡ ½ É Õ á í\u0001\u0004\u0001 \u0004 ÿÿ \u0013 4 B W \\ u ~  « ð ø\u0001 \u0010 \u0002BOS @S",
+                "sourceExcerpt": "A O Q V h t   ¡ ½ É Õ á í\u0001\u0004\u0001 \u0004 ÿÿ \u0013 4 B W \\ u ~  « ð ø\u0001 \u0010 \u0002BOS @SRB p ÿÿ \u0015 \u0001 \u0015 !",
+                "options": [],
+                "answer": "A O Q V h t   ¡ ½ É Õ á í\u0001\u0004\u0001 \u0004 ÿÿ \u0013 4 B W \\ u ~  « ð ø\u0001 \u0010 \u0002BOS @SRB p ÿÿ \u0015 \u0001 \u0015 !"
+              },
+              {
+                "id": "q-1789546702669-03d88m",
+                "type": "multiple-choice",
+                "prompt": "Which statement best captures the deeper implication of this idea: “9².!\u0010¸\u0002o´'\u0004\u0004 -¸\u0002%·\u0016+\u0010![.\u001b'¸\u0001vµ\u0010] `\u0004] ???í22?\u00129\u0001/íÍ9/3í2201%\u0014\u0006##\u0015\u0014\u000e\u0002#\".\u000255!\".\u000254>\u00027\u0001>\u000332\u001e\u0002\u0015\u001132\u0016\u0001#\u0001!\u0004B\u0016\u0012« \u001e0&$1\u001d ýì\u0010\u0019\u0010\u0007\u0005 \u0014\u000e\u0001\u0006\u001c0D/9I MpG3cirA \u0019 -I3\u001b\b\u0016&\u001f\u001e$\u0015\u0007\u001b2G,!:,\u0019 %\u001f\u0006\u0014&\u001f\u0019!\u0016\u000f\u0011&$\u001b,SxM;fO9\u000e\u0002 5Oe \u0002 \u001aÿ \u0003í\u0004, * ”?",
+                "marks": 2,
+                "topic": "².!\u0010¸\u0002o´'\u0004\u0004 -¸\u0002%·\u0016+\u0010![.\u001b'¸\u0001vµ\u0010] `\u0004] ???í22?\u00129\u0001/íÍ9/3í2201%\u0014\u0006##\u0015\u0014\u000e\u0002#",
+                "sourceExcerpt": "9².!\u0010¸\u0002o´'\u0004\u0004 -¸\u0002%·\u0016+\u0010![.\u001b'¸\u0001vµ\u0010] `\u0004] ???í22?\u00129\u0001/íÍ9/3í2201%\u0014\u0006##\u0015\u0014\u000e\u0002#\".\u000255!\".\u000254>\u00027\u0001>\u000332\u001e\u0002\u0015\u001132\u0016\u0001#\u0001!\u0004B\u0016\u0012« \u001e0&$1\u001d ýì\u0010\u0019\u0010\u0007\u0005 \u0014\u000e\u0001\u0006\u001c0D/9I MpG3cirA \u0019 -I3\u001b\b\u0016&\u001f\u001e$\u0015\u0007\u001b2G,!:,\u0019 %\u001f\u0006\u0014&\u001f\u0019!\u0016\u000f\u0011&$\u001b,SxM;fO9\u000e\u0002 5Oe \u0002 \u001aÿ \u0003í\u0004, * .",
+                "options": [
+                  "A O Q V h t   ¡ ½ É Õ á í\u0001\u0004\u0001 \u0004 ÿÿ \u0013 4 B W \\ u ~  « ð ø\u0001 \u0010 \u0002BOS @SRB p ÿÿ \u0015 \u0001 \u0015 !",
+                  "9².!\u0010¸\u0002o´'\u0004\u0004 -¸\u0002%·\u0016+\u0010![.\u001b'¸\u0001vµ\u0010] `\u0004] ???í22?\u00129\u0001/íÍ9/3í2201%\u0014\u0006##\u0015\u0014\u000e\u0002#\".\u000255!\".\u000254>\u00027\u0001>\u000332\u001e\u0002\u0015\u001132\u0016\u0001#\u0001!\u0004B\u0016\u0012« \u001e0&...",
+                  "M T f r    ¼ Ç Ó ß ë\u0001\u0002\u0001\u0007 ÿÿ \u0011 \u001e - @ N U g s   È Ô à ì\u0001\u0003\u0001\b ÿÿ \u0013 \u001f .",
+                  "1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c!"
+                ],
+                "answer": "9².!\u0010¸\u0002o´'\u0004\u0004 -¸\u0002%·\u0016+\u0010![.\u001b'¸\u0001vµ\u0010] `\u0004] ???í22?\u00129\u0001/íÍ9/3í2201%\u0014\u0006##\u0015\u0014\u000e\u0002#\".\u000255!\".\u000254>\u00027\u0001>\u000332\u001e\u0002\u0015\u001132\u0016\u0001#\u0001!\u0004B\u0016\u0012« \u001e0&..."
+              },
+              {
+                "id": "q-1789546702670-sxdy29",
+                "type": "true-false",
+                "prompt": "True or false: All Rights Reserved.The Wingdings fonts were designed by Kris Holmes and Charles Bigelow in 1990 and 1991.",
+                "marks": 2,
+                "topic": "All Rights Reserved",
+                "sourceExcerpt": "All Rights Reserved.The Wingdings fonts were designed by Kris Holmes and Charles Bigelow in 1990 and 1991.",
+                "options": [
+                  "True",
+                  "False"
+                ],
+                "answer": "True"
+              },
+              {
+                "id": "q-1789546702670-mtjg58",
+                "type": "short-answer",
+                "prompt": "Briefly explain the significance of this idea from the material: The fonts were originally named Lucida Icons, Arrows, and Stars to complement the Lucida text font family by the same designers.",
+                "marks": 2,
+                "topic": "The fonts were originally named Lucida Icons, Arrows, and Stars to c",
+                "sourceExcerpt": "The fonts were originally named Lucida Icons, Arrows, and Stars to complement the Lucida text font family by the same designers.",
+                "options": [],
+                "answer": "The fonts were originally named Lucida Icons, Arrows, and Stars to complement the Lucida text font family by the same designers."
+              },
+              {
+                "id": "q-1789546702670-wzmche",
+                "type": "multiple-choice",
+                "prompt": "Which statement best captures the deeper implication of this idea: “Renamed, reorganized, and released in 1992 as Microsoft Wingdings, the three fonts provide a harmoniously designed set of icons representing the common components of personal computer systems and the elements of graphical user interfaces”?",
+                "marks": 2,
+                "topic": "Renamed, reorganized, and released in 1992 as Microsoft Wingdings, t",
+                "sourceExcerpt": "Renamed, reorganized, and released in 1992 as Microsoft Wingdings, the three fonts provide a harmoniously designed set of icons representing the common components of personal computer systems and the elements of graphical user interfaces.",
+                "options": [
+                  "1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c!",
+                  "M T f r    ¼ Ç Ó ß ë\u0001\u0002\u0001\u0007 ÿÿ \u0011 \u001e - @ N U g s   È Ô à ì\u0001\u0003\u0001\b ÿÿ \u0013 \u001f .",
+                  "A O Q V h t   ¡ ½ É Õ á í\u0001\u0004\u0001 \u0004 ÿÿ \u0013 4 B W \\ u ~  « ð ø\u0001 \u0010 \u0002BOS @SRB p ÿÿ \u0015 \u0001 \u0015 !",
+                  "Renamed, reorganized, and released in 1992 as Microsoft Wingdings, the three fonts provide a harmoniously d..."
+                ],
+                "answer": "Renamed, reorganized, and released in 1992 as Microsoft Wingdings, the three fonts provide a harmoniously d..."
+              },
+              {
+                "id": "q-1789546702671-allooe",
+                "type": "true-false",
+                "prompt": "True or false: There are icons for PC, monitor, keyboard, mouse, trackball, hard drive, diskette, tape cassette, printer, fax, etc., as well as icons for file folders, documents, mail, mailboxes, windows, clipboard, and wastebasket.",
+                "marks": 2,
+                "topic": "There are icons for PC, monitor, keyboard, mouse, trackball, hard dr",
+                "sourceExcerpt": "There are icons for PC, monitor, keyboard, mouse, trackball, hard drive, diskette, tape cassette, printer, fax, etc., as well as icons for file folders, documents, mail, mailboxes, windows, clipboard, and wastebasket.",
+                "options": [
+                  "True",
+                  "False"
+                ],
+                "answer": "True"
+              },
+              {
+                "id": "q-1789546702671-xx4co1",
+                "type": "short-answer",
+                "prompt": "Briefly explain the significance of this idea from the material: Pointing and indicating are frequent functions in graphical interfaces, so in addition to a wide selection of pointing hands, the Wingdings fonts also offer arrows in careful gradations of weight and different directions and styles.",
+                "marks": 2,
+                "topic": "Pointing and indicating are frequent functions in graphical interfac",
+                "sourceExcerpt": "Pointing and indicating are frequent functions in graphical interfaces, so in addition to a wide selection of pointing hands, the Wingdings fonts also offer arrows in careful gradations of weight and different directions and styles.",
+                "options": [],
+                "answer": "Pointing and indicating are frequent functions in graphical interfaces, so in addition to a wide selection of pointing hands, the Wingdings fonts also offer arrows in careful gradations of weight and different directions and styles."
+              },
+              {
+                "id": "q-1789546702671-ksdlr9",
+                "type": "multiple-choice",
+                "prompt": "Which statement best captures the deeper implication of this idea: “For variety and impact as bullets, asterisks, and ornaments, Windings also offers a varied set of geometric circles, squares, polygons, targets, and stars.Wingdings Regular: MS: 2006Version 5.01Wingdings-RegularWingdings is either a registered trademark or a trademark of Microsoft Corporation in the United States and/or other countries”?",
+                "marks": 2,
+                "topic": "For variety and impact as bullets, asterisks, and ornaments, Winding",
+                "sourceExcerpt": "For variety and impact as bullets, asterisks, and ornaments, Windings also offers a varied set of geometric circles, squares, polygons, targets, and stars.Wingdings Regular: MS: 2006Version 5.01Wingdings-RegularWingdings is either a registered trademark or a trademark of Microsoft Corporation in the United States and/or other countries.",
+                "options": [
+                  "For variety and impact as bullets, asterisks, and ornaments, Windings also offers a varied set of geometric...",
+                  "A O Q V h t   ¡ ½ É Õ á í\u0001\u0004\u0001 \u0004 ÿÿ \u0013 4 B W \\ u ~  « ð ø\u0001 \u0010 \u0002BOS @SRB p ÿÿ \u0015 \u0001 \u0015 !",
+                  "M T f r    ¼ Ç Ó ß ë\u0001\u0002\u0001\u0007 ÿÿ \u0011 \u001e - @ N U g s   È Ô à ì\u0001\u0003\u0001\b ÿÿ \u0013 \u001f .",
+                  "1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c!"
+                ],
+                "answer": "For variety and impact as bullets, asterisks, and ornaments, Windings also offers a varied set of geometric..."
+              }
+            ],
+            "index": 1,
+            "answers": [
+              {
+                "questionId": "q-1789546702668-iivvth",
+                "prompt": "Which statement best captures the deeper implication of this idea: “1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c”?",
+                "given": "Regenerate this analysis at Advanced level.",
+                "expected": "1+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014:­c!",
+                "correct": false,
+                "topic": "+Àæq]\bCL¦ì\u0015rÚìB\u0018,TmºLu6+\u0004I´ ¬B\u0007\u0016k\u0018fB\u0014\u0014"
+              }
+            ],
+            "score": 0,
+            "status": "active",
+            "difficulty": "Advanced",
+            "sourceFile": "File_Handling_in_PHP.pdf",
+            "subject": "Kd?_\u000fSbv\u0011³cðÅ\u0012·L`ç[ee;köù\u000f8«w",
+            "interactive": true
+          }
+        },
+        "materialName": "File_Handling_in_PHP.pdf",
+        "createdAt": "2026-09-16T08:18:22.672Z",
+        "userId": "user-1789466222607-0u5nnv",
+        "updatedAt": "2026-09-16T08:18:50.538Z"
+      },
+      {
+        "id": "convo-1789546159693-w3icy1",
+        "title": "i miss you",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": "Hello liah. I am your learning assistant. Tell me what you are studying, ask a question, or upload notes and we can work through them together."
+          },
+          {
+            "role": "user",
+            "content": "hello",
+            "time": "2026-09-16T08:09:19.693Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Hello liah. I can tutor you, quiz you, build revision notes, or help plan teaching work. What subject are you working on today?",
+            "time": "2026-09-16T08:09:19.693Z"
+          },
+          {
+            "role": "user",
+            "content": "law",
+            "time": "2026-09-16T08:09:28.124Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Could you tell me a little more? For example: the subject, whether this is for an exam or class, and whether you want an explanation, practice, or a quiz.",
+            "time": "2026-09-16T08:09:28.124Z"
+          },
+          {
+            "role": "user",
+            "content": "i miss you",
+            "time": "2026-09-16T08:09:38.730Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Could you tell me a little more? For example: the subject, whether this is for an exam or class, and whether you want an explanation, practice, or a quiz.",
+            "time": "2026-09-16T08:09:38.730Z"
+          }
+        ],
+        "session": {
+          "mode": "tutor",
+          "difficulty": "Intermediate",
+          "topics": [],
+          "subject": "",
+          "materialName": ""
+        },
+        "materialName": "",
+        "createdAt": "2026-09-16T08:09:19.693Z",
+        "userId": "user-1789466222607-0u5nnv",
+        "updatedAt": "2026-09-16T08:09:38.731Z"
+      }
+    ],
+    "user-1789542571318-eznsi6": [
+      {
+        "id": "convo-1789548506101-fa3sdt",
+        "title": "DIFFERENT types OF VARIABLES IN A C# CLASS",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": "Hello LIAH. I am your learning assistant. Tell me what you are studying, ask a question, or upload notes and we can work through them together."
+          },
+          {
+            "role": "user",
+            "content": "hey",
+            "time": "2026-09-16T08:48:26.101Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Hello LIAH. I can tutor you, quiz you, build revision notes, or help plan teaching work. What subject are you working on today?",
+            "time": "2026-09-16T08:48:26.101Z"
+          },
+          {
+            "role": "user",
+            "content": "Create an assignment.",
+            "time": "2026-09-16T08:49:40.937Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Here are assignment ideas drawn from Types of Variables in a class.pptx.",
+            "time": "2026-09-16T08:49:40.937Z"
+          },
+          {
+            "role": "user",
+            "content": "Regenerate this assignment at Advanced level.",
+            "time": "2026-09-16T08:52:48.159Z"
+          },
+          {
+            "role": "assistant",
+            "content": "I can work with DIFFERENT types OF VARIABLES IN A C# CLASS. Tell me the topics you want to focus on, or upload your notes and I will pull the topics from there.",
+            "time": "2026-09-16T08:52:48.159Z"
+          },
+          {
+            "role": "user",
+            "content": "Schedule this for Friday.",
+            "time": "2026-09-16T08:53:17.548Z"
+          },
+          {
+            "role": "assistant",
+            "content": "I can put Assignment · DIFFERENT types OF VARIABLES IN A C# CLASS on friday. What time should it start?",
+            "time": "2026-09-16T08:53:17.548Z"
+          },
+          {
+            "role": "user",
+            "content": "14",
+            "time": "2026-09-16T08:53:25.459Z"
+          },
+          {
+            "role": "assistant",
+            "content": "I have prepared “Assignment · DIFFERENT types OF VARIABLES IN A C# CLASS” for 2026-09-18 at 14:00. Please review it on the calendar and confirm. You can still change the date, time, title, or delete it.",
+            "time": "2026-09-16T08:53:25.459Z"
+          }
+        ],
+        "session": {
+          "mode": "assignment",
+          "difficulty": "Advanced",
+          "topics": [
+            "DIFFERENT types OF VARIABLES IN A C# CLASS",
+            "Sushma Moily,",
+            "Lecturer",
+            "Points to be remember",
+            "End of topic",
+            "Types of variables in a class",
+            "Static variable",
+            "Non – static variable/instance variable"
+          ],
+          "subject": "DIFFERENT types OF VARIABLES IN A C# CLASS",
+          "materialName": "Types of Variables in a class.pptx",
+          "lastKind": "assignment",
+          "lastContent": {
+            "title": "Assignment · DIFFERENT types OF VARIABLES IN A C# CLASS",
+            "items": [
+              "Summarise the core argument of DIFFERENT types OF VARIABLES IN A C# CLASS in 250 words using only the uploaded material.",
+              "Create a one-page teaching aid for the most important concept in Types of Variables in a class.pptx."
+            ],
+            "successCriteria": [
+              "By the end of the session, learners should be able to explain: DIFFERENT types OF VARIABLES IN A C# CLASS By, Sushma Moily, Lecturer UNILUS Points to be remember Non static variable maintains 1 copy f...",
+              "By the end of the session, learners should be able to explain: Static variable Maintains 1 value for the whole class can be modified but will not create multiple copies.",
+              "By the end of the session, learners should be able to explain: Initializes only one time Constant variable cannot be modified after the declaration."
+            ]
+          },
+          "pending": null
+        },
+        "materialName": "Types of Variables in a class.pptx",
+        "createdAt": "2026-09-16T08:48:26.101Z",
+        "userId": "user-1789542571318-eznsi6",
+        "updatedAt": "2026-09-16T08:53:25.461Z"
+      }
+    ],
+    "test-user": [
+      {
+        "id": "convo-1789549293949-090btn",
+        "title": "Hi.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Hi.",
+            "time": "2026-09-16T09:01:33.949Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Hello Liah — of course I can help. What subject are you studying today?",
+            "time": "2026-09-16T09:01:33.949Z"
+          }
+        ],
+        "session": {
+          "mode": "tutor",
+          "topics": [],
+          "difficulty": "Intermediate",
+          "subject": "",
+          "materialName": ""
+        },
+        "materialName": "",
+        "createdAt": "2026-09-16T09:01:33.949Z",
+        "userId": "test-user",
+        "updatedAt": "2026-09-16T09:01:33.950Z"
+      }
+    ]
+  },
+  "progress": {}
+}

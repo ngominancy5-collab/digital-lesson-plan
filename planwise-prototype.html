@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PlanWise AI — Prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+
+:root{
+  --midnight:#071A2F;
+  --indigo:#3B2E7E;
+  --violet:#7857FF;
+  --cyan:#25D9D0;
+  --gold:#F3C969;
+  --ivory:#FAF8F1;
+  --white:#FFFFFF;
+  --charcoal:#17212B;
+
+  --violet-soft: rgba(120,87,255,0.14);
+  --cyan-soft: rgba(37,217,208,0.14);
+  --gold-soft: rgba(243,201,105,0.16);
+  --line: rgba(255,255,255,0.08);
+
+  --font-head:'Plus Jakarta Sans', sans-serif;
+  --font-body:'Inter', sans-serif;
+}
+
+*{ box-sizing:border-box; }
+html,body{ margin:0; height:100%; }
+body{
+  background:var(--midnight); color:var(--ivory);
+  font-family:var(--font-body); font-size:14.5px;
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+button{ font-family:inherit; cursor:pointer; }
+::-webkit-scrollbar{ width:8px; height:8px; }
+::-webkit-scrollbar-thumb{ background:rgba(255,255,255,0.12); border-radius:8px; }
+
+/* ---------- APP SHELL ---------- */
+.app{ display:flex; height:100vh; }
+
+.sidebar{
+  width:236px; flex:0 0 236px; background:var(--charcoal);
+  border-right:1px solid var(--line);
+  display:flex; flex-direction:column; padding:22px 14px;
+}
+.brand{ display:flex; align-items:center; gap:10px; padding:0 8px 22px; font-family:var(--font-head); font-weight:700; font-size:16.5px; }
+.brand-mark{ width:24px; height:24px; border-radius:7px; background:linear-gradient(135deg,var(--violet),var(--cyan)); flex:0 0 auto; }
+
+.nav-group{ margin-bottom:6px; }
+.nav-label{ font-size:11px; color:rgba(250,248,241,0.35); padding:14px 12px 6px; }
+.nav-item{
+  display:flex; align-items:center; gap:11px;
+  padding:10px 12px; border-radius:9px; color:rgba(250,248,241,0.65);
+  font-size:14px; margin-bottom:2px; background:none; border:none; width:100%; text-align:left;
+}
+.nav-item svg{ width:17px; height:17px; flex:0 0 auto; opacity:0.8; }
+.nav-item:hover{ background:rgba(255,255,255,0.04); color:var(--ivory); }
+.nav-item.active{ background:var(--violet-soft); color:var(--ivory); }
+.nav-item.active svg{ opacity:1; }
+
+.sidebar-foot{ margin-top:auto; padding:12px; border-top:1px solid var(--line); display:flex; align-items:center; gap:10px; }
+.avatar{ width:32px; height:32px; border-radius:9px; background:linear-gradient(135deg,var(--indigo),var(--violet)); display:flex; align-items:center; justify-content:center; font-family:var(--font-head); font-weight:700; font-size:13px; flex:0 0 auto; }
+.sidebar-foot .who{ line-height:1.3; }
+.sidebar-foot .name{ font-size:13.5px; font-weight:600; }
+.sidebar-foot .role{ font-size:11.5px; color:rgba(250,248,241,0.45); }
+
+.main{ flex:1; overflow-y:auto; position:relative; }
+.topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:20px 32px; border-bottom:1px solid var(--line);
+  position:sticky; top:0; background:rgba(7,26,47,0.85); backdrop-filter:blur(10px); z-index:5;
+}
+.topbar h1{ font-family:var(--font-head); font-size:19px; margin:0; font-weight:700; }
+.crumb{ font-size:12.5px; color:rgba(250,248,241,0.4); margin-bottom:2px; }
+.view{ padding:28px 32px 60px; display:none; }
+.view.active{ display:block; animation:rise .35s ease; }
+@keyframes rise{ from{ opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+
+/* ---------- shared bits ---------- */
+.panel{ background:rgba(255,255,255,0.035); border:1px solid var(--line); border-radius:18px; padding:26px; }
+.btn-primary{ background:linear-gradient(135deg,var(--violet),#8f6bff); color:#fff; padding:11px 20px; border-radius:10px; font-weight:600; font-size:14px; border:none; box-shadow:0 10px 26px -10px rgba(120,87,255,0.55); }
+.btn-secondary{ background:transparent; color:var(--ivory); padding:11px 20px; border-radius:10px; font-weight:600; font-size:14px; border:1px solid var(--line); }
+.btn-ghost{ background:rgba(255,255,255,0.05); color:var(--ivory); padding:8px 14px; border-radius:8px; font-size:13px; border:none; }
+.pill{ display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:4px 10px; border-radius:7px; font-weight:600; }
+.pill.gold{ background:var(--gold-soft); color:var(--gold); }
+.pill.cyan{ background:var(--cyan-soft); color:var(--cyan); }
+
+/* ---------- DASHBOARD ---------- */
+.greeting{ font-family:var(--font-head); font-weight:800; font-size:26px; margin:0 0 6px; }
+.greeting-sub{ color:rgba(250,248,241,0.55); margin:0 0 26px; }
+
+.stat-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:26px; }
+.stat-card{ background:rgba(255,255,255,0.035); border:1px solid var(--line); border-radius:16px; padding:18px; }
+.stat-card .num{ font-family:var(--font-head); font-weight:800; font-size:25px; }
+.stat-card .lbl{ font-size:12.5px; color:rgba(250,248,241,0.5); margin-top:3px; }
+.stat-card.gold .num{ color:var(--gold); }
+.stat-card.cyan .num{ color:var(--cyan); }
+
+.ai-quick{
+  border-radius:20px; padding:30px; margin-bottom:28px; position:relative; overflow:hidden;
+  background:linear-gradient(135deg, rgba(120,87,255,0.16), rgba(37,217,208,0.10));
+  border:1px solid rgba(120,87,255,0.35);
+}
+.ai-quick h2{ font-family:var(--font-head); font-size:21px; margin:0 0 8px; }
+.ai-quick p{ margin:0 0 18px; color:rgba(250,248,241,0.65); max-width:440px; }
+.ai-quick .actions{ display:flex; gap:12px; }
+
+.two-col{ display:grid; grid-template-columns:1.3fr 1fr; gap:20px; }
+@media (max-width:980px){ .two-col{ grid-template-columns:1fr; } }
+.insight-row{ display:flex; gap:12px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--line); }
+.insight-row:last-child{ border-bottom:none; }
+.insight-dot{ width:8px; height:8px; border-radius:50%; margin-top:6px; flex:0 0 auto; }
+.insight-dot.warn{ background:var(--gold); }
+.insight-dot.good{ background:var(--cyan); }
+.insight-text b{ display:block; font-size:13.5px; margin-bottom:2px; }
+.insight-text span{ font-size:13px; color:rgba(250,248,241,0.55); }
+
+/* ---------- COURSES ---------- */
+.course-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
+@media (max-width:980px){ .course-grid{ grid-template-columns:1fr 1fr; } }
+.course-card{ background:rgba(255,255,255,0.035); border:1px solid var(--line); border-radius:18px; padding:22px; }
+.course-card .code{ font-size:12px; color:rgba(250,248,241,0.45); margin-bottom:6px; }
+.course-card h3{ font-family:var(--font-head); font-size:17px; margin:0 0 14px; }
+.course-card .meta{ display:flex; gap:14px; font-size:12.5px; color:rgba(250,248,241,0.5); margin-bottom:16px; }
+.bar-track{ height:6px; border-radius:6px; background:rgba(255,255,255,0.08); overflow:hidden; margin-bottom:8px; }
+.bar-fill{ height:100%; background:linear-gradient(90deg,var(--violet),var(--cyan)); }
+.progress-lbl{ font-size:12px; color:rgba(250,248,241,0.5); margin-bottom:16px; }
+.course-card .open-btn{ width:100%; text-align:center; }
+.course-card.new{ display:flex; flex-direction:column; align-items:center; justify-content:center; border:1px dashed var(--line); color:rgba(250,248,241,0.5); min-height:190px; }
+
+/* ---------- UPLOAD / ANALYSIS ---------- */
+.upload-box{ border:1.5px dashed rgba(120,87,255,0.4); border-radius:16px; padding:40px; text-align:center; background:rgba(120,87,255,0.05); margin-bottom:22px; }
+.upload-box .icon{ width:46px; height:46px; border-radius:12px; background:linear-gradient(135deg,var(--violet),var(--cyan)); margin:0 auto 14px; }
+
+.steps{ display:flex; flex-direction:column; gap:0; margin:22px 0; }
+.step-row{ display:flex; align-items:center; gap:12px; padding:10px 0; opacity:0.35; }
+.step-row.active{ opacity:1; }
+.step-row.done{ opacity:0.6; }
+.step-dot{ width:20px; height:20px; border-radius:50%; border:2px solid rgba(255,255,255,0.2); flex:0 0 auto; display:flex; align-items:center; justify-content:center; }
+.step-row.active .step-dot{ border-color:var(--cyan); box-shadow:0 0 0 3px rgba(37,217,208,0.15); }
+.step-row.done .step-dot{ border-color:var(--cyan); background:var(--cyan); }
+.step-row.done .step-dot::after{ content:"✓"; font-size:11px; color:var(--midnight); font-weight:700; }
+.step-row .step-text{ font-size:14px; }
+
+.confidence-ring{ width:118px; height:118px; border-radius:50%; margin:0 auto 14px; display:flex; align-items:center; justify-content:center; }
+.confidence-ring-inner{ width:92px; height:92px; border-radius:50%; background:var(--charcoal); display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.confidence-ring-inner .pct{ font-family:var(--font-head); font-weight:800; font-size:22px; }
+.confidence-ring-inner .lbl{ font-size:10.5px; color:rgba(250,248,241,0.5); }
+.topic-pill{ display:inline-flex; align-items:center; gap:7px; background:rgba(255,255,255,0.05); border:1px solid var(--line); padding:7px 12px; border-radius:9px; font-size:13px; margin:0 8px 8px 0; }
+.topic-pill .dot{ width:6px; height:6px; border-radius:50%; background:var(--cyan); }
+
+/* ---------- SEMESTER PLANNER TABLE ---------- */
+table.planner{ width:100%; border-collapse:collapse; }
+table.planner th{ text-align:left; font-size:12px; color:rgba(250,248,241,0.4); font-weight:600; padding:0 14px 10px; border-bottom:1px solid var(--line); }
+table.planner td{ padding:14px; border-bottom:1px solid var(--line); font-size:13.5px; vertical-align:middle; }
+table.planner tr:last-child td{ border-bottom:none; }
+table.planner tr:hover{ background:rgba(255,255,255,0.02); cursor:pointer; }
+.week-badge{ width:26px; height:26px; border-radius:8px; background:rgba(120,87,255,0.18); color:var(--violet); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12.5px; }
+
+/* ---------- LESSON DETAIL ---------- */
+.lesson-block{ margin-bottom:22px; }
+.lesson-block h4{ font-family:var(--font-head); font-size:14.5px; margin:0 0 8px; color:var(--cyan); }
+.lesson-block p, .lesson-block li{ color:rgba(250,248,241,0.75); font-size:13.8px; }
+
+/* ---------- QUIZ STUDIO ---------- */
+.diff-track{ display:flex; background:rgba(255,255,255,0.05); border-radius:10px; padding:4px; margin:14px 0 24px; }
+.diff-opt{ flex:1; text-align:center; padding:9px; border-radius:8px; font-size:13px; font-weight:600; color:rgba(250,248,241,0.55); background:none; border:none; }
+.diff-opt.active{ background:linear-gradient(135deg,var(--violet),var(--cyan)); color:#071A2F; }
+.qty-row{ display:flex; gap:8px; margin:14px 0 24px; }
+.qty-opt{ padding:9px 16px; border-radius:9px; border:1px solid var(--line); background:transparent; color:var(--ivory); font-size:13.5px; }
+.qty-opt.active{ background:var(--violet); border-color:var(--violet); }
+.quiz-q{ background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin-bottom:14px; }
+.quiz-q .qnum{ font-size:12px; color:rgba(250,248,241,0.45); margin-bottom:6px; }
+.quiz-q .qtext{ font-size:14.5px; margin-bottom:12px; }
+.quiz-opt{ display:flex; align-items:center; gap:10px; padding:8px 0; font-size:13.5px; color:rgba(250,248,241,0.7); }
+.quiz-opt.correct{ color:var(--cyan); font-weight:600; }
+.letter{ width:22px; height:22px; border-radius:6px; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:11.5px; flex:0 0 auto; }
+.quiz-opt.correct .letter{ background:var(--cyan); border-color:var(--cyan); color:var(--midnight); }
+
+.skeleton{ height:16px; background:linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.12), rgba(255,255,255,0.05)); background-size:200% 100%; animation:shimmer 1.4s infinite; border-radius:6px; margin-bottom:10px; }
+@keyframes shimmer{ 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+
+/* ---------- COPILOT ---------- */
+.copilot-btn{
+  position:fixed; bottom:26px; right:26px; width:58px; height:58px; border-radius:50%;
+  background:linear-gradient(135deg,var(--violet),var(--cyan)); border:none;
+  box-shadow:0 14px 34px -10px rgba(120,87,255,0.6); z-index:50;
+  display:flex; align-items:center; justify-content:center;
+}
+.copilot-btn svg{ width:24px; height:24px; }
+
+.copilot-panel{
+  position:fixed; bottom:98px; right:26px; width:360px; height:520px; z-index:51;
+  background:var(--charcoal); border:1px solid var(--line); border-radius:20px;
+  display:none; flex-direction:column; overflow:hidden;
+  box-shadow:0 30px 70px -20px rgba(0,0,0,0.6);
+}
+.copilot-panel.open{ display:flex; animation:rise .25s ease; }
+.copilot-head{ padding:16px 18px; background:linear-gradient(135deg, rgba(120,87,255,0.25), rgba(37,217,208,0.15)); border-bottom:1px solid var(--line); }
+.copilot-head .t{ font-family:var(--font-head); font-weight:700; font-size:15px; }
+.copilot-head .s{ font-size:12px; color:rgba(250,248,241,0.6); }
+.copilot-close{ position:absolute; top:14px; right:14px; background:none; border:none; color:var(--ivory); opacity:0.6; font-size:16px; }
+.copilot-quick{ display:flex; gap:7px; flex-wrap:wrap; padding:12px 16px; border-bottom:1px solid var(--line); }
+.qa{ font-size:11.5px; padding:6px 10px; border-radius:20px; background:rgba(255,255,255,0.05); border:1px solid var(--line); color:rgba(250,248,241,0.75); }
+.copilot-msgs{ flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+.msg{ max-width:82%; padding:10px 13px; border-radius:12px; font-size:13.3px; line-height:1.5; }
+.msg.bot{ background:rgba(255,255,255,0.05); align-self:flex-start; border-bottom-left-radius:3px; }
+.msg.user{ background:var(--violet); align-self:flex-end; border-bottom-right-radius:3px; }
+.typing{ display:flex; gap:4px; padding:10px 13px; background:rgba(255,255,255,0.05); border-radius:12px; align-self:flex-start; width:fit-content; }
+.typing span{ width:6px; height:6px; border-radius:50%; background:rgba(250,248,241,0.5); animation:blink 1.2s infinite; }
+.typing span:nth-child(2){ animation-delay:0.2s; } .typing span:nth-child(3){ animation-delay:0.4s; }
+@keyframes blink{ 0%,80%,100%{opacity:0.3;} 40%{opacity:1;} }
+.copilot-input{ display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); }
+.copilot-input input{ flex:1; background:rgba(255,255,255,0.05); border:1px solid var(--line); border-radius:10px; padding:10px 12px; color:var(--ivory); font-size:13.5px; }
+.copilot-input input::placeholder{ color:rgba(250,248,241,0.35); }
+.copilot-input button{ background:var(--violet); border:none; color:#fff; width:38px; border-radius:10px; }
+
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="brand"><span class="brand-mark"></span>PlanWise AI</div>
+    <div class="nav-group">
+      <button class="nav-item active" data-view="dashboard">📊 Dashboard</button>
+      <button class="nav-item" data-view="courses">📚 My Courses</button>
+      <button class="nav-item" data-view="planner">🗓️ Semester Planner</button>
+      <button class="nav-item" data-view="lesson">📄 Lesson Plans</button>
+      <button class="nav-item" data-view="quiz">🧠 Quiz Studio</button>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">More</div>
+      <button class="nav-item" data-view="upload">✨ Upload Outline</button>
+      <button class="nav-item" onclick="toggleCopilot(true)">💬 AI Copilot</button>
+    </div>
+    <div class="sidebar-foot">
+      <div class="avatar">SB</div>
+      <div class="who"><div class="name">Dr. Sarah Banda</div><div class="role">Lecturer</div></div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- TOPBAR -->
+    <div class="topbar">
+      <div>
+        <div class="crumb" id="crumb">Overview</div>
+        <h1 id="topbar-title">Dashboard</h1>
+      </div>
+      <button class="btn-secondary" onclick="switchView('upload')">Upload course outline</button>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div class="view active" id="view-dashboard">
+      <h2 class="greeting">Good morning, Dr. Sarah 👋</h2>
+      <p class="greeting-sub">Let's turn your next lesson into an experience.</p>
+
+      <div class="stat-grid">
+        <div class="stat-card"><div class="num">5</div><div class="lbl">Active courses</div></div>
+        <div class="stat-card"><div class="num">68</div><div class="lbl">Lessons planned</div></div>
+        <div class="stat-card"><div class="num">42</div><div class="lbl">Lessons completed</div></div>
+        <div class="stat-card cyan"><div class="num">24</div><div class="lbl">Quizzes created</div></div>
+        <div class="stat-card gold"><div class="num">78%</div><div class="lbl">Overall progress</div></div>
+      </div>
+
+      <div class="ai-quick">
+        <h2>What are you teaching next?</h2>
+        <p>Upload a course outline and let PlanWise AI create your semester plan.</p>
+        <div class="actions">
+          <button class="btn-primary" onclick="switchView('upload')">Upload course outline</button>
+          <button class="btn-secondary" onclick="switchView('planner')">View semester plan</button>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="panel">
+          <h3 style="font-family:var(--font-head); margin-top:0;">Course health — BIT315</h3>
+          <div class="insight-row">
+            <div class="insight-dot good"></div>
+            <div class="insight-text"><b>Excellent progress</b><span>82% of the planned course content has been completed on schedule.</span></div>
+          </div>
+          <div class="insight-row">
+            <div class="insight-dot warn"></div>
+            <div class="insight-text"><b>Watch: JavaScript functions</b><span>Quiz results show students are struggling with this topic.</span></div>
+          </div>
+          <div class="insight-row">
+            <div class="insight-dot good"></div>
+            <div class="insight-text"><b>Recommendation</b><span>Consider adding one extra practical lesson before moving to PHP.</span></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3 style="font-family:var(--font-head); margin-top:0;">This week</h3>
+          <div class="insight-row"><div class="insight-dot good"></div><div class="insight-text"><b>Week 5 — PHP Variables</b><span>Lesson plan ready · Quiz not yet created</span></div></div>
+          <div class="insight-row"><div class="insight-dot warn"></div><div class="insight-text"><b>Assessment due Friday</b><span>CSS practical — 22 submissions pending</span></div></div>
+          <button class="btn-ghost" style="margin-top:6px;" onclick="switchView('lesson')">Open lesson plan →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- COURSES -->
+    <div class="view" id="view-courses">
+      <div class="course-grid">
+        <div class="course-card">
+          <div class="code">BIT315 · Semester 1</div>
+          <h3>Web Application Development</h3>
+          <div class="meta"><span>14 weeks</span><span>9 topics</span><span>28 lessons</span></div>
+          <div class="bar-track"><div class="bar-fill" style="width:78%;"></div></div>
+          <div class="progress-lbl">78% through semester</div>
+          <button class="btn-secondary open-btn" onclick="switchView('planner')">Open course</button>
+        </div>
+        <div class="course-card">
+          <div class="code">BIT220 · Semester 1</div>
+          <h3>Database Systems</h3>
+          <div class="meta"><span>12 weeks</span><span>7 topics</span><span>19 lessons</span></div>
+          <div class="bar-track"><div class="bar-fill" style="width:45%;"></div></div>
+          <div class="progress-lbl">45% through semester</div>
+          <button class="btn-secondary open-btn">Open course</button>
+        </div>
+        <div class="course-card">
+          <div class="code">BIT410 · Semester 1</div>
+          <h3>Human-Computer Interaction</h3>
+          <div class="meta"><span>14 weeks</span><span>8 topics</span><span>21 lessons</span></div>
+          <div class="bar-track"><div class="bar-fill" style="width:20%;"></div></div>
+          <div class="progress-lbl">20% through semester</div>
+          <button class="btn-secondary open-btn">Open course</button>
+        </div>
+        <div class="course-card new" onclick="switchView('upload')">
+          <div style="font-size:26px; margin-bottom:8px;">＋</div>
+          <div>Create a new course</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- UPLOAD / ANALYSIS -->
+    <div class="view" id="view-upload">
+      <div class="panel" style="max-width:640px;">
+        <div id="upload-stage">
+          <h3 style="font-family:var(--font-head); margin-top:0;">Upload course outline</h3>
+          <div class="upload-box">
+            <div class="icon"></div>
+            <div style="font-weight:600; margin-bottom:4px;">Drop your course outline here</div>
+            <div style="font-size:12.5px; color:rgba(250,248,241,0.5);">PDF, DOCX or TXT</div>
+          </div>
+          <button class="btn-primary" style="width:100%;" onclick="startAnalysis()">Analyze BIT315 outline (demo file)</button>
+        </div>
+
+        <div id="analysis-stage" style="display:none;">
+          <h3 style="font-family:var(--font-head); margin-top:0;">Reading your course</h3>
+          <div class="steps" id="steps-list"></div>
+        </div>
+
+        <div id="result-stage" style="display:none;">
+          <div style="text-align:center;">
+            <div class="confidence-ring" style="background:conic-gradient(var(--violet) 0% 94%, rgba(255,255,255,0.08) 94% 100%);">
+              <div class="confidence-ring-inner"><span class="pct">94%</span><span class="lbl">confidence</span></div>
+            </div>
+            <p style="color:rgba(250,248,241,0.6); font-size:13.5px; margin-top:0;">PlanWise AI successfully understood your course outline.</p>
+          </div>
+          <h4 style="font-family:var(--font-head); font-size:15px; margin-bottom:6px;">BIT315 — Web Application Development</h4>
+          <p style="color:rgba(250,248,241,0.65); font-size:13.5px; margin-top:0;">Introduction to web application development using client-side and server-side technologies.</p>
+          <div style="margin:14px 0 20px;">
+            <span class="topic-pill"><span class="dot"></span>HTML</span>
+            <span class="topic-pill"><span class="dot"></span>CSS</span>
+            <span class="topic-pill"><span class="dot"></span>JavaScript</span>
+            <span class="topic-pill"><span class="dot"></span>PHP</span>
+            <span class="topic-pill"><span class="dot"></span>Databases</span>
+            <span class="topic-pill"><span class="dot"></span>Web security</span>
+          </div>
+          <div style="display:flex; gap:12px;">
+            <button class="btn-primary" onclick="switchView('planner')">Approve & generate plan</button>
+            <button class="btn-secondary">Edit course information</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEMESTER PLANNER -->
+    <div class="view" id="view-planner">
+      <div class="panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <h3 style="font-family:var(--font-head); margin:0;">BIT315 — Semester 1 plan</h3>
+          <span class="pill gold">Plan quality 92%</span>
+        </div>
+        <table class="planner">
+          <tr><th>Week</th><th>Topic</th><th>Learning outcome</th><th>Activity</th><th>Assessment</th><th></th></tr>
+          <tr onclick="switchView('lesson')"><td><span class="week-badge">1</span></td><td>Web Applications</td><td>Explain web application concepts</td><td>Discussion</td><td>Quiz</td><td>✓</td></tr>
+          <tr onclick="switchView('lesson')"><td><span class="week-badge">2</span></td><td>HTML</td><td>Build page structure</td><td>Practical</td><td>Exercise</td><td>✓</td></tr>
+          <tr onclick="switchView('lesson')"><td><span class="week-badge">3</span></td><td>CSS</td><td>Style interfaces</td><td>Lab</td><td>Assignment</td><td>✓</td></tr>
+          <tr onclick="switchView('lesson')"><td><span class="week-badge">4</span></td><td>JavaScript</td><td>Add interactivity</td><td>Practical</td><td>Quiz</td><td>✓</td></tr>
+          <tr onclick="switchView('lesson')" style="background:rgba(120,87,255,0.08);"><td><span class="week-badge">5</span></td><td>PHP</td><td>Explain server-side scripting</td><td>Coding lab</td><td>Quiz</td><td>●</td></tr>
+          <tr onclick="switchView('lesson')"><td><span class="week-badge">6</span></td><td>PHP Functions</td><td>Write reusable functions</td><td>Coding lab</td><td>Exercise</td><td>○</td></tr>
+          <tr onclick="switchView('lesson')"><td><span class="week-badge">7</span></td><td>Databases</td><td>Design relational schemas</td><td>Lab</td><td>Assignment</td><td>○</td></tr>
+          <tr onclick="switchView('lesson')"><td><span class="week-badge">8</span></td><td>Server-side Programming</td><td>Connect app to database</td><td>Coding lab</td><td>Project</td><td>○</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- LESSON DETAIL -->
+    <div class="view" id="view-lesson">
+      <div class="two-col">
+        <div class="panel">
+          <span class="pill cyan">Week 5 · PHP</span>
+          <h3 style="font-family:var(--font-head); margin:12px 0 20px;">PHP Variables and Data Types</h3>
+
+          <div class="lesson-block">
+            <h4>Learning objectives</h4>
+            <ul><li>Declare and use PHP variables correctly</li><li>Identify PHP's core data types</li><li>Apply type casting in a simple script</li></ul>
+          </div>
+          <div class="lesson-block">
+            <h4>Introduction</h4>
+            <p>Start by comparing a variable to a labelled storage box — students already met this idea in JavaScript, so anchor PHP variables to that.</p>
+          </div>
+          <div class="lesson-block">
+            <h4>Teaching content</h4>
+            <p>Cover variable declaration with <code>$</code>, loose typing, and the string/integer/float/boolean/array types with short live-coded examples.</p>
+          </div>
+          <div class="lesson-block">
+            <h4>Teaching activities</h4>
+            <p>Coding lab: students convert a static HTML form into one that stores submitted values in PHP variables and echoes them back.</p>
+          </div>
+          <div class="lesson-block">
+            <h4>Homework</h4>
+            <p>Build a small script that stores a student's name, age and GPA, then prints a formatted summary sentence.</p>
+          </div>
+        </div>
+        <div class="panel" style="height:fit-content;">
+          <h4 style="font-family:var(--font-head); margin-top:0; font-size:14px;">Lesson info</h4>
+          <p style="font-size:13px; color:rgba(250,248,241,0.6); line-height:2;">
+            Course: BIT315<br>Week: 5 of 14<br>Duration: 90 minutes<br>Lecturer: Dr. Sarah Banda<br>Date: Thu, 12 Feb
+          </p>
+          <button class="btn-primary" style="width:100%; margin-top:6px;" onclick="switchView('quiz')">Generate quiz for this lesson</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- QUIZ STUDIO -->
+    <div class="view" id="view-quiz">
+      <div class="two-col">
+        <div class="panel">
+          <h3 style="font-family:var(--font-head); margin-top:0;">Generate quiz</h3>
+          <p style="font-size:12.5px; color:rgba(250,248,241,0.5); margin-top:-8px;">Course: BIT315 · Topic: PHP Variables</p>
+
+          <div style="font-size:12.5px; color:rgba(250,248,241,0.55); margin-bottom:6px;">Difficulty</div>
+          <div class="diff-track">
+            <button class="diff-opt" data-diff="Foundation">Foundation</button>
+            <button class="diff-opt active" data-diff="Application">Application</button>
+            <button class="diff-opt" data-diff="Advanced">Advanced</button>
+          </div>
+
+          <div style="font-size:12.5px; color:rgba(250,248,241,0.55); margin-bottom:6px;">Number of questions</div>
+          <div class="qty-row">
+            <button class="qty-opt">5</button>
+            <button class="qty-opt active">10</button>
+            <button class="qty-opt">15</button>
+            <button class="qty-opt">20</button>
+          </div>
+
+          <button class="btn-primary" style="width:100%;" onclick="generateQuiz()">Generate quiz</button>
+        </div>
+
+        <div class="panel">
+          <h3 style="font-family:var(--font-head); margin-top:0;">Preview</h3>
+          <div id="quiz-loading" style="display:none;">
+            <div class="skeleton" style="width:90%;"></div>
+            <div class="skeleton" style="width:70%;"></div>
+            <div class="skeleton" style="width:80%;"></div>
+            <div class="skeleton" style="width:60%;"></div>
+          </div>
+          <div id="quiz-empty" style="color:rgba(250,248,241,0.4); font-size:13.5px;">Your generated quiz will appear here.</div>
+          <div id="quiz-results" style="display:none;"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- COPILOT -->
+<button class="copilot-btn" onclick="toggleCopilot()">
+  <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.076-.163-3.017-.463L3 21l1.503-3.98C3.55 15.89 3 14.49 3 13c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+</button>
+<div class="copilot-panel" id="copilot">
+  <div class="copilot-head" style="position:relative;">
+    <div class="t">PlanWise Copilot</div>
+    <div class="s">Your AI teaching assistant · viewing BIT315, Week 5</div>
+    <button class="copilot-close" onclick="toggleCopilot(false)">✕</button>
+  </div>
+  <div class="copilot-quick">
+    <button class="qa" onclick="sendQuick('Create a quiz for this lesson')">Create quiz</button>
+    <button class="qa" onclick="sendQuick('Explain PHP variables to beginners')">Explain topic</button>
+    <button class="qa" onclick="sendQuick('Create a classroom activity')">Create activity</button>
+    <button class="qa" onclick="sendQuick('Help me catch up')">Help me catch up</button>
+  </div>
+  <div class="copilot-msgs" id="copilot-msgs">
+    <div class="msg bot">Hi Dr. Sarah 👋 I can see you're on Week 5 of BIT315 — PHP Variables. What would you like help with?</div>
+  </div>
+  <div class="copilot-input">
+    <input type="text" id="copilot-input" placeholder="Ask PlanWise Copilot..." onkeydown="if(event.key==='Enter')sendMessage()">
+    <button onclick="sendMessage()">↑</button>
+  </div>
+</div>
+
+<script>
+const views = ['dashboard','courses','upload','planner','lesson','quiz'];
+const titles = {dashboard:'Dashboard', courses:'My Courses', upload:'Upload Course Outline', planner:'Semester Planner', lesson:'Lesson Plan', quiz:'Quiz Studio'};
+const crumbs = {dashboard:'Overview', courses:'BIT315 · BIT220 · BIT410', upload:'BIT315', planner:'BIT315 · Semester 1', lesson:'BIT315 · Week 5', quiz:'BIT315 · Week 5 · PHP Variables'};
+
+function switchView(name){
+  views.forEach(v=>{
+    document.getElementById('view-'+v).classList.toggle('active', v===name);
+  });
+  document.querySelectorAll('.nav-item[data-view]').forEach(el=>{
+    el.classList.toggle('active', el.dataset.view===name);
+  });
+  document.getElementById('topbar-title').textContent = titles[name];
+  document.getElementById('crumb').textContent = crumbs[name];
+}
+document.querySelectorAll('.nav-item[data-view]').forEach(el=>{
+  el.addEventListener('click', ()=>switchView(el.dataset.view));
+});
+
+/* ---- upload / analysis flow ---- */
+const analysisSteps = [
+  'Reading document...',
+  'Extracting course structure...',
+  'Identifying topics...',
+  'Mapping learning outcomes...',
+  'Analyzing topic difficulty...',
+  'Preparing your semester plan...'
+];
+function startAnalysis(){
+  document.getElementById('upload-stage').style.display='none';
+  document.getElementById('result-stage').style.display='none';
+  const stage = document.getElementById('analysis-stage');
+  stage.style.display='block';
+  const list = document.getElementById('steps-list');
+  list.innerHTML = analysisSteps.map((s,i)=>`<div class="step-row" id="step-${i}"><div class="step-dot"></div><div class="step-text">${s}</div></div>`).join('');
+  let i=0;
+  function tick(){
+    if(i>0) document.getElementById('step-'+(i-1)).classList.replace('active','done');
+    if(i<analysisSteps.length){
+      document.getElementById('step-'+i).classList.add('active');
+      i++;
+      setTimeout(tick, 550);
+    } else {
+      setTimeout(()=>{
+        stage.style.display='none';
+        document.getElementById('result-stage').style.display='block';
+      }, 500);
+    }
+  }
+  tick();
+}
+
+/* ---- quiz difficulty / qty toggles ---- */
+document.querySelectorAll('.diff-opt').forEach(b=>b.addEventListener('click', ()=>{
+  document.querySelectorAll('.diff-opt').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+}));
+document.querySelectorAll('.qty-opt').forEach(b=>b.addEventListener('click', ()=>{
+  document.querySelectorAll('.qty-opt').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+}));
+
+const sampleQuiz = [
+  {q:'Which symbol is used to declare a variable in PHP?', opts:['&','$','#','@'], correct:1, exp:'PHP variables always start with a dollar sign, e.g. $studentName.'},
+  {q:'What will $age = "20"; make $age in terms of type?', opts:['Integer','String','Float','Array'], correct:1, exp:'Values in quotes are treated as strings, even if they look numeric.'},
+  {q:'A form field is submitted empty. Which PHP function checks this safely?', opts:['isset()','empty()','count()','strlen()'], correct:1, exp:'empty() returns true for an unset or blank value, avoiding a notice.'},
+  {q:'Which data type would best store a list of student names?', opts:['Boolean','Array','Integer','Float'], correct:1, exp:'Arrays hold ordered collections of values, ideal for a list of names.'}
+];
+function generateQuiz(){
+  document.getElementById('quiz-empty').style.display='none';
+  document.getElementById('quiz-results').style.display='none';
+  document.getElementById('quiz-loading').style.display='block';
+  setTimeout(()=>{
+    document.getElementById('quiz-loading').style.display='none';
+    const box = document.getElementById('quiz-results');
+    box.style.display='block';
+    box.innerHTML = sampleQuiz.map((item,i)=>`
+      <div class="quiz-q">
+        <div class="qnum">Question ${i+1} of ${sampleQuiz.length}</div>
+        <div class="qtext">${item.q}</div>
+        ${item.opts.map((o,j)=>`<div class="quiz-opt ${j===item.correct?'correct':''}"><span class="letter">${String.fromCharCode(65+j)}</span>${o}</div>`).join('')}
+      </div>`).join('') + `<p style="font-size:12.5px; color:rgba(250,248,241,0.5);">Answers highlighted for lecturer review. Explanations available per question.</p>`;
+  }, 1100);
+}
+
+/* ---- Copilot ---- */
+function toggleCopilot(force){
+  const p = document.getElementById('copilot');
+  if(force===true) p.classList.add('open');
+  else if(force===false) p.classList.remove('open');
+  else p.classList.toggle('open');
+}
+const botReplies = {
+  'create a quiz for this lesson': "I've drafted a 10-question Application-level quiz on PHP Variables. Open Quiz Studio to review and adjust difficulty before publishing.",
+  'explain php variables to beginners': "Think of a PHP variable like a labelled box: $box = \"apple\"; stores the value \"apple\" in a box named box. PHP figures out the type automatically, so you don't declare it up front like in some other languages.",
+  'create a classroom activity': "Try this: students convert a static HTML registration form into one that stores each field in a PHP variable, then echoes a confirmation message using those variables. 15 minutes, pairs.",
+  "help me catch up": "You're on track — Week 5 of 14 matches your calendar. If you'd like a buffer, I can merge Week 6 (PHP Functions) with a shorter Week 7 intro to keep two extra revision days before the midterm."
+};
+function addMsg(text, cls){
+  const msgs = document.getElementById('copilot-msgs');
+  const d = document.createElement('div');
+  d.className = 'msg '+cls;
+  d.textContent = text;
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+function botRespond(userText){
+  const msgs = document.getElementById('copilot-msgs');
+  const typing = document.createElement('div');
+  typing.className='typing';
+  typing.innerHTML='<span></span><span></span><span></span>';
+  msgs.appendChild(typing);
+  msgs.scrollTop = msgs.scrollHeight;
+  setTimeout(()=>{
+    typing.remove();
+    const key = userText.trim().toLowerCase();
+    addMsg(botReplies[key] || "Here's what I found in your course outline for that — I can turn this into a lesson, activity or quiz. Which would help most right now?", 'bot');
+  }, 900);
+}
+function sendMessage(){
+  const input = document.getElementById('copilot-input');
+  const val = input.value.trim();
+  if(!val) return;
+  addMsg(val, 'user');
+  input.value='';
+  botRespond(val);
+}
+function sendQuick(text){
+  addMsg(text, 'user');
+  botRespond(text);
+}
+</script>
+</body>
+</html>
