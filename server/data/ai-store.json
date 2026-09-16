@@ -311,6 +311,63 @@
     ],
     "user-1789542571318-eznsi6": [
       {
+        "id": "convo-1789556043435-c4m2hf",
+        "title": "class",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hey",
+            "time": "2026-09-16T10:54:03.435Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Hello LIAH — of course I can help. What subject are you studying today?",
+            "time": "2026-09-16T10:54:03.435Z"
+          },
+          {
+            "role": "user",
+            "content": "science",
+            "time": "2026-09-16T10:54:09.642Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Could you tell me a little more? For example: the subject, whether this is for an exam or class, and whether you want an explanation, practice, or a quiz.",
+            "time": "2026-09-16T10:54:09.642Z"
+          },
+          {
+            "role": "user",
+            "content": "exam",
+            "time": "2026-09-16T10:54:14.504Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Could you tell me a little more? For example: the subject, whether this is for an exam or class, and whether you want an explanation, practice, or a quiz.",
+            "time": "2026-09-16T10:54:14.504Z"
+          },
+          {
+            "role": "user",
+            "content": "class",
+            "time": "2026-09-16T10:54:20.460Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Could you tell me a little more? For example: the subject, whether this is for an exam or class, and whether you want an explanation, practice, or a quiz.",
+            "time": "2026-09-16T10:54:20.460Z"
+          }
+        ],
+        "session": {
+          "mode": "tutor",
+          "difficulty": "Intermediate",
+          "topics": [],
+          "subject": "",
+          "materialName": ""
+        },
+        "materialName": "",
+        "createdAt": "2026-09-16T10:54:03.435Z",
+        "userId": "user-1789542571318-eznsi6",
+        "updatedAt": "2026-09-16T10:54:20.462Z"
+      },
+      {
         "id": "convo-1789548506101-fa3sdt",
         "title": "DIFFERENT types OF VARIABLES IN A C# CLASS",
         "messages": [
