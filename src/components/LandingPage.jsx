@@ -20,10 +20,10 @@ const heroHighlights = [
 ];
 
 const floatCards = [
-  { icon: Sparkles, title: 'AI Lesson Planning', text: 'Create structured lesson plans based on your course content.', offset: 'lp-card-a' },
-  { icon: ClipboardCheck, title: 'Smart Assessments', text: 'Generate quizzes and assessments from your learning materials.', offset: 'lp-card-b' },
-  { icon: FolderKanban, title: 'Digital Organisation', text: 'Keep lessons, topics, materials and activities organised.', offset: 'lp-card-c' },
-  { icon: MessageSquareText, title: 'Interactive AI Assistant', text: 'Ask questions, refine plans and generate content through conversation.', offset: 'lp-card-d' },
+  { icon: Sparkles, title: 'AI Lesson Planning', text: 'Create structured lesson plans based on your course content.', offset: 'lp-card-a', from: 'left' },
+  { icon: ClipboardCheck, title: 'Smart Assessments', text: 'Generate quizzes and assessments from your learning materials.', offset: 'lp-card-b', from: 'right' },
+  { icon: FolderKanban, title: 'Digital Organisation', text: 'Keep lessons, topics, materials and activities organised.', offset: 'lp-card-c', from: 'bottom' },
+  { icon: MessageSquareText, title: 'Interactive AI Assistant', text: 'Ask questions, refine plans and generate content through conversation.', offset: 'lp-card-d', from: 'top' },
 ];
 
 const storyCards = [
@@ -55,8 +55,45 @@ function Reveal({ as: Tag = 'div', className = '', delay = 0, children }) {
   );
 }
 
+function AssembleCard({ className = '', delay = 0, from = 'left', children }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return undefined;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        node.classList.add('is-assembled');
+        observer.disconnect();
+      }
+    }, { threshold: 0.2, rootMargin: '0px 0px -6% 0px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <article
+      ref={ref}
+      className={`lp-float-card lp-assemble from-${from} ${className}`}
+      style={{ '--lp-delay': `${delay}ms` }}
+    >
+      {children}
+    </article>
+  );
+}
+
+function WaveDivider({ from = '#f7f3eb', to = '#efe6da', flip = false }) {
+  return (
+    <div className={`lp-wave ${flip ? 'is-flip' : ''}`} aria-hidden="true">
+      <svg viewBox="0 0 1440 120" preserveAspectRatio="none">
+        <path fill={to} d="M0,64 C240,120 480,0 720,40 C960,80 1200,120 1440,56 L1440,120 L0,120 Z" />
+        <path fill={from} opacity="0.55" d="M0,80 C320,20 560,110 820,70 C1080,30 1280,10 1440,48 L1440,0 L0,0 Z" />
+      </svg>
+    </div>
+  );
+}
+
 export default function LandingPage({ onNavigate }) {
-  const heroMediaRef = useRef(null);
   const floatRef = useRef(null);
 
   useEffect(() => {
@@ -69,20 +106,16 @@ export default function LandingPage({ onNavigate }) {
   }, []);
 
   useEffect(() => {
-    const media = heroMediaRef.current;
     const cluster = floatRef.current;
     let frame = 0;
-
     function onScroll() {
       if (frame) return;
       frame = window.requestAnimationFrame(() => {
         const y = window.scrollY;
-        if (media) media.style.transform = `translate3d(0, ${y * 0.22}px, 0) scale(1.08)`;
-        if (cluster) cluster.style.transform = `translate3d(0, ${y * -0.04}px, 0)`;
+        if (cluster) cluster.style.transform = `translate3d(0, ${y * -0.03}px, 0)`;
         frame = 0;
       });
     }
-
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => {
@@ -93,7 +126,7 @@ export default function LandingPage({ onNavigate }) {
 
   return (
     <div className="lp">
-      <header className="lp-nav">
+      <header className="lp-nav lp-nav-light">
         <button type="button" className="lp-brand" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
           <span className="lp-brand-mark"><GraduationCap size={18} /></span>
           <strong>PlanWise AI</strong>
@@ -105,15 +138,11 @@ export default function LandingPage({ onNavigate }) {
         </nav>
       </header>
 
-      <section className="lp-hero">
-        <div className="lp-hero-media" ref={heroMediaRef} aria-hidden="true">
-          <img src="/landing/hero.png?v=3" alt="" />
-        </div>
-        <div className="lp-hero-shade" />
-        <div className="lp-hero-inner">
+      <section className="lp-hero lp-hero-split">
+        <div className="lp-hero-inner lp-hero-grid">
           <div className="lp-hero-copy">
-            <p className="lp-kicker">Plan smarter. Teach better.</p>
-            <h1>Lesson<br />Planning</h1>
+            <p className="lp-kicker">Digital Lesson Plan System</p>
+            <h1>Plan smarter.<br />Teach better.</h1>
             <p className="lp-hero-lead">
               Help lecturers and teachers create, manage and organise digital lesson plans,
               learning materials, assessments and teaching activities in one calm workspace.
@@ -122,19 +151,22 @@ export default function LandingPage({ onNavigate }) {
               Get Started
             </button>
           </div>
+          <div className="lp-hero-portrait">
+            <img src="/landing/hero.png?v=4" alt="Graduate smiling in academic dress" />
+          </div>
         </div>
-        <div className="lp-hero-bars">
+        <div className="lp-hero-features">
           {heroHighlights.map(({ icon: Icon, title, text }) => (
-            <button type="button" className="lp-hero-bar" key={title} onClick={() => onNavigate('register')}>
-              <Icon size={22} />
+            <button type="button" className="lp-feature-chip" key={title} onClick={() => onNavigate('register')}>
+              <Icon size={18} />
               <div>
                 <strong>{title}</strong>
                 <span>{text}</span>
-                <em>Get started <ArrowRight size={12} /></em>
               </div>
             </button>
           ))}
         </div>
+        <WaveDivider from="#f7f3eb" to="#efe6da" />
       </section>
 
       <section className="lp-section lp-intro">
@@ -148,11 +180,13 @@ export default function LandingPage({ onNavigate }) {
               the classroom.
             </p>
           </Reveal>
-          <Reveal className="lp-photo" delay={140}>
-            <img src="/landing/classroom.jpg" alt="A lecturer teaching types of sentences to students in a classroom" />
+          <Reveal className="lp-photo lp-portrait" delay={140}>
+            <img src="/landing/hero.png?v=4" alt="A smiling graduate in academic dress" />
           </Reveal>
         </div>
       </section>
+
+      <WaveDivider from="#efe6da" to="#f7f3eb" />
 
       <section className="lp-section lp-float-section">
         <div className="lp-wrap">
@@ -165,21 +199,23 @@ export default function LandingPage({ onNavigate }) {
             </p>
           </Reveal>
           <div className="lp-float-cluster" ref={floatRef}>
-            {floatCards.map(({ icon: Icon, title, text, offset }, index) => (
-              <Reveal className={`lp-float-card ${offset}`} delay={index * 120} key={title}>
+            {floatCards.map(({ icon: Icon, title, text, offset, from }, index) => (
+              <AssembleCard className={offset} delay={index * 160} from={from} key={title}>
                 <span className="lp-card-icon"><Icon size={18} /></span>
                 <h3>{title}</h3>
                 <p>{text}</p>
-              </Reveal>
+              </AssembleCard>
             ))}
           </div>
         </div>
       </section>
 
+      <WaveDivider from="#f7f3eb" to="#fffdf9" />
+
       <section className="lp-section lp-ai">
         <div className="lp-wrap lp-split lp-split-reverse">
-          <Reveal className="lp-photo" delay={80}>
-            <img src="/landing/campus.jpg" alt="Educators together on campus" />
+          <Reveal className="lp-photo lp-photo-portrait" delay={80}>
+            <img src="/landing/graduate-roses.jpg" alt="Graduate in green academic dress holding roses" />
           </Reveal>
           <Reveal className="lp-copy" delay={160}>
             <p className="lp-eyebrow">AI assistance</p>
@@ -198,6 +234,8 @@ export default function LandingPage({ onNavigate }) {
         </div>
       </section>
 
+      <WaveDivider from="#fffdf9" to="#f3eee4" />
+
       <section className="lp-section lp-assess">
         <div className="lp-wrap lp-split">
           <Reveal className="lp-copy">
@@ -213,6 +251,8 @@ export default function LandingPage({ onNavigate }) {
           </Reveal>
         </div>
       </section>
+
+      <WaveDivider from="#f3eee4" to="#efe6da" />
 
       <section className="lp-section lp-organise">
         <div className="lp-wrap">
@@ -233,6 +273,8 @@ export default function LandingPage({ onNavigate }) {
         </div>
       </section>
 
+      <WaveDivider from="#efe6da" to="#f7f3eb" />
+
       <section className="lp-section lp-schedule">
         <div className="lp-wrap lp-split lp-split-reverse">
           <Reveal className="lp-photo" delay={80}>
@@ -249,7 +291,9 @@ export default function LandingPage({ onNavigate }) {
         </div>
       </section>
 
-      <section className="lp-finale">
+      <WaveDivider from="#f7f3eb" to="#5c3d2e" />
+
+      <section className="lp-finale lp-finale-dark">
         <div className="lp-wrap lp-split">
           <Reveal className="lp-copy">
             <p className="lp-eyebrow">One workspace</p>
@@ -260,11 +304,11 @@ export default function LandingPage({ onNavigate }) {
             </p>
             <div className="lp-finale-actions">
               <button type="button" className="lp-cta" onClick={() => onNavigate('register')}>Get Started</button>
-              <button type="button" className="lp-ghost lp-ghost-dark" onClick={() => onNavigate('login')}>Log In</button>
+              <button type="button" className="lp-ghost" onClick={() => onNavigate('login')}>Log In</button>
             </div>
           </Reveal>
           <Reveal className="lp-photo lp-portrait" delay={140}>
-            <img src="/landing/hero.png?v=3" alt="Graduate smiling in academic dress" />
+            <img src="/landing/hero.png?v=4" alt="Graduate smiling in academic dress" />
           </Reveal>
         </div>
       </section>

@@ -231,24 +231,65 @@ function getStoredUsers() {
 }
 
 function AuthShell({ children, mode = 'login', onNavigate }) {
-  return (
-    <div className={`leaf-auth ${mode === 'register' ? 'is-register' : ''}`}>
-      <div className="leaf-auth-bg" aria-hidden="true" />
-      <button type="button" className="leaf-auth-home" onClick={() => onNavigate?.('landing')}>
-        <div className="brand-mark"><GraduationCap size={18} /></div>
-        <strong>PlanWise AI</strong>
-      </button>
-      <div className="leaf-auth-card">
-        <div className="leaf-auth-form">{children}</div>
-        <aside className="leaf-auth-art" aria-hidden="true">
-          <div className="leaf-fronds">
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
-        </aside>
+  if (mode === 'login') {
+    return (
+      <div className="leaf-auth">
+        <div className="leaf-auth-bg" aria-hidden="true" />
+        <button type="button" className="leaf-auth-home" onClick={() => onNavigate?.('landing')}>
+          <div className="brand-mark"><GraduationCap size={18} /></div>
+          <strong>PlanWise AI</strong>
+        </button>
+        <div className="leaf-auth-card">
+          <div className="leaf-auth-form">{children}</div>
+          <aside className="leaf-auth-art" aria-hidden="true">
+            <div className="leaf-wave" />
+            <div className="leaf-fronds">
+              <svg viewBox="0 0 420 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M290 40c-18 52-14 98 8 148 24 54 18 98-10 148-16-42-8-84 14-128 20-40 18-96-12-168Z" fill="#9fbfab" />
+                <path d="M340 70c-8 64 8 118 42 172 28 44 24 98-4 150-28-56-18-112 8-164 22-44 8-98-46-158Z" fill="#6f9880" />
+                <path d="M250 120c8 58-4 108-34 162-24 44-20 92 4 138 36-52 40-108 18-164-18-46-8-90 12-136Z" fill="#3f7260" />
+                <path d="M380 160c-22 48-10 96 18 150 22 42 10 88-20 132 40-40 54-96 34-152-16-46-10-90-32-130Z" fill="#245647" />
+                <path d="M300 240c-30 40-34 90-18 148 12 44-2 86-34 122 54-28 84-78 78-140-4-48 4-90-26-130Z" fill="#16382f" />
+                <path d="M220 280c22 36 18 82-6 128-18 34-10 72 14 108 8-50 24-90 42-128 16-34 8-72-50-108Z" fill="#8fb39a" />
+                <ellipse cx="318" cy="210" rx="34" ry="78" fill="#d2e4d6" opacity="0.55" transform="rotate(28 318 210)" />
+              </svg>
+            </div>
+          </aside>
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="auth-page">
+      <section className="auth-visual">
+        <button type="button" className="auth-brand" onClick={() => onNavigate?.('landing')}>
+          <div className="brand-mark"><GraduationCap size={21} /></div>
+          <strong>PlanWise AI</strong>
+        </button>
+        <div className="auth-visual-copy">
+          <span className="section-kicker">PLAN · TEACH · EMPOWER</span>
+          <h1>Plan smarter.<br /><em>Teach better.</em></h1>
+          <p>Your intelligent teaching companion for planning lessons, managing courses and tracking academic progress.</p>
+        </div>
+        <div className="workspace-scene" aria-hidden="true">
+          <div className="scene-glow" />
+          <div className="scene-books"><BookOpen size={64} /></div>
+          <div className="scene-laptop">
+            <div className="scene-screen">
+              <div className="scene-screen-top"><span /><span /><span /></div>
+              <strong>Lesson plan</strong><i /><i /><i /><b>✓ Objectives ready</b>
+            </div>
+            <div className="scene-base" />
+          </div>
+          <div className="scene-calendar"><CalendarDays size={18} /><strong>Week 04</strong><span>Teaching rhythm</span></div>
+        </div>
+        <div className="auth-visual-footer">Built for the people who make learning happen.</div>
+      </section>
+      <main className="auth-panel">
+        <div className="auth-panel-inner">{children}</div>
+        <div className="auth-panel-footer">{mode === 'register' ? 'PlanWise AI educator workspace' : 'Secure workspace access'} <span>•</span> {new Date().getFullYear()}</div>
+      </main>
     </div>
   );
 }
@@ -266,17 +307,30 @@ function LoginPage({ onLogin, onNavigate }) {
 
 function passwordChecks(password) { return { length: password.length >= 8, number: /\d/.test(password), upper: /[A-Z]/.test(password), lower: /[a-z]/.test(password) }; }
 
+function passwordFeedback(password) {
+  if (!password) return '';
+  const missing = [];
+  if (password.length < 8) missing.push('at least 8 characters');
+  if (!/\d/.test(password)) missing.push('a number');
+  if (!/[A-Z]/.test(password)) missing.push('an uppercase letter');
+  if (!/[a-z]/.test(password)) missing.push('a lowercase letter');
+  if (!missing.length) return 'Password looks good.';
+  if (missing.length === 1) return `Still needs ${missing[0]}.`;
+  if (missing.length === 2) return `Still needs ${missing[0]} and ${missing[1]}.`;
+  return `Still needs ${missing.slice(0, -1).join(', ')}, and ${missing[missing.length - 1]}.`;
+}
+
 function RegisterPage({ onRegister, onNavigate }) {
-  const [fields, setFields] = useState({ name: '', email: '', password: '', confirm: '', role: '', otherRole: '', institution: '', department: '' }); const [terms, setTerms] = useState(false); const [error, setError] = useState(''); const [loading, setLoading] = useState(false); const checks = passwordChecks(fields.password); const validPassword = Object.values(checks).every(Boolean); const role = fields.role === 'Other' ? fields.otherRole.trim() : fields.role;
+  const [fields, setFields] = useState({ name: '', email: '', password: '', confirm: '', role: '', otherRole: '', institution: '', department: '' }); const [terms, setTerms] = useState(false); const [error, setError] = useState(''); const [loading, setLoading] = useState(false); const checks = passwordChecks(fields.password); const validPassword = Object.values(checks).every(Boolean); const role = fields.role === 'Other' ? fields.otherRole.trim() : fields.role; const passwordHint = passwordFeedback(fields.password);
   function update(field, value) { setFields((current) => ({ ...current, [field]: value })); }
   async function submit(event) { event.preventDefault(); setError(''); if (!fields.name.trim() || !fields.email.trim() || !fields.password || !fields.confirm || !fields.role || !fields.institution.trim() || !fields.department.trim()) { setError('Please complete all required fields.'); return; } if (fields.role === 'Other' && !fields.otherRole.trim()) { setError('Please specify your role.'); return; } if (!validPassword) { setError('Choose a stronger password that meets all requirements.'); return; } if (fields.password !== fields.confirm) { setError('Passwords do not match.'); return; } if (!terms) { setError('Please agree to the Terms of Service and Privacy Policy.'); return; } const users = getStoredUsers(); if (users.some((user) => user.email.toLowerCase() === fields.email.trim().toLowerCase())) { setError('An account with this email already exists.'); return; } setLoading(true); const passwordHash = await hashPassword(fields.password); const user = { id: makeId('user'), name: fields.name.trim(), email: fields.email.trim(), role: role || 'Lecturer', institution: fields.institution.trim(), department: fields.department.trim(), phone: '', avatar: '', memberSince: new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' }), passwordHash }; localStorage.setItem('planwiseUsers', JSON.stringify([...users, user])); await new Promise((resolve) => setTimeout(resolve, 350)); onRegister(user); }
-  return <AuthShell mode="register" onNavigate={onNavigate}><div className="auth-form-wrap register-wrap"><div className="mobile-auth-brand"><div className="brand-mark"><GraduationCap size={20} /></div><strong>PlanWise AI</strong></div><span className="section-kicker">NEW EDUCATOR ACCOUNT</span><h2>Create your PlanWise AI account</h2><p className="auth-subtitle">Set up your teaching workspace in a few simple steps.</p><form className="auth-form register-form" onSubmit={submit}><div className="auth-form-grid"><label className="auth-field"><span>Full Name</span><div className="auth-input"><UserRound size={16} /><input value={fields.name} onChange={(event) => update('name', event.target.value)} placeholder="Your full name" autoComplete="name" /></div></label><label className="auth-field"><span>Email Address</span><div className="auth-input"><Mail size={16} /><input type="email" value={fields.email} onChange={(event) => update('email', event.target.value)} placeholder="you@institution.edu" autoComplete="email" /></div></label></div><PasswordField label="Password" value={fields.password} onChange={(value) => update('password', value)} autoComplete="new-password" /><div className="password-requirements">{[['length','At least 8 characters'],['number','Contains a number'],['upper','Contains an uppercase letter'],['lower','Contains a lowercase letter']].map(([key, label]) => <span className={checks[key] ? 'valid' : ''} key={key}>{checks[key] ? <Check size={13} /> : <Circle size={13} />} {label}</span>)}</div><div className="strength-meter"><span>Password strength</span><strong className={Object.values(checks).filter(Boolean).length >= 4 ? 'strong' : Object.values(checks).filter(Boolean).length >= 2 ? 'medium' : 'weak'}>{Object.values(checks).filter(Boolean).length >= 4 ? 'Strong' : Object.values(checks).filter(Boolean).length >= 2 ? 'Medium' : 'Weak'}</strong></div><PasswordField label="Confirm Password" value={fields.confirm} onChange={(value) => update('confirm', value)} autoComplete="new-password" /><div className="role-section"><span className="role-label">Your Role</span><div className="role-grid">{roleOptions.map(({ value, icon: Icon, description }) => <button type="button" className={`role-option ${fields.role === value ? 'selected' : ''}`} key={value} onClick={() => update('role', value)}><Icon size={17} /><span><strong>{value}</strong><small>{description}</small></span></button>)}</div>{fields.role === 'Other' && <label className="auth-field"><span>Specify your role</span><div className="auth-input"><BriefcaseBusiness size={16} /><input value={fields.otherRole} onChange={(event) => update('otherRole', event.target.value)} placeholder="e.g. Curriculum Specialist" /></div></label>}</div><div className="auth-form-grid"><label className="auth-field"><span>Institution</span><div className="auth-input"><GraduationCap size={16} /><input value={fields.institution} onChange={(event) => update('institution', event.target.value)} placeholder="Enter your school, college or university" /></div></label><label className="auth-field"><span>Department</span><div className="auth-input"><BookOpen size={16} /><input value={fields.department} onChange={(event) => update('department', event.target.value)} placeholder="e.g. Information Technology" /></div></label></div>{error && <div className="auth-error">{error}</div>}<label className="terms-check"><input type="checkbox" checked={terms} onChange={(event) => setTerms(event.target.checked)} /> <span>I agree to the <button type="button">Terms of Service</button> and <button type="button">Privacy Policy</button>.</span></label><button className="auth-submit" disabled={loading || !terms}>{loading ? 'Creating account...' : 'Create Account'} <ArrowRight size={16} /></button></form><p className="auth-switch">Already have an account? <button onClick={() => onNavigate('login')}>Sign In</button></p></div></AuthShell>;
+  return <AuthShell mode="register" onNavigate={onNavigate}><div className="auth-form-wrap register-wrap"><div className="mobile-auth-brand"><div className="brand-mark"><GraduationCap size={20} /></div><strong>PlanWise AI</strong></div><span className="section-kicker">NEW EDUCATOR ACCOUNT</span><h2>Create your PlanWise AI account</h2><p className="auth-subtitle">Set up your teaching workspace in a few simple steps.</p><form className="auth-form register-form" onSubmit={submit}><div className="auth-form-grid"><label className="auth-field"><span>Full Name</span><div className="auth-input"><UserRound size={16} /><input value={fields.name} onChange={(event) => update('name', event.target.value)} placeholder="Your full name" autoComplete="name" /></div></label><label className="auth-field"><span>Email Address</span><div className="auth-input"><Mail size={16} /><input type="email" value={fields.email} onChange={(event) => update('email', event.target.value)} placeholder="you@institution.edu" autoComplete="email" /></div></label></div><PasswordField label="Password" value={fields.password} onChange={(value) => update('password', value)} autoComplete="new-password" />{passwordHint && <p className={`password-hint ${validPassword ? 'valid' : ''}`}>{passwordHint}</p>}<PasswordField label="Confirm Password" value={fields.confirm} onChange={(value) => update('confirm', value)} autoComplete="new-password" /><div className="role-section"><span className="role-label">Your Role</span><div className="role-grid">{roleOptions.map(({ value, icon: Icon, description }) => <button type="button" className={`role-option ${fields.role === value ? 'selected' : ''}`} key={value} onClick={() => update('role', value)}><Icon size={17} /><span><strong>{value}</strong><small>{description}</small></span></button>)}</div>{fields.role === 'Other' && <label className="auth-field"><span>Specify your role</span><div className="auth-input"><BriefcaseBusiness size={16} /><input value={fields.otherRole} onChange={(event) => update('otherRole', event.target.value)} placeholder="e.g. Curriculum Specialist" /></div></label>}</div><div className="auth-form-grid"><label className="auth-field"><span>Institution</span><div className="auth-input"><GraduationCap size={16} /><input value={fields.institution} onChange={(event) => update('institution', event.target.value)} placeholder="Enter your school, college or university" /></div></label><label className="auth-field"><span>Department</span><div className="auth-input"><BookOpen size={16} /><input value={fields.department} onChange={(event) => update('department', event.target.value)} placeholder="e.g. Information Technology" /></div></label></div>{error && <div className="auth-error">{error}</div>}<label className="terms-check"><input type="checkbox" checked={terms} onChange={(event) => setTerms(event.target.checked)} /> <span>I agree to the <button type="button">Terms of Service</button> and <button type="button">Privacy Policy</button>.</span></label><button className="auth-submit" disabled={loading || !terms}>{loading ? 'Creating account...' : 'Create Account'} <ArrowRight size={16} /></button></form><p className="auth-switch">Already have an account? <button onClick={() => onNavigate('login')}>Sign In</button></p></div></AuthShell>;
 }
 
 function ForgotPasswordPage({ onNavigate }) {
   const [email, setEmail] = useState(''); const [sent, setSent] = useState(false); const [error, setError] = useState('');
   function submit(event) { event.preventDefault(); if (!/^\S+@\S+\.\S+$/.test(email)) { setError('Enter a valid email address.'); return; } setError(''); setSent(true); }
-  return <AuthShell onNavigate={onNavigate}><div className="auth-form-wrap compact-auth"><div className="mobile-auth-brand"><div className="brand-mark"><GraduationCap size={20} /></div><strong>PlanWise AI</strong></div>{sent ? <><div className="success-auth-icon"><Check size={21} /></div><span className="section-kicker">CHECK YOUR INBOX</span><h2>Reset link sent</h2><p className="auth-subtitle">If an account exists for {email}, we've sent instructions to reset your password.</p><button className="auth-submit" onClick={() => onNavigate('login')}>Back to Sign In <ArrowRight size={16} /></button></> : <><span className="section-kicker">ACCOUNT RECOVERY</span><h2>Forgot your password?</h2><p className="auth-subtitle">Enter your email address and we'll help you reset your password.</p><form className="auth-form" onSubmit={submit}><label className="auth-field"><span>Email Address</span><div className="auth-input"><Mail size={16} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@institution.edu" /></div></label>{error && <div className="auth-error">{error}</div>}<button className="auth-submit">Send Reset Link <ArrowRight size={16} /></button></form><button className="auth-back" onClick={() => onNavigate('login')}><ArrowRight size={15} className="back-arrow" /> Back to Sign In</button></>}</div></AuthShell>;
+  return <AuthShell mode="forgot" onNavigate={onNavigate}><div className="auth-form-wrap compact-auth"><div className="mobile-auth-brand"><div className="brand-mark"><GraduationCap size={20} /></div><strong>PlanWise AI</strong></div>{sent ? <><div className="success-auth-icon"><Check size={21} /></div><span className="section-kicker">CHECK YOUR INBOX</span><h2>Reset link sent</h2><p className="auth-subtitle">If an account exists for {email}, we've sent instructions to reset your password.</p><button className="auth-submit" onClick={() => onNavigate('login')}>Back to Sign In <ArrowRight size={16} /></button></> : <><span className="section-kicker">ACCOUNT RECOVERY</span><h2>Forgot your password?</h2><p className="auth-subtitle">Enter your email address and we'll help you reset your password.</p><form className="auth-form" onSubmit={submit}><label className="auth-field"><span>Email Address</span><div className="auth-input"><Mail size={16} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@institution.edu" /></div></label>{error && <div className="auth-error">{error}</div>}<button className="auth-submit">Send Reset Link <ArrowRight size={16} /></button></form><button className="auth-back" onClick={() => onNavigate('login')}><ArrowRight size={15} className="back-arrow" /> Back to Sign In</button></>}</div></AuthShell>;
 }
 
 const api = axios.create({
