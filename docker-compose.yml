@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: planwise-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: planwise
+      POSTGRES_PASSWORD: planwise
+      POSTGRES_DB: planwise
+    ports:
+      - "5432:5432"
+    volumes:
+      - planwise_pg_data:/var/lib/postgresql/data
+
+volumes:
+  planwise_pg_data:

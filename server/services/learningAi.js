@@ -208,7 +208,14 @@ export async function* runLearningTurnStream(args) {
     yield { event: 'done', data: { ...local, reply: full.trim(), provider: status.provider } };
   } catch (error) {
     console.error('Stream AI error:', error.response?.data || error.message);
-    yield { event: 'delta', data: local.reply };
-    yield { event: 'done', data: { ...local, provider: 'local' } };
+    const detail = error.response?.data?.error?.message
+      || error.response?.data?.message
+      || error.message
+      || 'AI request failed';
+    yield {
+      event: 'delta',
+      data: `I could not reach the live AI service (${detail}). Falling back to the local tutor for this reply.\n\n${local.reply}`,
+    };
+    yield { event: 'done', data: { ...local, provider: 'local', llmError: detail } };
   }
 }

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Check, ClipboardCheck, Plus, Trash2, Wand2 } from 'lucide-react';
 import { DIFFICULTY_LEVELS, QUESTION_TYPES, buildAssessmentFromMaterial, suggestCalendarFromAssessment } from '../../shared/learningEngine.js';
+import SectionAiPanel from './SectionAiPanel.jsx';
 
-export default function AssessmentsPage({ assessments, material, difficulty, onSave, onDelete, onSchedule, onOpenAssistant }) {
+export default function AssessmentsPage({ assessments, material, difficulty, onSave, onDelete, onSchedule, onOpenAssistant, user }) {
   const [selectedId, setSelectedId] = useState(assessments[0]?.id || '');
   const [generator, setGenerator] = useState({
     count: 10,
@@ -72,6 +73,7 @@ export default function AssessmentsPage({ assessments, material, difficulty, onS
         <button className="secondary-button" onClick={onOpenAssistant}><Wand2 size={15} /> Open AI Assistant</button>
       </div>
 
+      <div className="assessments-with-ai">
       <div className="assessments-layout">
         <form className="panel-card assessment-builder" onSubmit={generate}>
           <div className="panel-head"><h3>Generate from uploaded material</h3></div>
@@ -115,6 +117,20 @@ export default function AssessmentsPage({ assessments, material, difficulty, onS
             </button>
           )) : <p className="muted-text">No assessments yet.</p>}
         </div>
+      </div>
+
+      <SectionAiPanel
+        user={user}
+        title="Assessment AI"
+        context="assessments"
+        subtitle="Generate questions, adjust difficulty, or improve marking guides."
+        starters={[
+          'Generate multiple-choice ideas',
+          'Create structured questions',
+          'Improve this assessment',
+        ]}
+        systemHint="You help teachers create and improve assessments, quizzes, MCQs, structured questions, difficulty, and marking guides."
+      />
       </div>
 
       {selected && (

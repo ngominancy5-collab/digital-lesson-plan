@@ -1,6 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowRight,
   BookOpen,
   BrainCircuit,
   CalendarDays,
@@ -13,17 +12,35 @@ import {
 } from 'lucide-react';
 import '../landing.css';
 
-const heroHighlights = [
-  { icon: Sparkles, title: 'AI Lesson Plans', text: 'Build structured lessons from your course content.' },
-  { icon: ClipboardCheck, title: 'Smart Assessments', text: 'Generate quizzes and reviews from your materials.' },
-  { icon: BookOpen, title: 'Course Planning', text: 'Keep topics, objectives and activities in one place.' },
-];
-
-const floatCards = [
-  { icon: Sparkles, title: 'AI Lesson Planning', text: 'Create structured lesson plans based on your course content.', offset: 'lp-card-a', from: 'left' },
-  { icon: ClipboardCheck, title: 'Smart Assessments', text: 'Generate quizzes and assessments from your learning materials.', offset: 'lp-card-b', from: 'right' },
-  { icon: FolderKanban, title: 'Digital Organisation', text: 'Keep lessons, topics, materials and activities organised.', offset: 'lp-card-c', from: 'bottom' },
-  { icon: MessageSquareText, title: 'Interactive AI Assistant', text: 'Ask questions, refine plans and generate content through conversation.', offset: 'lp-card-d', from: 'top' },
+const heroFeatures = [
+  {
+    id: 'plan',
+    icon: Sparkles,
+    title: 'AI Lesson Planning',
+    text: 'Create structured lesson plans based on your course content.',
+    enterFrom: 'left',
+  },
+  {
+    id: 'assess',
+    icon: ClipboardCheck,
+    title: 'Smart Assessments',
+    text: 'Generate quizzes and assessments from your learning materials.',
+    enterFrom: 'top',
+  },
+  {
+    id: 'organise',
+    icon: FolderKanban,
+    title: 'Digital Organisation',
+    text: 'Keep lessons, topics, materials and activities organised.',
+    enterFrom: 'bottom',
+  },
+  {
+    id: 'assistant',
+    icon: MessageSquareText,
+    title: 'Interactive AI Assistant',
+    text: 'Ask questions, refine plans and generate content through conversation.',
+    enterFrom: 'right',
+  },
 ];
 
 const storyCards = [
@@ -55,33 +72,6 @@ function Reveal({ as: Tag = 'div', className = '', delay = 0, children }) {
   );
 }
 
-function AssembleCard({ className = '', delay = 0, from = 'left', children }) {
-  const ref = useRef(null);
-
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return undefined;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) {
-        node.classList.add('is-assembled');
-        observer.disconnect();
-      }
-    }, { threshold: 0.2, rootMargin: '0px 0px -6% 0px' });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <article
-      ref={ref}
-      className={`lp-float-card lp-assemble from-${from} ${className}`}
-      style={{ '--lp-delay': `${delay}ms` }}
-    >
-      {children}
-    </article>
-  );
-}
-
 function WaveDivider({ from = '#f7f3eb', to = '#efe6da', flip = false }) {
   return (
     <div className={`lp-wave ${flip ? 'is-flip' : ''}`} aria-hidden="true">
@@ -93,34 +83,95 @@ function WaveDivider({ from = '#f7f3eb', to = '#efe6da', flip = false }) {
   );
 }
 
-export default function LandingPage({ onNavigate }) {
-  const floatRef = useRef(null);
+function FeatureCard({ icon: Icon, title, text, onActivate, className = '', style }) {
+  return (
+    <article className={`lp-float-card lp-orbit-card ${className}`} style={style}>
+      <button type="button" className="lp-orbit-card-hit" onClick={onActivate} aria-label={title}>
+        <span className="lp-card-icon"><Icon size={18} /></span>
+        <h3>{title}</h3>
+        <p>{text}</p>
+      </button>
+    </article>
+  );
+}
 
+/**
+ * Desktop: cards assemble around the hero image, then rotate through 4 stations (train).
+ * Mobile: simplified stacked entrance without continuous orbit.
+ */
+function AnimatedHeroCards({ onActivate }) {
+  const [phase, setPhase] = useState('idle'); // idle → entering → assembled → train
+  const [station, setStation] = useState(0);
+  const reduceMotion = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    [],
+  );
+  const isCompact = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches,
+    [],
+  );
+
+  useEffect(() => {
+    if (reduceMotion) {
+      setPhase('assembled');
+      return undefined;
+    }
+    const enterTimer = window.setTimeout(() => setPhase('entering'), 380);
+    const assembledTimer = window.setTimeout(() => setPhase('assembled'), 2400);
+    const trainTimer = window.setTimeout(() => {
+      if (!isCompact) setPhase('train');
+    }, 3200);
+    return () => {
+      window.clearTimeout(enterTimer);
+      window.clearTimeout(assembledTimer);
+      window.clearTimeout(trainTimer);
+    };
+  }, [reduceMotion, isCompact]);
+
+  useEffect(() => {
+    if (phase !== 'train' || reduceMotion || isCompact) return undefined;
+    const id = window.setInterval(() => {
+      setStation((current) => (current + 1) % heroFeatures.length);
+    }, 3400);
+    return () => window.clearInterval(id);
+  }, [phase, reduceMotion, isCompact]);
+
+  return (
+    <div
+      className={`lp-orbit ${phase === 'train' ? 'is-train' : ''} ${phase === 'entering' || phase === 'assembled' || phase === 'train' ? 'is-live' : ''}`}
+    >
+      {heroFeatures.map((card, index) => {
+        const slot = (index + station) % heroFeatures.length;
+        const Icon = card.icon;
+        return (
+          <FeatureCard
+            key={card.id}
+            icon={Icon}
+            title={card.title}
+            text={card.text}
+            onActivate={onActivate}
+            className={[
+              `lp-orbit-slot-${slot}`,
+              `from-${card.enterFrom}`,
+              phase === 'idle' ? 'is-waiting' : '',
+              phase !== 'idle' ? 'is-assembled' : '',
+              phase === 'train' ? 'is-travelling' : '',
+            ].filter(Boolean).join(' ')}
+            style={{ '--lp-delay': `${index * 220}ms` }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+export default function LandingPage({ onNavigate }) {
   useEffect(() => {
     document.title = 'PlanWise AI — Digital Lesson Plan System';
     document.body.classList.add('lp-lock');
     return () => {
       document.body.classList.remove('lp-lock');
       document.title = 'PlanWise AI';
-    };
-  }, []);
-
-  useEffect(() => {
-    const cluster = floatRef.current;
-    let frame = 0;
-    function onScroll() {
-      if (frame) return;
-      frame = window.requestAnimationFrame(() => {
-        const y = window.scrollY;
-        if (cluster) cluster.style.transform = `translate3d(0, ${y * -0.03}px, 0)`;
-        frame = 0;
-      });
-    }
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      if (frame) window.cancelAnimationFrame(frame);
     };
   }, []);
 
@@ -151,20 +202,10 @@ export default function LandingPage({ onNavigate }) {
               Get Started
             </button>
           </div>
-          <div className="lp-hero-portrait">
-            <img src="/landing/hero.png?v=4" alt="Graduate smiling in academic dress" />
+
+          <div className="lp-hero-visual" aria-hidden="false">
+            <AnimatedHeroCards onActivate={() => onNavigate('register')} />
           </div>
-        </div>
-        <div className="lp-hero-features">
-          {heroHighlights.map(({ icon: Icon, title, text }) => (
-            <button type="button" className="lp-feature-chip" key={title} onClick={() => onNavigate('register')}>
-              <Icon size={18} />
-              <div>
-                <strong>{title}</strong>
-                <span>{text}</span>
-              </div>
-            </button>
-          ))}
         </div>
         <WaveDivider from="#f7f3eb" to="#efe6da" />
       </section>
@@ -198,13 +239,15 @@ export default function LandingPage({ onNavigate }) {
               chats and spreadsheets.
             </p>
           </Reveal>
-          <div className="lp-float-cluster" ref={floatRef}>
-            {floatCards.map(({ icon: Icon, title, text, offset, from }, index) => (
-              <AssembleCard className={offset} delay={index * 160} from={from} key={title}>
-                <span className="lp-card-icon"><Icon size={18} /></span>
-                <h3>{title}</h3>
-                <p>{text}</p>
-              </AssembleCard>
+          <div className="lp-feature-static">
+            {heroFeatures.map(({ icon: Icon, title, text }) => (
+              <Reveal className="lp-float-card lp-static-card" key={title}>
+                <button type="button" className="lp-orbit-card-hit" onClick={() => onNavigate('register')}>
+                  <span className="lp-card-icon"><Icon size={18} /></span>
+                  <h3>{title}</h3>
+                  <p>{text}</p>
+                </button>
+              </Reveal>
             ))}
           </div>
         </div>

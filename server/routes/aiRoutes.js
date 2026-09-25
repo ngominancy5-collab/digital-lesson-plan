@@ -1,9 +1,10 @@
 import express from 'express';
 import { parseUploadedDocument } from '../services/documentParser.js';
 import { analyzeLearningMaterial, runLearningTurn, runLearningTurnStream } from '../services/learningAi.js';
-import { getLlmStatus } from '../services/llm.js';
+import { getLlmStatus, completeJson, completeText } from '../services/llm.js';
 import { getConversation, getProgress, listConversations, saveConversation, saveProgress } from '../store/aiStore.js';
 import { makeId } from '../../shared/learningEngine.js';
+
 
 const router = express.Router();
 
@@ -211,6 +212,134 @@ router.post('/chat/stream', async (req, res) => {
   } catch {
     send('error', { error: 'The AI assistant could not complete that request. Please try again.' });
     res.end();
+  }
+});
+
+router.post('/mark-paper', async (req, res) => {
+  try {
+    const {
+      markingKeyText = '',
+      studentPaperText = '',
+      subject = '',
+      studentLabel = 'Student paper',
+      userId,
+    } = req.body || {};
+    if (!userId) return res.status(401).json({ error: 'Sign in to mark papers.' });
+    if (!String(markingKeyText).trim() || !String(studentPaperText).trim()) {
+      return res.status(400).json({ error: 'Upload both a marking key and a student paper first.' });
+    }
+
+    const system = `You are an education marking assistant for lecturers and school teachers.
+Return ONLY valid JSON with this shape:
+{
+  "questions": [
+    {
+      "number": "1",
+      "studentAnswer": "...",
+      "expectedAnswer": "...",
+      "marksAvailable": 5,
+      "marksAwarded": 4,
+      "status": "correct" | "partial" | "incorrect",
+      "feedback": "short note"
+    }
+  ],
+  "aiFeedback": "overall feedback paragraph",
+  "subject": "subject if known"
+}
+Be fair. Prefer partial credit when the student is close. Never invent marksAvailable beyond what the marking key suggests.`;
+
+    const userPrompt = `Subject: ${subject || 'Not specified'}
+Student label: ${studentLabel}
+
+MARKING KEY / SCHEME:
+${String(markingKeyText).slice(0, 10000)}
+
+STUDENT PAPER ANSWERS:
+${String(studentPaperText).slice(0, 10000)}
+
+Mark the paper against the key.`;
+
+    const { provider, data } = await completeJson(system, userPrompt);
+    let questions = Array.isArray(data?.questions) ? data.questions : [];
+
+    if (!questions.length) {
+      // Local heuristic fallback when LLM unavailable
+      const keyLines = String(markingKeyText).split(/\n+/).map((line) => line.trim()).filter(Boolean).slice(0, 12);
+      questions = keyLines.map((line, index) => {
+        const marksAvailable = Number((line.match(/(\d+)\s*marks?/i) || [])[1] || 5);
+        const expectedAnswer = line.replace(/^\d+[\).:-]?\s*/, '').slice(0, 180);
+        const hay = String(studentPaperText).toLowerCase();
+        const needle = expectedAnswer.toLowerCase().slice(0, 40);
+        const hit = needle && hay.includes(needle.slice(0, 18));
+        const marksAwarded = hit ? marksAvailable : Math.round(marksAvailable * 0.4);
+        return {
+          number: String(index + 1),
+          studentAnswer: hit ? expectedAnswer : 'Answer detected with limited match — review manually.',
+          expectedAnswer,
+          marksAvailable,
+          marksAwarded,
+          status: hit ? 'correct' : 'partial',
+          feedback: hit ? 'Matches the marking key closely.' : 'Needs teacher review.',
+        };
+      });
+    }
+
+    const normalized = questions.map((item, index) => {
+      const marksAvailable = Math.max(0, Number(item.marksAvailable) || 0);
+      const marksAwarded = Math.max(0, Math.min(marksAvailable, Number(item.marksAwarded) || 0));
+      let status = item.status;
+      if (!status) {
+        if (marksAwarded >= marksAvailable) status = 'correct';
+        else if (marksAwarded > 0) status = 'partial';
+        else status = 'incorrect';
+      }
+      return {
+        id: makeId('q'),
+        number: String(item.number || index + 1),
+        studentAnswer: String(item.studentAnswer || ''),
+        expectedAnswer: String(item.expectedAnswer || ''),
+        marksAvailable,
+        marksAwarded,
+        status,
+        feedback: String(item.feedback || ''),
+      };
+    });
+
+    const totalMarks = normalized.reduce((sum, item) => sum + item.marksAvailable, 0);
+    const obtained = normalized.reduce((sum, item) => sum + item.marksAwarded, 0);
+    const percentage = totalMarks ? Math.round((obtained / totalMarks) * 1000) / 10 : 0;
+    let aiFeedback = String(data?.aiFeedback || '').trim();
+    if (!aiFeedback) {
+      try {
+        const text = await completeText(
+          'You are a supportive teaching coach. Write 2-3 sentences of marking feedback.',
+          `Subject: ${subject || data?.subject || 'General'}. Score ${obtained}/${totalMarks} (${percentage}%). Summarize strengths and improvement areas.`,
+        );
+        aiFeedback = text.content || 'Review each question carefully before finalising marks.';
+      } catch {
+        aiFeedback = 'Review each question carefully before finalising marks.';
+      }
+    }
+
+    return res.json({
+      id: makeId('marking'),
+      provider: provider || 'local',
+      subject: data?.subject || subject || 'General',
+      studentLabel,
+      questions: normalized,
+      totalMarks,
+      obtained,
+      percentage,
+      correct: normalized.filter((item) => item.status === 'correct').length,
+      partial: normalized.filter((item) => item.status === 'partial').length,
+      incorrect: normalized.filter((item) => item.status === 'incorrect').length,
+      aiFeedback,
+      status: 'review',
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('mark-paper error', error.response?.data || error.message);
+    return res.status(500).json({ error: 'Unable to mark this paper right now. Please try again.' });
   }
 });
 

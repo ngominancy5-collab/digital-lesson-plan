@@ -129,24 +129,41 @@
   justify-content: flex-end;
   overflow: hidden;
   color: var(--lp-ink);
+  background-color: #efe6da;
+  background-image:
+    linear-gradient(100deg, rgba(255, 253, 249, 0.88) 0%, rgba(247, 243, 235, 0.62) 36%, rgba(255, 253, 249, 0.18) 58%, rgba(255, 253, 249, 0.08) 100%),
+    url('/landing/hero-desk.jpg?v=2');
+  background-size: cover;
+  background-position: 72% center;
+  background-repeat: no-repeat;
+}
+
+.lp-hero-split::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
   background:
-    radial-gradient(circle at 18% 20%, rgba(230, 206, 155, 0.35), transparent 32%),
-    linear-gradient(165deg, #fffdf9 0%, #f7f3eb 48%, #efe6da 100%);
+    radial-gradient(circle at 16% 24%, rgba(255, 253, 249, 0.4), transparent 36%),
+    linear-gradient(180deg, rgba(255, 253, 249, 0.18) 0%, transparent 30%, rgba(48, 42, 39, 0.12) 100%);
 }
 
 .lp-hero-grid {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.95fr);
-  gap: 36px;
+  grid-template-columns: minmax(0, 0.9fr) minmax(340px, 1.15fr);
+  gap: 28px 40px;
   align-items: center;
-  width: min(1120px, calc(100% - 40px));
+  width: min(1180px, calc(100% - 40px));
   margin: 0 auto;
-  padding: 108px 0 28px;
+  padding: 108px 0 48px;
 }
 
 .lp-hero-copy {
+  position: relative;
+  z-index: 4;
   max-width: 560px;
   animation: lp-hero-in 1.2s var(--lp-ease) both;
 }
@@ -200,17 +217,27 @@
   background: #4a3125;
 }
 
+.lp-hero-visual {
+  position: relative;
+  z-index: 2;
+  min-height: 540px;
+  padding: 36px 20px 48px;
+  perspective: 1400px;
+}
+
 .lp-hero-portrait {
   position: relative;
+  z-index: 1;
   overflow: hidden;
+  width: min(100%, 380px);
+  margin: 0 auto;
   border-radius: 28px;
-  min-height: 460px;
-  max-height: 560px;
+  min-height: 420px;
+  max-height: 500px;
   aspect-ratio: 4 / 5;
-  box-shadow:
-    0 24px 48px rgba(92, 61, 46, 0.18),
-    0 4px 0 rgba(255, 253, 249, 0.7) inset;
-  background: #e8ddd1;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
 }
 
 .lp-hero-portrait img {
@@ -221,46 +248,138 @@
   object-position: 48% 12%;
 }
 
-.lp-hero-features {
-  position: relative;
-  z-index: 2;
+.lp-orbit {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  transform-style: preserve-3d;
+}
+
+.lp-orbit-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(220px, 42%);
+  max-width: 220px;
+  aspect-ratio: 1 / 1;
+  margin: 0;
+  pointer-events: auto;
+  transform-style: preserve-3d;
+  will-change: transform, opacity;
+}
+
+.lp-orbit-card-hit {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.lp-orbit-card.is-waiting {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lp-orbit-card.from-left.is-waiting { transform: translate3d(-55vw, -50%, 0) scale(0.86) rotateY(12deg); }
+.lp-orbit-card.from-right.is-waiting { transform: translate3d(40vw, -50%, 0) scale(0.86) rotateY(-12deg); }
+.lp-orbit-card.from-top.is-waiting { transform: translate3d(-50%, -55vh, 0) scale(0.86) rotateX(-10deg); }
+.lp-orbit-card.from-bottom.is-waiting { transform: translate3d(-50%, 45vh, 0) scale(0.86) rotateX(10deg); }
+
+.lp-orbit-card.is-assembled {
+  opacity: 1;
+  transition:
+    opacity 1.05s var(--lp-ease),
+    transform 1.2s var(--lp-ease),
+    box-shadow 0.55s var(--lp-ease),
+    filter 0.55s var(--lp-ease);
+  transition-delay: var(--lp-delay, 0ms);
+}
+
+.lp-orbit-card.is-travelling {
+  transition:
+    transform 1.45s cubic-bezier(0.4, 0.05, 0.2, 1),
+    opacity 0.8s var(--lp-ease),
+    box-shadow 0.8s var(--lp-ease),
+    filter 0.8s var(--lp-ease);
+  transition-delay: 0ms;
+}
+
+/* Four stations around the portrait — transform-only for smooth train motion */
+.lp-orbit.is-live .lp-orbit-card.is-assembled.lp-orbit-slot-0 {
+  z-index: 5;
+  filter: none;
+  transform: translate3d(calc(-50% - 42%), calc(-50% - 38%), 28px) rotate(-3deg);
+  box-shadow:
+    0 22px 40px rgba(48, 42, 39, 0.16),
+    0 1px 0 rgba(255, 253, 249, 0.9) inset;
+}
+
+.lp-orbit.is-live .lp-orbit-card.is-assembled.lp-orbit-slot-1 {
+  z-index: 4;
+  filter: saturate(0.96);
+  transform: translate3d(calc(-50% + 38%), calc(-50% - 42%), 8px) rotate(2.5deg) scale(0.96);
+  box-shadow:
+    0 18px 34px rgba(48, 42, 39, 0.12),
+    0 1px 0 rgba(255, 253, 249, 0.9) inset;
+}
+
+.lp-orbit.is-live .lp-orbit-card.is-assembled.lp-orbit-slot-2 {
+  z-index: 4;
+  filter: saturate(0.94);
+  transform: translate3d(calc(-50% - 40%), calc(-50% + 36%), 4px) rotate(2deg) scale(0.94);
+  box-shadow:
+    0 16px 30px rgba(48, 42, 39, 0.12),
+    0 1px 0 rgba(255, 253, 249, 0.9) inset;
+}
+
+.lp-orbit.is-live .lp-orbit-card.is-assembled.lp-orbit-slot-3 {
+  z-index: 5;
+  filter: none;
+  transform: translate3d(calc(-50% + 36%), calc(-50% + 32%), 22px) rotate(-2deg);
+  box-shadow:
+    0 22px 40px rgba(48, 42, 39, 0.16),
+    0 1px 0 rgba(255, 253, 249, 0.9) inset;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lp-orbit.is-live .lp-orbit-card.is-assembled:hover {
+    z-index: 8;
+    filter: none;
+    transform: translate3d(-50%, calc(-50% - 12px), 36px) scale(1.04) rotate(0deg);
+    box-shadow:
+      0 28px 48px rgba(48, 42, 39, 0.2),
+      0 1px 0 rgba(255, 253, 249, 0.95) inset;
+  }
+}
+
+.lp-feature-static {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  width: min(1120px, calc(100% - 40px));
-  margin: 0 auto 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.lp-static-card {
+  width: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  min-height: 180px;
+}
+
+.lp-hero-features {
+  display: none;
 }
 
 .lp-feature-chip {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 12px;
-  align-items: start;
-  text-align: left;
-  padding: 16px 16px 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(92, 61, 46, 0.1);
-  background: rgba(255, 253, 249, 0.82);
-  color: var(--lp-ink);
-  box-shadow: 0 10px 24px rgba(92, 61, 46, 0.08);
-}
-
-.lp-feature-chip svg {
-  color: var(--lp-gold);
-  margin-top: 2px;
-}
-
-.lp-feature-chip strong {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 0.88rem;
-}
-
-.lp-feature-chip span {
-  display: block;
-  color: var(--lp-muted);
-  font-size: 0.78rem;
-  line-height: 1.4;
+  display: none;
 }
 
 .lp-section {
@@ -616,9 +735,23 @@
   50% { translate: 0 -8px; }
 }
 
+@media (max-width: 1100px) {
+  .lp-hero-visual {
+    min-height: 480px;
+    padding: 28px 12px 40px;
+  }
+
+  .lp-orbit-card {
+    width: min(190px, 40%);
+  }
+
+  .lp-feature-static {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 900px) {
   .lp-hero-grid,
-  .lp-hero-features,
   .lp-split,
   .lp-split-reverse,
   .lp-story-cards {
@@ -626,47 +759,73 @@
   }
 
   .lp-hero-grid {
-    padding-top: 96px;
+    padding: 96px 0 28px;
+    gap: 18px;
   }
 
-  .lp-hero-portrait {
-    min-height: 380px;
-    max-height: 460px;
-    order: -1;
+  .lp-hero-visual {
+    order: 2;
+    min-height: 0;
+    padding: 8px 0 0;
   }
 
-  .lp-hero-portrait img {
-    object-position: 48% 10%;
+  .lp-hero-split {
+    background-position: 65% center;
   }
 
   .lp-hero-split h1 {
     font-size: clamp(2.3rem, 9vw, 3.4rem);
   }
 
-  .lp-float-cluster {
+  .lp-orbit {
+    position: relative;
+    inset: auto;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    justify-content: stretch;
-    gap: 16px;
-    padding: 12px 0;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 8px;
+    perspective: none;
   }
 
-  .lp-float-card,
-  .lp-card-a,
-  .lp-card-b,
-  .lp-card-c,
-  .lp-card-d {
-    max-width: none;
+  .lp-orbit-card,
+  .lp-orbit-card.is-assembled,
+  .lp-orbit-card.is-travelling,
+  .lp-orbit.is-live .lp-orbit-card.is-assembled.lp-orbit-slot-0,
+  .lp-orbit.is-live .lp-orbit-card.is-assembled.lp-orbit-slot-1,
+  .lp-orbit.is-live .lp-orbit-card.is-assembled.lp-orbit-slot-2,
+  .lp-orbit.is-live .lp-orbit-card.is-assembled.lp-orbit-slot-3 {
+    position: relative;
+    inset: auto;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
     width: 100%;
-    margin: 0 !important;
-    justify-self: stretch;
+    max-width: none;
+    aspect-ratio: auto;
+    min-height: 0;
+    transform: none !important;
+    filter: none;
+    z-index: 1;
   }
 
-  .lp-assemble.from-left,
-  .lp-assemble.from-right,
-  .lp-assemble.from-top,
-  .lp-assemble.from-bottom {
-    transform: translate3d(0, 36px, 0) scale(0.94);
+  .lp-orbit-card.from-left.is-waiting,
+  .lp-orbit-card.from-right.is-waiting,
+  .lp-orbit-card.from-top.is-waiting,
+  .lp-orbit-card.from-bottom.is-waiting {
+    transform: translate3d(0, 28px, 0) scale(0.96) !important;
+  }
+
+  .lp-orbit-card.is-assembled {
+    opacity: 1;
+  }
+
+  .lp-feature-static {
+    grid-template-columns: 1fr;
+  }
+
+  .lp-static-card {
+    min-height: 0;
   }
 
   .lp-photo,
@@ -692,6 +851,28 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .lp-orbit-card,
+  .lp-orbit-card.is-assembled,
+  .lp-orbit-card.is-travelling,
+  .lp-hero-copy,
+  .lp-hero-portrait,
+  .lp-reveal,
+  .lp-photo.is-visible img,
+  .lp-float-card,
+  .lp-assemble {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  .lp-orbit-card.is-waiting {
+    opacity: 1 !important;
+    transform: translate3d(-50%, -50%, 0) !important;
+  }
+}
+
 @media (max-width: 640px) {
   .lp-nav {
     min-height: 62px;
@@ -704,17 +885,12 @@
   }
 
   .lp-hero-grid,
-  .lp-hero-features,
   .lp-wrap {
     width: min(1120px, calc(100% - 28px));
   }
 
   .lp-hero-copy {
     max-width: none;
-  }
-
-  .lp-float-cluster {
-    grid-template-columns: 1fr;
   }
 
   .lp-finale-actions {
@@ -724,20 +900,5 @@
   .lp-footer {
     flex-direction: column;
     padding: 16px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lp-hero-copy,
-  .lp-reveal,
-  .lp-photo.is-visible img,
-  .lp-float-card,
-  .lp-hero-media,
-  .lp-assemble {
-    animation: none !important;
-    transition: none !important;
-    opacity: 1 !important;
-    transform: none !important;
-    pointer-events: auto !important;
   }
 }

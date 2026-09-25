@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { CalendarDays, Clock3, Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import { makeId } from '../../shared/learningEngine.js';
+import SectionAiPanel from './SectionAiPanel.jsx';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const EVENT_TYPES = ['lesson', 'assessment', 'quiz', 'assignment', 'exam', 'revision', 'event'];
@@ -34,7 +35,7 @@ function emptyDraft(date = toDateKey(new Date())) {
   };
 }
 
-export default function CalendarPage({ events, onChange }) {
+export default function CalendarPage({ events, onChange, user }) {
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [editing, setEditing] = useState(null);
   const [selectedDate, setSelectedDate] = useState(toDateKey(new Date()));
@@ -110,6 +111,7 @@ export default function CalendarPage({ events, onChange }) {
         </div>
       ) : null}
 
+      <div className="calendar-with-ai">
       <div className="calendar-layout">
         <div className="panel-card calendar-card">
           <div className="panel-head">
@@ -164,6 +166,20 @@ export default function CalendarPage({ events, onChange }) {
             </article>
           )) : <p className="muted-text">No events on this day. Add one, or approve an AI suggestion.</p>}
         </aside>
+      </div>
+
+      <SectionAiPanel
+        user={user}
+        title="Calendar AI"
+        context="calendar"
+        subtitle="Ask about this week, organising lessons, or adding events."
+        starters={[
+          'What do I have scheduled this week?',
+          'Help me organise my lessons.',
+          'Suggest a lesson for tomorrow.',
+        ]}
+        systemHint={`You help teachers with their teaching calendar. Selected date: ${selectedDate}. Upcoming event count: ${events.length}. Guide them to add/edit events and organise lessons.`}
+      />
       </div>
 
       {editing && (

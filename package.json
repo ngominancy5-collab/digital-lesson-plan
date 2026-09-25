@@ -6,20 +6,19 @@
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "start": "npm run dev",
-    "server": "node server/index.js",
+    "server": "npm --prefix backend run start",
+    "server:dev": "npm --prefix backend run dev",
     "client": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "db:push": "npm --prefix backend run db:push",
+    "db:generate": "npm --prefix backend run db:generate",
+    "db:seed": "npm --prefix backend run db:seed",
+    "postinstall": "npm --prefix backend install"
   },
   "dependencies": {
     "axios": "^1.7.7",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.21.1",
-    "jszip": "^3.10.1",
     "lucide-react": "^0.469.0",
-    "mysql2": "^3.4.1",
-    "pdf-parse": "^2.4.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0"

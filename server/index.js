@@ -34,5 +34,12 @@ if (existsSync(distPath)) {
 }
 
 app.listen(port, () => {
+  const llm = getLlmStatus();
   console.log(`PlanWise AI server running on http://localhost:${port}`);
+  if (llm.configured) {
+    console.log(`LLM connected: ${llm.label}`);
+  } else {
+    console.log('LLM not connected — using local tutor fallback.');
+    console.log('Add GEMINI_API_KEY or AI_API_KEY (OpenAI) to .env, then restart the server.');
+  }
 });

@@ -311,6 +311,33 @@
     ],
     "user-1789542571318-eznsi6": [
       {
+        "id": "convo-1789558439947-n899yy",
+        "title": "hey",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hey",
+            "time": "2026-09-16T11:33:59.947Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Hello LIAH — of course I can help. What subject are you studying today?",
+            "time": "2026-09-16T11:33:59.947Z"
+          }
+        ],
+        "session": {
+          "mode": "tutor",
+          "difficulty": "Intermediate",
+          "topics": [],
+          "subject": "",
+          "materialName": ""
+        },
+        "materialName": "",
+        "createdAt": "2026-09-16T11:33:59.947Z",
+        "userId": "user-1789542571318-eznsi6",
+        "updatedAt": "2026-09-16T11:33:59.949Z"
+      },
+      {
         "id": "convo-1789556043435-c4m2hf",
         "title": "class",
         "messages": [
@@ -489,6 +516,202 @@
         "createdAt": "2026-09-16T09:01:33.949Z",
         "userId": "test-user",
         "updatedAt": "2026-09-16T09:01:33.950Z"
+      }
+    ],
+    "user-1789719450978-csuahh": [
+      {
+        "id": "convo-1790098183571-pcu1n1",
+        "title": "i want you to help me writw code in python gener",
+        "messages": [
+          {
+            "role": "user",
+            "content": "can you code?",
+            "time": "2026-09-22T17:29:43.571Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Could you tell me a little more? For example: the subject, whether this is for an exam or class, and whether you want an explanation, practice, or a quiz.",
+            "time": "2026-09-22T17:29:43.571Z"
+          },
+          {
+            "role": "user",
+            "content": "i want you to help me writw code in python generate a code for a simple caluculator",
+            "time": "2026-09-22T17:30:36.623Z"
+          },
+          {
+            "role": "assistant",
+            "content": "I can help with that. Name the subject or topic, or upload notes. Recent message I have is: “can you code?”.",
+            "time": "2026-09-22T17:30:36.623Z"
+          }
+        ],
+        "session": {
+          "mode": "tutor",
+          "difficulty": "Intermediate",
+          "topics": [],
+          "activeSection": "dashboard",
+          "sectionHint": "Help the educator decide what to do next across the workspace.",
+          "materialName": "",
+          "subject": ""
+        },
+        "materialName": "",
+        "createdAt": "2026-09-22T17:29:43.571Z",
+        "userId": "user-1789719450978-csuahh",
+        "updatedAt": "2026-09-22T17:30:36.628Z"
+      },
+      {
+        "id": "convo-1790096002213-zxbopb",
+        "title": "so youre willing to help me set questions for my",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hi",
+            "time": "2026-09-22T16:53:22.212Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Hello nancy - of course I can help. What subject are you studying today?",
+            "time": "2026-09-22T16:53:22.213Z"
+          },
+          {
+            "role": "user",
+            "content": "i need help",
+            "time": "2026-09-22T16:53:42.948Z"
+          },
+          {
+            "role": "assistant",
+            "content": "I'm here, nancy. What do you need help with — a subject, an upcoming exam, an assignment, or a topic you are stuck on?",
+            "time": "2026-09-22T16:53:42.948Z"
+          },
+          {
+            "role": "user",
+            "content": "with a ceratin topc i dont know how to go about it",
+            "time": "2026-09-22T16:54:06.897Z"
+          },
+          {
+            "role": "assistant",
+            "content": "I can help with that. Name the subject or topic, or upload notes. Recent message I have is: “hi i need help”.",
+            "time": "2026-09-22T16:54:06.897Z"
+          },
+          {
+            "role": "user",
+            "content": "so youre willing to help me set questions for my students?",
+            "time": "2026-09-22T16:54:38.014Z"
+          },
+          {
+            "role": "assistant",
+            "content": "I can help with that. Name the subject or topic, or upload notes. Recent message I have is: “hi i need help with a ceratin topc i dont know how to go about it”.",
+            "time": "2026-09-22T16:54:38.014Z"
+          }
+        ],
+        "session": {
+          "mode": "tutor",
+          "difficulty": "Intermediate",
+          "topics": [],
+          "activeSection": "dashboard",
+          "sectionHint": "Help the educator decide what to do next across the workspace.",
+          "subject": "",
+          "materialName": ""
+        },
+        "materialName": "",
+        "createdAt": "2026-09-22T16:53:22.213Z",
+        "userId": "user-1789719450978-csuahh",
+        "updatedAt": "2026-09-22T16:54:38.020Z"
+      },
+      {
+        "id": "convo-1789803096451-yu5wps",
+        "title": "i need to prepare a quiz for the stuents of mine",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hi",
+            "time": "2026-09-19T07:31:36.450Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Hello nancy - of course I can help. What subject are you studying today?",
+            "time": "2026-09-19T07:31:36.450Z"
+          },
+          {
+            "role": "user",
+            "content": "i need to prepare a quiz for the stuents of mine o the topic operating systems",
+            "time": "2026-09-19T07:32:21.440Z"
+          },
+          {
+            "role": "assistant",
+            "content": "I can help with that. Name the subject or topic, or upload notes. Recent message I have is: “hi”.",
+            "time": "2026-09-19T07:32:21.440Z"
+          }
+        ],
+        "session": {
+          "mode": "tutor",
+          "difficulty": "Intermediate",
+          "topics": [
+            "operating systems"
+          ],
+          "subject": "",
+          "materialName": ""
+        },
+        "materialName": "",
+        "createdAt": "2026-09-19T07:31:36.451Z",
+        "userId": "user-1789719450978-csuahh",
+        "updatedAt": "2026-09-19T07:32:21.445Z"
+      },
+      {
+        "id": "convo-1789719603419-m7nxbu",
+        "title": "math",
+        "messages": [
+          {
+            "role": "user",
+            "content": "how are you",
+            "time": "2026-09-18T08:20:03.419Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Could you tell me a little more? For example: the subject, whether this is for an exam or class, and whether you want an explanation, practice, or a quiz.",
+            "time": "2026-09-18T08:20:03.419Z"
+          },
+          {
+            "role": "user",
+            "content": "about what",
+            "time": "2026-09-18T08:20:13.662Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Could you tell me a little more? For example: the subject, whether this is for an exam or class, and whether you want an explanation, practice, or a quiz.",
+            "time": "2026-09-18T08:20:13.662Z"
+          },
+          {
+            "role": "user",
+            "content": "hi",
+            "time": "2026-09-18T08:20:30.711Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Hello nancy - of course I can help. What subject are you studying today?",
+            "time": "2026-09-18T08:20:30.711Z"
+          },
+          {
+            "role": "user",
+            "content": "math",
+            "time": "2026-09-18T08:20:42.697Z"
+          },
+          {
+            "role": "assistant",
+            "content": "Could you tell me a little more? For example: the subject, whether this is for an exam or class, and whether you want an explanation, practice, or a quiz.",
+            "time": "2026-09-18T08:20:42.697Z"
+          }
+        ],
+        "session": {
+          "mode": "tutor",
+          "difficulty": "Intermediate",
+          "topics": [],
+          "subject": "",
+          "materialName": ""
+        },
+        "materialName": "",
+        "createdAt": "2026-09-18T08:20:03.419Z",
+        "userId": "user-1789719450978-csuahh",
+        "updatedAt": "2026-09-18T08:20:42.700Z"
       }
     ]
   },

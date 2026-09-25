@@ -1,0 +1,11 @@
+-- Initial schema is managed by Prisma (`npx prisma db push` or `prisma migrate`).
+-- This file documents the relational model for deployers.
+
+-- users, user_profiles, password_reset_tokens
+-- documents
+-- courses
+-- lesson_plans
+-- quizzes, quiz_questions, quiz_options
+-- assessments
+-- calendar_events
+-- ai_conversations, ai_messages

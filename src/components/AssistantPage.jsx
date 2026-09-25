@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { ACCEPT_ATTR, ACCEPTED_EXTENSIONS, extractLocalDocument, fileExtension, fileToBase64 } from '../lib/documentExtractor.js';
+import { getToken } from '../services/api.js';
 import {
   DIFFICULTY_LEVELS,
   fallbackAnalyze,
@@ -33,6 +34,11 @@ import { converse, LEARNING_MODES } from '../../shared/tutorEngine.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 const api = axios.create({ baseURL: API_BASE });
+api.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
 
 function RichText({ text }) {
   const source = String(text || '');
@@ -157,6 +163,7 @@ export default function AssistantPage({
   const threadRef = useRef(null);
   const replaceRef = useRef(null);
   const abortRef = useRef(null);
+  const bootPromptRef = useRef(false);
 
   useEffect(() => {
     api.get('/ai/status')
@@ -165,32 +172,34 @@ export default function AssistantPage({
   }, []);
 
   useEffect(() => {
+    if (bootPromptRef.current) return;
+    const prompt = sessionStorage.getItem('planwiseQuickPrompt');
+    if (!prompt) return;
+    bootPromptRef.current = true;
+    sessionStorage.removeItem('planwiseQuickPrompt');
+    setDraft(prompt);
+  }, []);
+
+  useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, busy]);
 
   useEffect(() => {
     if (!user?.id) return;
-    api.get(`/ai/conversations?userId=${encodeURIComponent(user.id)}`)
+    api.get('/ai/conversations')
       .then((response) => {
         setConversations(response.data.conversations || []);
         setProgress(response.data.progress || { quizzes: [], weakTopics: [] });
       })
       .catch(() => {
-        try {
-          setConversations(JSON.parse(localStorage.getItem(`planwiseConversations:${user.id}`) || '[]'));
-        } catch {
-          setConversations([]);
-        }
+        setConversations([]);
       });
   }, [user?.id]);
 
   function persistLocal(nextMessages, nextSession, id, title) {
     if (!user?.id) return;
     const record = { id: id || conversationId || makeId('convo'), title: title || nextSession.subject || 'Conversation', messages: nextMessages, session: nextSession, updatedAt: new Date().toISOString() };
-    const current = JSON.parse(localStorage.getItem(`planwiseConversations:${user.id}`) || '[]');
-    const next = [record, ...current.filter((item) => item.id !== record.id)].slice(0, 20);
-    localStorage.setItem(`planwiseConversations:${user.id}`, JSON.stringify(next));
-    setConversations(next);
+    setConversations((current) => [record, ...current.filter((item) => item.id !== record.id)].slice(0, 20));
     setConversationId(record.id);
   }
 
@@ -256,7 +265,6 @@ export default function AssistantPage({
       materialName: sourceReady ? material.name : '',
       difficulty,
       session,
-      userId: user?.id,
       conversationId,
       profile: { id: user?.id, name: user?.name, role: user?.role },
       spec,
@@ -303,7 +311,10 @@ export default function AssistantPage({
     try {
       const response = await fetch(`${API_BASE}/ai/chat/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+        },
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
@@ -368,7 +379,7 @@ export default function AssistantPage({
 
   async function loadConversation(item) {
     try {
-      const response = await api.get(`/ai/conversations/${item.id}?userId=${encodeURIComponent(user.id)}`);
+      const response = await api.get(`/ai/conversations/${item.id}`);
       const convo = response.data.conversation || item;
       setConversationId(convo.id);
       setSession(convo.session || { mode: 'tutor', difficulty, topics: [] });

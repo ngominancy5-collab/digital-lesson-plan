@@ -345,3 +345,137 @@
     text-align: center;
   }
 }
+
+/* Aurelia-inspired sign-in card */
+.aurelia-auth {
+  --leaf-deep: #2a211c;
+  --leaf-gold: #c4a15a;
+  background: #f2ebe0;
+}
+
+.aurelia-card {
+  grid-template-columns: minmax(280px, 0.95fr) minmax(300px, 1.05fr);
+  border-radius: 28px;
+  box-shadow:
+    0 40px 90px rgba(42, 33, 28, 0.22),
+    0 12px 28px rgba(42, 33, 28, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.7) inset;
+}
+
+.aurelia-brand {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  padding: 48px 40px;
+  color: #f8f1e6;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(196, 161, 90, 0.35), transparent 28%),
+    radial-gradient(circle at 78% 70%, rgba(196, 161, 90, 0.22), transparent 34%),
+    radial-gradient(circle at 48% 48%, rgba(255, 255, 255, 0.05), transparent 40%),
+    linear-gradient(160deg, #2a211c 0%, #3a2d25 55%, #1d1612 100%);
+  overflow: hidden;
+}
+
+.aurelia-brand::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle 18px at 22% 28%, rgba(196, 161, 90, 0.35), transparent 60%),
+    radial-gradient(circle 28px at 70% 42%, rgba(196, 161, 90, 0.22), transparent 65%),
+    radial-gradient(circle 14px at 48% 72%, rgba(255, 240, 210, 0.18), transparent 70%);
+  pointer-events: none;
+}
+
+.aurelia-eyebrow,
+.aurelia-brand strong {
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  color: rgba(248, 241, 230, 0.78);
+}
+
+.aurelia-brand h1 {
+  margin: 0;
+  font-size: clamp(2.4rem, 4vw, 3.4rem);
+  letter-spacing: 0.04em;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+}
+
+.aurelia-brand p {
+  max-width: 28ch;
+  line-height: 1.55;
+  color: rgba(248, 241, 230, 0.82);
+}
+
+.aurelia-form {
+  background: #faf7f2;
+  padding: 42px 40px;
+}
+
+.aurelia-form-wrap h2 {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-size: 2.1rem;
+  margin: 8px 0 8px;
+}
+
+.aurelia-form-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.aurelia-mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #d4b36a, #a8843a);
+  color: #2a211c;
+  font-weight: 800;
+  box-shadow: 0 8px 18px rgba(168, 132, 58, 0.35);
+}
+
+.aurelia-auth .section-kicker {
+  color: #a8843a;
+  letter-spacing: 0.16em;
+}
+
+.aurelia-auth .auth-input,
+.aurelia-auth .password-input {
+  background: #fff;
+  border: 1px solid rgba(42, 33, 28, 0.12);
+  box-shadow: 0 8px 18px rgba(42, 33, 28, 0.05);
+  border-radius: 14px;
+}
+
+.aurelia-auth .auth-submit {
+  border-radius: 999px;
+  background: #1d1612;
+  box-shadow: 0 14px 28px rgba(29, 22, 18, 0.28);
+}
+
+.aurelia-footnote {
+  margin-top: 18px;
+  color: #8a7d72;
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.aurelia-auth .auth-options button {
+  color: #a8843a;
+}
+
+@media (max-width: 860px) {
+  .aurelia-card {
+    grid-template-columns: 1fr;
+  }
+
+  .aurelia-brand {
+    min-height: 180px;
+    padding: 28px 24px;
+  }
+}

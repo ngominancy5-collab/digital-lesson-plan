@@ -1,0 +1,549 @@
+.floating-assistant {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.floating-assistant > * {
+  pointer-events: auto;
+}
+
+.fa-corner-left {
+  left: 18px;
+  bottom: 18px;
+  align-items: flex-start;
+}
+
+.fa-corner-right {
+  right: 22px !important;
+  bottom: 22px !important;
+  left: auto !important;
+  top: auto !important;
+  align-items: flex-end;
+}
+
+.floating-assistant.fa-corner-right {
+  position: fixed !important;
+  z-index: 80;
+}
+
+.fa-drawer .fa-panel {
+  width: min(340px, calc(100vw - 36px));
+  max-height: min(640px, calc(100vh - 100px));
+  border-radius: 18px;
+}
+
+.fa-online {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: #16a34a;
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.fa-online i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  display: inline-block;
+}
+
+.fa-quick-stack {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.fa-quick-stack button {
+  text-align: left;
+  border: 1px solid rgba(41, 38, 34, 0.1);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #fff;
+  color: #1e4a3c;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fa-fab {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: #fffdf9;
+  background: linear-gradient(145deg, #1e4a3c, #0e2a22);
+  box-shadow:
+    0 12px 26px rgba(21, 53, 44, 0.36),
+    0 0 0 3px rgba(255, 255, 255, 0.7),
+    0 0 22px rgba(30, 74, 60, 0.35);
+  transition: transform 220ms ease, box-shadow 220ms ease, background 220ms ease;
+  animation: fa-float 3.4s ease-in-out infinite;
+}
+
+.fa-fab::before,
+.fa-fab::after {
+  content: '';
+  position: absolute;
+  background: #e6c56a;
+  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+  pointer-events: none;
+}
+
+.fa-fab::before {
+  width: 12px;
+  height: 12px;
+  top: -2px;
+  right: -2px;
+}
+
+.fa-fab::after {
+  width: 8px;
+  height: 8px;
+  top: 10px;
+  right: -8px;
+  opacity: 0.85;
+}
+
+.fa-fab:hover {
+  transform: translateY(-3px) scale(1.04);
+  box-shadow:
+    0 14px 28px rgba(16, 43, 37, 0.34),
+    0 0 0 1px rgba(201, 155, 69, 0.45);
+  background: linear-gradient(145deg, #1f4a3e, #17382f);
+}
+
+.fa-fab.is-active {
+  animation: none;
+  background: linear-gradient(145deg, #c99b45, #d9b56a);
+  color: #102b25;
+  box-shadow: 0 10px 22px rgba(201, 155, 69, 0.35);
+}
+
+.fa-panel {
+  width: min(360px, calc(100vw - 28px));
+  max-height: min(520px, calc(100vh - 96px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(41, 38, 34, 0.12);
+  background: rgba(255, 253, 249, 0.97);
+  box-shadow: 0 18px 40px rgba(16, 43, 37, 0.18);
+  backdrop-filter: blur(14px);
+  transform-origin: bottom right;
+  animation: fa-panel-in 220ms ease both;
+}
+
+.fa-corner-left .fa-panel {
+  transform-origin: bottom left;
+}
+
+.fa-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  background: linear-gradient(135deg, #17382f, #204c40);
+  color: #fffdf9;
+}
+
+.fa-header-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fa-header-copy strong {
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.95rem;
+}
+
+.fa-header-copy p {
+  margin: 0;
+  color: rgba(255, 253, 249, 0.72);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.fa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(201, 155, 69, 0.22);
+  color: #e6ce9b;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fa-icon-btn {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 253, 249, 0.12);
+  color: #fffdf9;
+  cursor: pointer;
+}
+
+.fa-icon-btn:hover {
+  background: rgba(255, 253, 249, 0.2);
+}
+
+.fa-messages {
+  flex: 1;
+  min-height: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: linear-gradient(180deg, #f7f3eb, #fffdf9);
+}
+
+.fa-bubble {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(41, 38, 34, 0.08);
+}
+
+.fa-bubble p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #292622;
+  white-space: pre-wrap;
+}
+
+.fa-bubble time {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.62rem;
+  color: #81766c;
+}
+
+.fa-assistant {
+  align-self: flex-start;
+  background: rgba(255, 253, 249, 0.95);
+  border-color: rgba(23, 56, 47, 0.1);
+}
+
+.fa-user {
+  align-self: flex-end;
+  background: rgba(230, 206, 155, 0.28);
+  border-color: rgba(201, 155, 69, 0.28);
+}
+
+.fa-starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.fa-starters button {
+  border: 1px solid rgba(41, 38, 34, 0.12);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(247, 243, 235, 0.9);
+  color: #17382f;
+  font-size: 0.66rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+
+.fa-starters button:hover:not(:disabled) {
+  border-color: #c99b45;
+  background: rgba(230, 206, 155, 0.28);
+}
+
+.fa-starters button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.fa-open-full {
+  margin: 0 12px 8px;
+  border: 0;
+  background: transparent;
+  color: #17382f;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.fa-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.fa-cta-bar {
+  padding: 0 12px 8px;
+  margin-top: 0;
+}
+
+.fa-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(201, 155, 69, 0.45);
+  border-radius: 10px;
+  padding: 7px 11px;
+  background: rgba(255, 253, 249, 0.9);
+  color: #17382f;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fa-cta.primary {
+  border-color: transparent;
+  background: #17382f;
+  color: #fffdf9;
+}
+
+.fa-cta:hover {
+  transform: translateY(-1px);
+}
+
+.fa-composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid rgba(41, 38, 34, 0.08);
+  background: rgba(255, 253, 249, 0.96);
+}
+
+.fa-composer input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  border-radius: 999px;
+  padding: 0 14px;
+  background: #fff;
+  color: #292622;
+  font-size: 0.8rem;
+  box-shadow: none;
+  outline: none;
+}
+
+.fa-composer input:focus,
+.fa-composer input:focus-visible {
+  outline: none !important;
+  border: 1px solid rgba(59, 130, 246, 0.7) !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.16) !important;
+}
+
+.fa-attach {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(23, 56, 47, 0.1);
+  color: #17382f;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.fa-attach:hover:not(:disabled) {
+  background: rgba(23, 56, 47, 0.16);
+}
+
+.fa-attach:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.fa-attach-input {
+  display: none;
+}
+
+.fa-file-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(23, 56, 47, 0.08);
+  color: #17382f;
+  font-size: 0.74rem;
+}
+
+.fa-file-chip strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fa-file-chip button {
+  border: 0;
+  background: transparent;
+  color: #6a746c;
+  cursor: pointer;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.fa-send {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: #17382f;
+  color: #fffdf9;
+  cursor: pointer;
+}
+
+.fa-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.fa-spin {
+  animation: fa-spin 0.9s linear infinite;
+}
+
+@keyframes fa-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes fa-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fa-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 640px) {
+  .fa-corner-left,
+  .fa-corner-right {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    align-items: stretch;
+  }
+
+  .fa-corner-left .fa-fab,
+  .fa-corner-right .fa-fab {
+    align-self: flex-end;
+  }
+
+  .fa-corner-left .fa-fab {
+    align-self: flex-start;
+  }
+
+  .fa-panel {
+    width: 100%;
+    max-height: min(70vh, 520px);
+  }
+
+  .fa-messages {
+    max-height: min(36vh, 220px);
+  }
+}
+
+/* Keep toast clear of the logged-in FAB */
+.edu-shell .success-toast {
+  bottom: 78px;
+}
+
+.glass-shell.dark-mode .fa-panel {
+  background: rgba(22, 30, 45, 0.96);
+  border-color: rgba(244, 247, 251, 0.12);
+  color: #f4f7fb;
+}
+
+.glass-shell.dark-mode .fa-messages {
+  background: linear-gradient(180deg, #0b1220, #16202e);
+}
+
+.glass-shell.dark-mode .fa-bubble p,
+.glass-shell.dark-mode .fa-composer input {
+  color: #f4f7fb;
+}
+
+.glass-shell.dark-mode .fa-assistant {
+  background: rgba(28, 38, 56, 0.95);
+  border-color: rgba(244, 247, 251, 0.1);
+}
+
+.glass-shell.dark-mode .fa-user {
+  background: rgba(96, 165, 250, 0.18);
+  border-color: rgba(96, 165, 250, 0.28);
+}
+
+.glass-shell.dark-mode .fa-composer {
+  background: rgba(22, 30, 45, 0.96);
+  border-top-color: rgba(244, 247, 251, 0.1);
+}
+
+.glass-shell.dark-mode .fa-composer input {
+  background: #1c2638;
+  border-color: rgba(244, 247, 251, 0.12);
+}
+
+.glass-shell.dark-mode .fa-starters button,
+.glass-shell.dark-mode .fa-cta {
+  background: #1c2638;
+  color: #f4f7fb;
+  border-color: rgba(244, 247, 251, 0.12);
+}
+
+.glass-shell.dark-mode .fa-cta.primary,
+.glass-shell.dark-mode .fa-send {
+  background: #60a5fa;
+  color: #0b1220;
+}
+
+.glass-shell.dark-mode .fa-open-full {
+  color: #93c5fd;
+}
+
