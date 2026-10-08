@@ -16,7 +16,7 @@ function required(name, fallback = '') {
 
 export const env = {
   port: Number(process.env.PORT || 3001),
-  clientUrl: required('CLIENT_URL', 'http://localhost:5173'),
+  clientUrl: required('CLIENT_URL', 'http://localhost:5180'),
   databaseUrl: required('DATABASE_URL'),
   jwtSecret: required('JWT_SECRET', 'dev-only-change-me'),
   jwtExpiresIn: required('JWT_EXPIRES_IN', '7d'),

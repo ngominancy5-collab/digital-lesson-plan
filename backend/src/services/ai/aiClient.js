@@ -1,5 +1,6 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
+import { AppError } from '../../utils/errors.js';
 
 dotenv.config();
 
@@ -159,19 +160,52 @@ function geminiContents(system, user, history = []) {
   };
 }
 
+function geminiModelNames() {
+  return [...new Set([
+    process.env.GEMINI_MODEL,
+    'gemini-flash-latest',
+    'gemini-3.1-flash-lite',
+    'gemini-3-flash-preview',
+    'gemini-2.5-flash',
+  ].map((name) => String(name || '').trim()).filter(Boolean))];
+}
+
+function aiUnavailable(error) {
+  const status = error?.response?.status;
+  if (status === 429 || status === 503) {
+    return new AppError('The AI service is busy right now. Please try again in a moment.', 503);
+  }
+  return new AppError('The AI service could not generate a response. Please try again.', 502);
+}
+
+async function postGemini(key, model, payload, options = {}) {
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        payload,
+        { params: { key }, timeout: options.timeout || 45000, responseType: options.responseType },
+      );
+    } catch (error) {
+      lastError = error;
+      const status = error.response?.status;
+      if ((status === 429 || status === 503) && attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
 async function completeGemini(system, user, history, { json }) {
   const key = geminiKey() || (detectProviderFromKey(openaiKey()) === 'gemini' ? openaiKey() : '');
   if (!key) return null;
-  const models = [
-    process.env.GEMINI_MODEL,
-    'gemini-2.0-flash',
-    'gemini-2.5-flash',
-    'gemini-1.5-flash',
-    'gemini-flash-latest',
-  ].filter(Boolean);
 
   let lastError;
-  for (const model of models) {
+  for (const model of geminiModelNames()) {
     try {
       const payload = {
         ...geminiContents(system, user, history),
@@ -180,21 +214,17 @@ async function completeGemini(system, user, history, { json }) {
           ...(json ? { responseMimeType: 'application/json' } : {}),
         },
       };
-      const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
-        payload,
-        { timeout: 45000 },
-      );
+      const response = await postGemini(key, model, payload);
       const parts = response.data.candidates?.[0]?.content?.parts || [];
       const text = parts.map((part) => part.text || '').join('\n').trim();
       if (text) return text;
     } catch (error) {
       lastError = error;
       const status = error.response?.status;
-      if (status && status !== 404 && status !== 400) throw error;
+      if (status === 404 || status === 400 || status === 429 || status === 503) continue;
     }
   }
-  if (lastError) throw lastError;
+  if (lastError) throw aiUnavailable(lastError);
   return '';
 }
 
@@ -275,15 +305,26 @@ export async function* streamText(system, user, history = []) {
 
   if (provider === 'gemini') {
     const key = geminiKey() || openaiKey();
-    const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,
-      {
-        ...geminiContents(system, user, history),
-        generationConfig: { temperature: 0.55 },
-      },
-      { responseType: 'stream', timeout: 60000 },
-    );
-    yield* readOpenAiStyleStream(response.data);
+    let lastError;
+    for (const model of geminiModelNames()) {
+      try {
+        const response = await axios.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent`,
+          {
+            ...geminiContents(system, user, history),
+            generationConfig: { temperature: 0.55 },
+          },
+          { params: { key, alt: 'sse' }, responseType: 'stream', timeout: 60000 },
+        );
+        yield* readOpenAiStyleStream(response.data);
+        return;
+      } catch (error) {
+        lastError = error;
+        const status = error.response?.status;
+        if (status === 404 || status === 400 || status === 429 || status === 503) continue;
+        break;
+      }
+    }
+    throw aiUnavailable(lastError);
   }
 }

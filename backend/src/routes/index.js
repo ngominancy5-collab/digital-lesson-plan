@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 import * as c from '../controllers/apiControllers.js';
+import { exportLessonPlan } from '../controllers/workspaceController.js';
 
 export const dashboardRoutes = Router();
 dashboardRoutes.get('/', requireAuth, c.dashboard);
@@ -14,6 +15,7 @@ documentRoutes.delete('/:id', requireAuth, c.deleteDocument);
 export const lessonPlanRoutes = Router();
 lessonPlanRoutes.get('/', requireAuth, c.listLessonPlans);
 lessonPlanRoutes.post('/', requireAuth, c.createLessonPlan);
+lessonPlanRoutes.get('/:id/export', requireAuth, exportLessonPlan);
 lessonPlanRoutes.get('/:id', requireAuth, c.getLessonPlan);
 lessonPlanRoutes.put('/:id', requireAuth, c.updateLessonPlan);
 lessonPlanRoutes.delete('/:id', requireAuth, c.deleteLessonPlan);

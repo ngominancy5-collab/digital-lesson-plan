@@ -107,17 +107,25 @@ function extractPdfText(buffer) {
   return [...literals, ...hexStrings].join(' ').replace(/[ \t]{2,}/g, ' ').replace(/\s+\n/g, '\n').trim();
 }
 
+function printableText(value) {
+  return String(value || '')
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, ' ')
+    .replace(/[^\S\n]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 async function extractPdf(buffer) {
   if (pdfParse) {
     try {
       const parsed = await pdfParse(buffer);
-      const text = String(parsed?.text || '').trim();
+      const text = printableText(parsed?.text || '');
       if (isReadableEducationalText(text)) return text;
     } catch {
       // Fall through to the lightweight extractor.
     }
   }
-  return extractPdfText(buffer);
+  return printableText(extractPdfText(buffer));
 }
 
 async function extractZipDocument(buffer, ext) {
@@ -155,6 +163,37 @@ async function extractZipDocument(buffer, ext) {
   throw new Error('Unsupported compressed document type.');
 }
 
+const OLE_MAGIC = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+
+export function isOleCompound(buffer) {
+  return Buffer.isBuffer(buffer) && buffer.length >= 8 && buffer.subarray(0, 8).equals(OLE_MAGIC);
+}
+
+export function isZipDocument(buffer) {
+  return Buffer.isBuffer(buffer)
+    && buffer.length >= 4
+    && buffer[0] === 0x50
+    && buffer[1] === 0x4b
+    && (buffer[2] === 0x03 || buffer[2] === 0x05 || buffer[2] === 0x07);
+}
+
+async function extractLegacyDoc(buffer, name) {
+  if (isZipDocument(buffer)) {
+    return {
+      error: `“${name}” is a newer Word file saved with a .doc name. Upload it as .docx, or save a real Word 97–2003 document.`,
+    };
+  }
+  if (!isOleCompound(buffer)) {
+    return {
+      error: `“${name}” is not a Word 97–2003 document. Upload a real .doc file, or save it as .docx.`,
+    };
+  }
+  const imported = await import('word-extractor');
+  const WordExtractor = imported.default || imported;
+  const extracted = await new WordExtractor().extract(buffer);
+  return { text: String(extracted.getBody?.() || '') };
+}
+
 function extractPlainText(buffer, ext) {
   const text = Buffer.isBuffer(buffer) ? buffer.toString('utf8') : String(buffer || '');
   if (ext === '.html' || ext === '.htm') return stripXml(text);
@@ -162,7 +201,7 @@ function extractPlainText(buffer, ext) {
   return text;
 }
 
-export async function parseUploadedDocument({ fileName, mimeType, contentBase64 }) {
+export async function parseUploadedDocument({ fileName, mimeType, contentBase64, filePath }) {
   const name = fileName || 'upload';
   const ext = extensionOf(name);
   if (!SUPPORTED_EXTENSIONS.includes(ext)) {
@@ -184,12 +223,21 @@ export async function parseUploadedDocument({ fileName, mimeType, contentBase64 
     return { ok: false, fileName: name, error: `“${name}” was empty, so it could not be analysed.` };
   }
 
+  const maxBytes = Number(process.env.MAX_UPLOAD_BYTES || 15 * 1024 * 1024);
+  if (buffer.length > maxBytes) {
+    return { ok: false, fileName: name, error: `“${name}” is larger than the upload limit.` };
+  }
+
   try {
     let text = '';
     if (ext === '.pdf') text = await extractPdf(buffer);
     else if (ZIP_EXTENSIONS.includes(ext)) text = await extractZipDocument(buffer, ext);
     else if (TEXT_EXTENSIONS.includes(ext)) text = extractPlainText(buffer, ext);
-    else if (ext === '.doc' || ext === '.ppt') {
+    else if (ext === '.doc') {
+      const legacy = await extractLegacyDoc(buffer, name);
+      if (legacy.error) return { ok: false, fileName: name, fileType: 'DOC', error: legacy.error };
+      text = legacy.text;
+    } else if (ext === '.ppt') {
       const recovered = buffer.toString('utf8').replace(/[^\x09\x0A\x0D\x20-\x7E]/g, ' ').replace(/\s{2,}/g, ' ').trim();
       if (!isReadableEducationalText(recovered)) {
         return {

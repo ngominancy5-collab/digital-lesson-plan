@@ -30,7 +30,7 @@ const storage = multer.diskStorage({
 function fileFilter(_req, file, cb) {
   const ext = path.extname(file.originalname || '').toLowerCase();
   if (!ALLOWED_EXT.has(ext)) {
-    return cb(new AppError('Unsupported file type. Use PDF, DOCX, PPTX, or TXT.', 400));
+    return cb(new AppError('Unsupported file type. Use PDF, DOC, DOCX, or TXT.', 400));
   }
   if (file.mimetype && !ALLOWED_MIME.has(file.mimetype) && !file.mimetype.startsWith('text/')) {
     return cb(new AppError('Unsupported file type.', 400));

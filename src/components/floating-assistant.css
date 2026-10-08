@@ -19,8 +19,8 @@
 }
 
 .fa-corner-right {
-  right: 22px !important;
-  bottom: 22px !important;
+  right: 24px !important;
+  bottom: 24px !important;
   left: auto !important;
   top: auto !important;
   align-items: flex-end;
@@ -478,6 +478,13 @@
 
   .fa-corner-left .fa-fab {
     align-self: flex-start;
+  }
+
+  .fa-corner-right {
+    left: auto !important;
+    right: 16px !important;
+    bottom: 16px !important;
+    align-items: flex-end;
   }
 
   .fa-panel {

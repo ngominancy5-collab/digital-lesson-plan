@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
-import { fallbackAnalyze, isReadableEducationalText, truncateText } from '../../../shared/learningEngine.js';
-import { converse } from '../../../shared/tutorEngine.js';
-import { completeJson, getLlmStatus, streamText } from './llm.js';
+import { fallbackAnalyze, isReadableEducationalText, truncateText } from '../../../../shared/learningEngine.js';
+import { converse } from '../../../../shared/tutorEngine.js';
+import { completeJson, getLlmStatus, streamText } from './aiClient.js';
 
 dotenv.config();
 

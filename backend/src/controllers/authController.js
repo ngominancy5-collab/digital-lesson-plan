@@ -3,12 +3,12 @@ import * as authService from '../services/authService.js';
 
 export const register = asyncHandler(async (req, res) => {
   const result = await authService.registerUser(req.body || {});
-  res.status(201).json(result);
+  res.status(201).json({ message: 'Account created successfully.', ...result });
 });
 
 export const login = asyncHandler(async (req, res) => {
   const result = await authService.loginUser(req.body || {});
-  res.json(result);
+  res.json({ message: 'Signed in successfully.', ...result });
 });
 
 export const me = asyncHandler(async (req, res) => {

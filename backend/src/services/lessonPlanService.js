@@ -1,8 +1,9 @@
-import prisma from '../config/database.js';
 import { AppError } from '../utils/errors.js';
 import { mapLessonPlan } from '../utils/mappers.js';
-import { generateLessonPlan as aiGenerateLessonPlan, regenerateLesson } from './lessonPlanAi.js';
-import { completeJson } from './llm.js';
+import { generateLessonPlan as aiGenerateLessonPlan, regenerateLesson } from './ai/lessonPlanAi.js';
+import { completeJson } from './ai/aiClient.js';
+import * as lessonPlanRepository from '../repositories/lessonPlanRepository.js';
+import * as documentRepository from '../repositories/documentRepository.js';
 
 function normalizeDifficulty(value) {
   const v = String(value || 'Intermediate');
@@ -13,23 +14,19 @@ function normalizeDifficulty(value) {
 }
 
 export async function listLessonPlans(userId) {
-  const plans = await prisma.lessonPlan.findMany({
-    where: { userId },
-    orderBy: { updatedAt: 'desc' },
-  });
+  const plans = await lessonPlanRepository.listByUser(userId);
   return plans.map(mapLessonPlan);
 }
 
 export async function getLessonPlan(userId, id) {
-  const plan = await prisma.lessonPlan.findFirst({ where: { id, userId } });
+  const plan = await lessonPlanRepository.findOwned(userId, id);
   if (!plan) throw new AppError('Lesson plan not found.', 404);
   return mapLessonPlan(plan);
 }
 
 export async function createLessonPlan(userId, body) {
   const title = String(body.title || body.courseName || 'Untitled lesson plan').trim();
-  const plan = await prisma.lessonPlan.create({
-    data: {
+  const plan = await lessonPlanRepository.create({
       userId,
       title,
       subject: body.subject || body.courseName || '',
@@ -52,18 +49,15 @@ export async function createLessonPlan(userId, body) {
       lessons: body.lessons || [],
       warnings: body.warnings || [],
       meta: body.meta || {},
-    },
   });
   return mapLessonPlan(plan);
 }
 
 export async function updateLessonPlan(userId, id, body) {
-  const existing = await prisma.lessonPlan.findFirst({ where: { id, userId } });
+  const existing = await lessonPlanRepository.findOwned(userId, id);
   if (!existing) throw new AppError('Lesson plan not found.', 404);
 
-  const plan = await prisma.lessonPlan.update({
-    where: { id },
-    data: {
+  const plan = await lessonPlanRepository.update(id, {
       title: body.title ?? existing.title,
       subject: body.subject ?? existing.subject,
       topic: body.topic ?? existing.topic,
@@ -83,22 +77,21 @@ export async function updateLessonPlan(userId, id, body) {
       lessons: body.lessons ?? existing.lessons,
       warnings: body.warnings ?? existing.warnings,
       meta: body.meta ?? existing.meta,
-    },
   });
   return mapLessonPlan(plan);
 }
 
 export async function deleteLessonPlan(userId, id) {
-  const existing = await prisma.lessonPlan.findFirst({ where: { id, userId } });
+  const existing = await lessonPlanRepository.findOwned(userId, id);
   if (!existing) throw new AppError('Lesson plan not found.', 404);
-  await prisma.lessonPlan.delete({ where: { id } });
+  await lessonPlanRepository.remove(id);
   return { ok: true };
 }
 
 export async function generateAndSaveLessonPlan(userId, payload) {
   let materialText = payload.materialText || '';
   if (payload.documentId) {
-    const doc = await prisma.document.findFirst({ where: { id: payload.documentId, userId } });
+    const doc = await documentRepository.findOwned(userId, payload.documentId);
     if (!doc) throw new AppError('Source document not found.', 404);
     materialText = doc.extractedText || materialText;
   }
@@ -135,8 +128,7 @@ export async function generateAndSaveLessonPlan(userId, payload) {
   });
 
   const first = result.lessons?.[0] || {};
-  const plan = await prisma.lessonPlan.create({
-    data: {
+  const plan = await lessonPlanRepository.create({
       userId,
       title: result.courseName || payload.courseName || 'Generated lesson plan',
       subject: payload.courseName || '',
@@ -159,7 +151,6 @@ export async function generateAndSaveLessonPlan(userId, payload) {
       lessons: result.lessons || [],
       warnings: result.warnings || [],
       meta: { schedule: payload },
-    },
   });
 
   return mapLessonPlan(plan);
@@ -173,11 +164,11 @@ export async function regenerateLessonContent(payload) {
 export async function generateFocusedContent(userId, { type, difficulty, documentId, lessonPlanId, prompt }) {
   let context = '';
   if (documentId) {
-    const doc = await prisma.document.findFirst({ where: { id: documentId, userId } });
+    const doc = await documentRepository.findOwned(userId, documentId);
     if (doc?.extractedText) context += `\nDocument:\n${doc.extractedText.slice(0, 10000)}`;
   }
   if (lessonPlanId) {
-    const plan = await prisma.lessonPlan.findFirst({ where: { id: lessonPlanId, userId } });
+    const plan = await lessonPlanRepository.findOwned(userId, lessonPlanId);
     if (plan) context += `\nLesson plan:\n${JSON.stringify(mapLessonPlan(plan)).slice(0, 8000)}`;
   }
 

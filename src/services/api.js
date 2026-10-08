@@ -34,18 +34,38 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const body = response.data;
+    if (body && typeof body === 'object' && body.success === true && Object.prototype.hasOwnProperty.call(body, 'data')) {
+      response.data = body.data;
+    }
+    return response;
+  },
   (error) => {
-    const message = error.response?.data?.error
-      || error.response?.data?.message
+    const message = error.response?.data?.message
+      || error.response?.data?.error
       || error.message
       || 'Request failed.';
     const err = new Error(message);
     err.status = error.response?.status;
     err.details = error.response?.data?.details;
+    err.response = error.response;
     throw err;
   },
 );
+
+export function streamAiChat(body, { signal } = {}) {
+  const token = getToken();
+  return fetch(`${API_BASE}/ai/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+}
 
 export const authApi = {
   register: (payload) => api.post('/auth/register', payload).then((r) => r.data),
@@ -110,6 +130,87 @@ export const documentApi = {
     }).then((r) => r.data.document);
   },
   remove: (id) => api.delete(`/documents/${id}`).then((r) => r.data),
+};
+
+export async function downloadLessonPlanPdf(id) {
+  const token = getToken();
+  const response = await fetch(`${API_BASE}/lesson-plans/${id}/export`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) {
+    let message = 'Could not export the lesson plan.';
+    try {
+      const body = await response.json();
+      message = body.message || body.error || message;
+    } catch {
+      // The response is not JSON.
+    }
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  const named = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') || '');
+  const filename = named?.[1] || 'PlanWise-Lesson-Plan.pdf';
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+export const attendanceApi = {
+  get: () => api.get('/attendance').then((r) => r.data),
+  clockIn: () => api.post('/attendance/clock-in').then((r) => r.data),
+  clockOut: () => api.post('/attendance/clock-out').then((r) => r.data),
+};
+
+export const reportApi = {
+  get: () => api.get('/reports').then((r) => r.data),
+};
+
+export const searchApi = {
+  query: (q) => api.get('/search', { params: { q } }).then((r) => r.data),
+};
+
+export const notificationApi = {
+  list: () => api.get('/notifications').then((r) => r.data),
+  read: (id) => api.post(`/notifications/${id}/read`).then((r) => r.data),
+  readAll: () => api.post('/notifications/read-all').then((r) => r.data),
+};
+
+export const settingsApi = {
+  notifications: () => api.get('/settings/notifications').then((r) => r.data),
+  updateNotifications: (payload) => api.put('/settings/notifications', payload).then((r) => r.data),
+};
+
+export const resourceApi = {
+  list: () => api.get('/resources').then((r) => r.data.resources || []),
+  get: (id) => api.get(`/resources/${id}`).then((r) => r.data.resource),
+  upload: (file) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/resources/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data.resource);
+  },
+  remove: (id) => api.delete(`/resources/${id}`).then((r) => r.data),
+};
+
+export const markingApi = {
+  list: () => api.get('/marking').then((r) => (r.data.papers || []).map((item) => ({
+    ...item,
+    studentLabel: item.studentName,
+    subject: item.assessmentName,
+    obtained: item.score,
+    aiFeedback: item.feedback,
+  }))),
+  mark: (payload) => api.post('/ai/mark-paper', payload).then((r) => r.data),
+};
+
+export const institutionApi = {
+  list: (params) => api.get('/institutions', { params }).then((r) => r.data),
 };
 
 export const aiApi = {

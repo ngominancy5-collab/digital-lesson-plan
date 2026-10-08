@@ -1,65 +1,43 @@
-import prisma from '../config/database.js';
 import { AppError } from '../utils/errors.js';
 import { mapUser } from '../utils/mappers.js';
-import { buildAssistantSystemPrompt, generateWithGemini } from './geminiService.js';
-import { runLearningTurn, runLearningTurnStream } from './learningAi.js';
-import { getLlmStatus } from './llm.js';
+import { buildAssistantSystemPrompt, generateWithGemini } from './ai/geminiService.js';
+import { runLearningTurn, runLearningTurnStream } from './ai/learningAi.js';
+import { getLlmStatus } from './ai/aiClient.js';
+import * as conversationRepository from '../repositories/conversationRepository.js';
+import * as lessonPlanRepository from '../repositories/lessonPlanRepository.js';
+import * as documentRepository from '../repositories/documentRepository.js';
 
 export { getLlmStatus };
 
 export async function listConversations(userId) {
-  return prisma.aiConversation.findMany({
-    where: { userId },
-    orderBy: { updatedAt: 'desc' },
-    include: {
-      messages: {
-        orderBy: { createdAt: 'asc' },
-        take: 1,
-      },
-    },
-  });
+  return conversationRepository.listByUser(userId);
 }
 
 export async function getConversation(userId, id) {
-  const conversation = await prisma.aiConversation.findFirst({
-    where: { id, userId },
-    include: { messages: { orderBy: { createdAt: 'asc' } } },
-  });
+  const conversation = await conversationRepository.findOwned(userId, id);
   if (!conversation) throw new AppError('Conversation not found.', 404);
   return conversation;
 }
 
 export async function createConversation(userId, title = 'New conversation') {
-  return prisma.aiConversation.create({
-    data: { userId, title },
-    include: { messages: true },
-  });
+  return conversationRepository.create(userId, title);
 }
 
 async function ensureConversation(userId, conversationId) {
   if (conversationId) {
-    const existing = await prisma.aiConversation.findFirst({ where: { id: conversationId, userId } });
+    const existing = await conversationRepository.findOwnedBrief(userId, conversationId);
     if (existing) return existing;
   }
   return createConversation(userId);
 }
 
 async function persistMessages(conversation, userMessage, assistantMessage, titleHint) {
-  await prisma.aiMessage.createMany({
-    data: [
-      { conversationId: conversation.id, sender: 'user', message: userMessage },
-      { conversationId: conversation.id, sender: 'assistant', message: assistantMessage },
-    ],
-  });
-  return prisma.aiConversation.update({
-    where: { id: conversation.id },
-    data: {
-      title: conversation.title === 'New conversation' && titleHint
-        ? String(titleHint).slice(0, 48)
-        : conversation.title,
-      updatedAt: new Date(),
-    },
-    include: { messages: { orderBy: { createdAt: 'asc' } } },
+  await conversationRepository.addMessages(conversation.id, userMessage, assistantMessage);
+  return conversationRepository.updateConversation(conversation.id, {
+    title: conversation.title === 'New conversation' && titleHint
+      ? String(titleHint).slice(0, 48)
+      : conversation.title,
+    updatedAt: new Date(),
   });
 }
 
@@ -68,19 +46,15 @@ export async function chat(userId, body, user) {
   if (!message) throw new AppError('Please enter a question or instruction.');
 
   const conversation = await ensureConversation(userId, body.conversationId);
-  const historyRows = await prisma.aiMessage.findMany({
-    where: { conversationId: conversation.id },
-    orderBy: { createdAt: 'asc' },
-    take: 40,
-  });
+  const historyRows = await conversationRepository.recentMessages(conversation.id);
   const history = historyRows.map((row) => ({
     role: row.sender === 'assistant' ? 'assistant' : 'user',
     content: row.message,
   }));
 
   const [lessonPlans, documents] = await Promise.all([
-    prisma.lessonPlan.findMany({ where: { userId }, select: { id: true, title: true }, take: 20 }),
-    prisma.document.findMany({ where: { userId }, select: { id: true, originalName: true }, take: 20 }),
+    lessonPlanRepository.titlesForUser(userId),
+    documentRepository.titlesForUser(userId),
   ]);
 
   let result;
@@ -148,11 +122,7 @@ export async function chatStream(userId, body, user, res) {
   }
 
   const conversation = await ensureConversation(userId, body.conversationId);
-  const historyRows = await prisma.aiMessage.findMany({
-    where: { conversationId: conversation.id },
-    orderBy: { createdAt: 'asc' },
-    take: 40,
-  });
+  const historyRows = await conversationRepository.recentMessages(conversation.id);
   const history = historyRows.map((row) => ({
     role: row.sender === 'assistant' ? 'assistant' : 'user',
     content: row.message,

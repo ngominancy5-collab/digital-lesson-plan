@@ -1,13 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  attendanceApi,
   authApi,
   assessmentApi,
   calendarApi,
   clearSession,
   courseApi,
+  downloadLessonPlanPdf,
   getToken,
+  institutionApi,
   lessonPlanApi,
+  markingApi,
+  notificationApi,
+  quizApi,
+  reportApi,
+  resourceApi,
+  searchApi,
   setToken,
+  settingsApi,
 } from './services/api.js';
 import {
   Activity,
@@ -53,6 +63,7 @@ import {
   UserCircle2,
   Wand2,
   BriefcaseBusiness,
+  Building2,
   School,
   BarChart3,
   ScanText,
@@ -65,7 +76,8 @@ import LandingPage from './components/LandingPage.jsx';
 import FloatingAssistant from './components/FloatingAssistant.jsx';
 import DashboardHome from './components/DashboardHome.jsx';
 import PaperMarkingPage from './components/PaperMarkingPage.jsx';
-import { EDUCATOR_ROLES, LUSAKA_INSTITUTIONS } from './data/institutions.js';
+import { EDUCATOR_ROLES } from './data/institutions.js';
+import TypedText from './components/TypedText.jsx';
 import './auth.css';
 import './components/dashboard-glass.css';
 import './components/dashboard-reference.css';
@@ -96,59 +108,27 @@ const roleNav = {
   Administrator: ['dashboard', 'courses', 'progress', 'reports', 'settings', 'profile'],
 };
 
-const initialForm = {
-  courseName: 'Introduction to Web Application Development',
-  courseCode: 'BIT346',
-  programme: 'Bachelor of Information Technology',
-  level: 'Second Year',
-  department: 'Computer Science',
-  lecturer: 'Nancy Ngomi',
-  semester: 'Semester 1',
-  academicYear: '2027',
-  topics: ['Introduction to Web Applications', 'HTML', 'CSS', 'JavaScript', 'PHP', 'Forms', 'Database Connectivity', 'Sessions', 'Authentication'],
-  startDate: '2027-01-12',
-  endDate: '2027-04-16',
-  numberOfWeeks: 12,
-  lessonsPerWeek: 2,
-  lessonDuration: '2 hours',
-  holidays: [{ date: '2027-03-08', name: 'Public holiday' }],
-  teachingMethods: ['Lecture', 'Discussion', 'Demonstration'],
-  learningActivities: ['Practical exercises', 'Discussions'],
+const emptyForm = {
+  courseName: '',
+  courseCode: '',
+  programme: '',
+  level: '',
+  department: '',
+  lecturer: '',
+  semester: '',
+  academicYear: '',
+  topics: [],
+  startDate: '',
+  endDate: '',
+  numberOfWeeks: '',
+  lessonsPerWeek: '',
+  lessonDuration: '',
+  holidays: [],
+  teachingMethods: [],
+  learningActivities: [],
   difficulty: 'Intermediate',
-  customInstructions: 'Make the lessons suitable for students with little prior programming experience.',
+  customInstructions: '',
 };
-
-const statCards = [
-  { label: 'Courses', value: '12', detail: '3 active this week', accent: 'indigo', icon: BookOpen },
-  { label: 'Lesson Plans', value: '48', detail: '8 completed this month', accent: 'lavender', icon: FileText },
-  { label: 'Assessments', value: '27', detail: '5 awaiting review', accent: 'navy', icon: ClipboardCheck },
-  { label: 'Teaching Progress', value: '84%', detail: '+6% this month', accent: 'success', icon: TrendingUp },
-];
-
-const recentActivity = [
-  { title: 'Updated PHP lesson sequence', period: '2h ago', status: 'Draft ready' },
-  { title: 'Assessment review scheduled', period: 'Today, 10:30', status: 'Needs approval' },
-  { title: 'BIT346 cohort performance review', period: 'Yesterday', status: 'Healthy trend' },
-];
-
-const upcomingLessons = [
-  { title: 'Introduction to Computer Science', date: '09 Sep', time: '08:00 – 10:00', type: 'Lecture', status: 'Today' },
-  { title: 'Database Systems', date: '10 Sep', time: '10:00 – 12:00', type: 'Practical', status: 'Upcoming' },
-  { title: 'Web Application Development', date: '11 Sep', time: '08:00 – 10:00', type: 'Lecture', status: 'Upcoming' },
-];
-
-const courseProgress = [
-  { code: 'BIT346', name: 'Web Application Development', percent: 84 },
-  { code: 'BIT325', name: 'Systems Analysis and Design', percent: 68 },
-  { code: 'BIT315', name: 'Web Application Development', percent: 72 },
-];
-
-const calendarEventData = [
-  { title: 'BIT346 Lesson', type: 'lesson', date: '11', day: 'Mon' },
-  { title: 'Assessment Review', type: 'assessment', date: '14', day: 'Thu' },
-  { title: 'Public Holiday', type: 'event', date: '18', day: 'Mon' },
-  { title: 'Examination', type: 'exam', date: '21', day: 'Thu' },
-];
 
 const assistantPrompts = ['Create a lesson activity', 'Explain this topic simply', 'Create a quiz', 'Make this lesson more practical', 'Give me examples'];
 
@@ -179,24 +159,46 @@ function courseMetrics(course) {
   return { topics, total, completed, inProgress, percent: total ? Math.round((completed / total) * 100) : 0, modulesCompleted: (course?.modules || []).filter((module) => module.topics.length && module.topics.every((topic) => topic.status === 'completed')).length };
 }
 
-function UploadCoursePage({ onCreate }) {
+function UploadCoursePage({ onCreate, onUploaded }) {
   const [status, setStatus] = useState('idle');
   const [fileName, setFileName] = useState('');
   const [error, setError] = useState('');
   const [manual, setManual] = useState(false);
+  const [detected, setDetected] = useState({ name: false, code: false, description: false, topics: false });
   const [fields, setFields] = useState({ name: '', code: '', description: '', topics: '' });
   const inputRef = useRef(null);
   const supported = ['.pdf', '.doc', '.docx', '.txt'];
-  function analyze(file) {
+  async function analyze(file) {
     if (!file) return;
     const extension = `.${file.name.split('.').pop().toLowerCase()}`;
     if (!supported.includes(extension)) { setError('Please choose a PDF, DOC, DOCX, or TXT course outline.'); return; }
-    setError(''); setFileName(file.name); setStatus('processing');
-    const read = () => { setStatus('success'); if (extension === '.txt') { const reader = new FileReader(); reader.onload = () => { const text = String(reader.result || ''); const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean); setFields({ name: lines[0] || '', code: lines.find((line) => /code/i.test(line))?.split(':').pop().trim() || '', description: lines.slice(1, 3).join(' '), topics: lines.slice(3).join('\n') }); }; reader.readAsText(file); } };
-    setTimeout(read, 1700);
+    setError('');
+    setFileName(file.name);
+    setStatus('processing');
+    try {
+      const resource = await resourceApi.upload(file);
+      const next = {
+        name: resource.courseName || '',
+        code: resource.courseCode || '',
+        description: resource.description || '',
+        topics: (resource.topics || []).join('\n'),
+      };
+      setFields(next);
+      setDetected({
+        name: Boolean(resource.courseName),
+        code: Boolean(resource.courseCode),
+        description: Boolean(resource.description),
+        topics: Boolean(resource.topics?.length),
+      });
+      setStatus('success');
+      onUploaded?.(resource);
+    } catch (err) {
+      setStatus('error');
+      setError(err.message || 'The file could not be read.');
+    }
   }
   function submit(event) { event.preventDefault(); const topics = fields.topics.split(/\r?\n|,|;/).map((topic) => topic.trim()).filter(Boolean); onCreate(buildCourse({ ...fields, topics, fileName })); }
-  return <section className="course-upload-page"><div className="account-heading"><div><span className="section-kicker">COURSE WORKSPACE</span><h1>Upload your course outline</h1><p>Let PlanWise turn your source document into a trackable teaching structure.</p></div></div>{status === 'processing' && <div className="panel-card analysis-card"><div className="analysis-spinner" /><h2>Analyzing {fileName}</h2>{['Uploading course outline', 'Reading course outline', 'Identifying course information', 'Extracting topics and objectives', 'Building progress tracker'].map((item, index) => <span className={index < 2 ? 'done' : ''} key={item}>{index < 2 ? '✓' : '○'} {item}...</span>)}</div>}{status !== 'processing' && <><div className="upload-layout"><button className="panel-card upload-dropzone" onClick={() => inputRef.current?.click()}><UploadCloud size={34} /><strong>Drop your file here or browse</strong><span>Supported formats: PDF, DOC, DOCX, TXT</span><input ref={inputRef} type="file" accept=".pdf,.doc,.docx,.txt" onChange={(event) => analyze(event.target.files?.[0])} /></button><div className="panel-card manual-card"><div className="settings-title"><Pencil size={18} /><div><h3>Enter course manually</h3><span>For outlines you would rather type in</span></div></div><button className="secondary-button" onClick={() => setManual(true)}>Start manually</button></div></div>{error && <div className="error-box">{error}</div>}{(manual || status === 'success') && <form className="panel-card extracted-form" onSubmit={submit}><div className="panel-head"><div><span className="section-kicker">{status === 'success' ? 'REVIEW EXTRACTED INFORMATION' : 'MANUAL COURSE'}</span><h2>{status === 'success' ? 'Course successfully analyzed.' : 'Create your course'}</h2></div></div><div className="grid-2"><label className="field"><span>Course Name</span><input value={fields.name} onChange={(event) => setFields({ ...fields, name: event.target.value })} placeholder="Not provided" /></label><label className="field"><span>Course Code</span><input value={fields.code} onChange={(event) => setFields({ ...fields, code: event.target.value })} placeholder="Not provided" /></label><label className="field full-span"><span>Course Description</span><textarea rows={3} value={fields.description} onChange={(event) => setFields({ ...fields, description: event.target.value })} placeholder="Not provided" /></label><label className="field full-span"><span>Topics, one per line</span><textarea rows={7} value={fields.topics} onChange={(event) => setFields({ ...fields, topics: event.target.value })} placeholder="Add the topics from your outline" /></label></div><div className="footer-actions-row"><button type="submit" className="primary-button">Create Progress Tracker</button></div></form>}</>}{status === 'success' && <div className="success-toast"><CheckCircle2 size={16} /> Course successfully analyzed.</div>}</section>;
+  return <section className="course-upload-page"><div className="account-heading"><div><span className="section-kicker">COURSE WORKSPACE</span><h1>Upload your course outline</h1><p>Let PlanWise turn your source document into a trackable teaching structure.</p></div></div>{status === 'processing' && <div className="panel-card analysis-card"><div className="analysis-spinner" /><h2>Analyzing {fileName}</h2>{['Uploading course outline', 'Reading course outline', 'Identifying course information', 'Extracting topics and objectives', 'Building progress tracker'].map((item, index) => <span className={index < 2 ? 'done' : ''} key={item}>{index < 2 ? '✓' : '○'} {item}...</span>)}</div>}{status !== 'processing' && <><div className="upload-layout"><button className="panel-card upload-dropzone" onClick={() => inputRef.current?.click()}><UploadCloud size={34} /><strong>Drop your file here or browse</strong><span>Supported formats: PDF, DOC, DOCX, TXT</span><input ref={inputRef} type="file" accept=".pdf,.doc,.docx,.txt" onChange={(event) => analyze(event.target.files?.[0])} /></button><div className="panel-card manual-card"><div className="settings-title"><Pencil size={18} /><div><h3>Enter course manually</h3><span>For outlines you would rather type in</span></div></div><button className="secondary-button" onClick={() => setManual(true)}>Start manually</button></div></div>{error && <div className="error-box">{error}</div>}{(manual || status === 'success') && <form className="panel-card extracted-form" onSubmit={submit}><div className="panel-head"><div><span className="section-kicker">{status === 'success' ? 'REVIEW EXTRACTED INFORMATION' : 'MANUAL COURSE'}</span><h2>{status === 'success' ? 'File read. Review what was detected.' : 'Create your course'}</h2></div></div><div className="grid-2"><label className="field"><span>Course Name</span><input value={fields.name} onChange={(event) => setFields({ ...fields, name: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.name && <small className="field-error">Not detected</small>}<label className="field"><span>Course Code</span><input value={fields.code} onChange={(event) => setFields({ ...fields, code: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.code && <small className="field-error">Not detected</small>}<label className="field full-span"><span>Course Description</span><textarea rows={3} value={fields.description} onChange={(event) => setFields({ ...fields, description: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.description && <small className="field-error">Not detected</small>}<label className="field full-span"><span>Topics, one per line</span><textarea rows={7} value={fields.topics} onChange={(event) => setFields({ ...fields, topics: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.topics && <small className="field-error">Not detected</small>}</div><div className="footer-actions-row"><button type="submit" className="primary-button">Create Progress Tracker</button></div></form>}</>}{status === 'success' && <div className="success-toast"><CheckCircle2 size={16} /> The file was read and saved to Resources.</div>}</section>;
 }
 
 function CourseCard({ course, onOpen }) {
@@ -221,22 +223,16 @@ function ProgressPage({ courses, onOpen, onStatusChange }) {
 }
 
 const defaultUser = {
-  id: 'demo-user',
-  name: 'Nancy Ngomi',
-  email: 'nancy@example.com',
-  role: 'Lecturer',
+  id: '',
+  name: '',
+  email: '',
+  role: '',
   institution: '',
-  department: 'Information Technology',
+  department: '',
   phone: '',
   avatar: '',
-  memberSince: 'September 2026',
+  memberSince: '',
 };
-
-const roleOptions = EDUCATOR_ROLES.map((role) => ({
-  value: role.value,
-  icon: role.value === 'Lecturer' ? GraduationCap : School,
-  description: role.description,
-}));
 
 function normalizeCourse(course) {
   if (!course) return course;
@@ -246,23 +242,46 @@ function normalizeCourse(course) {
   };
 }
 
+function PlanWiseMark() {
+  return (
+    <svg className="pw-mark" viewBox="0 0 40 40" aria-hidden="true">
+      <path fill="#d4b06a" d="M20 4.8 33.4 10.2 20 15.6 6.6 10.2 20 4.8Z" />
+      <path fill="#d4b06a" d="M30.2 12.1v5.6c0 .55-.62.9-1.12.6L20 14.4l-9.08 3.9c-.5.3-1.12-.05-1.12-.6v-5.6L20 16.2l10.2-4.1Z" />
+      <path fill="#1f4d3a" d="M6.5 17.4c4.4 2.1 8.6 2.1 13.5 0v15.4c-4.9 2.1-9.1 2.1-13.5 0V17.4Z" />
+      <path fill="#2c6b54" d="M33.5 17.4c-4.4 2.1-8.6 2.1-13.5 0v15.4c4.9 2.1 9.1 2.1 13.5 0V17.4Z" />
+      <path fill="#e7d3a1" d="M19.15 17.6h1.7v14.8h-1.7z" />
+    </svg>
+  );
+}
+
 function AuthShell({ children, mode = 'login', onNavigate }) {
-  if (mode === 'login') {
+  if (mode === 'login' || mode === 'register') {
     return (
-      <div className="leaf-auth aurelia-auth">
-        <div className="leaf-auth-bg" aria-hidden="true" />
-        <button type="button" className="leaf-auth-home" onClick={() => onNavigate?.('landing')}>
-          <div className="brand-mark"><GraduationCap size={18} /></div>
-          <strong>PlanWise AI</strong>
-        </button>
-        <div className="leaf-auth-card aurelia-card">
-          <aside className="aurelia-brand" aria-hidden="false">
-            <span className="aurelia-eyebrow">PLANWISE AI</span>
-            <h1>WELCOME</h1>
-            <strong>DIGITAL LESSON PLAN SYSTEM</strong>
-            <p>Sign in to manage lesson plans, assessments, paper marking, attendance, and your teaching calendar — all in one calm workspace.</p>
-          </aside>
-          <div className="leaf-auth-form aurelia-form">{children}</div>
+      <div className={`pw-signup is-${mode}`}>
+        <div className="pw-signup-shell">
+        <aside className="pw-signup-visual">
+          <div className="pw-signup-visual-top">
+            <button type="button" className="pw-signup-brand pw-signup-brand-light" onClick={() => onNavigate?.('landing')}>
+              <PlanWiseMark />
+              <span>PlanWise <em>AI</em></span>
+            </button>
+            <p>PLAN · TEACH · ASSESS · GROW</p>
+          </div>
+          <div className="pw-signup-visual-copy">
+            <h1>
+              <TypedText text="Welcome to" keepCaret={false} />
+              <TypedText text="PlanWise AI" accent="AI" startDelay={"Welcome to".length * 46 + 180} />
+            </h1>
+            <p>Your intelligent teaching workspace.</p>
+            <ul>
+              <li><span><CalendarDays size={18} /></span>Plan Lessons</li>
+              <li><span><ClipboardCheck size={18} /></span>Create Assessments</li>
+              <li><span><CheckCircle2 size={18} /></span>Mark with Ease</li>
+              <li><span><BarChart3 size={18} /></span>Track Progress</li>
+            </ul>
+          </div>
+        </aside>
+        <main className="pw-signup-panel">{children}</main>
         </div>
       </div>
     );
@@ -318,30 +337,29 @@ function LoginPage({ onLogin, onNavigate }) {
     try {
       const result = await authApi.login({ email: email.trim(), password });
       onLogin(result.user, remember, result.token);
-    } catch (err) {
-      setError(err.message || 'Incorrect email or password.');
+    } catch {
+      setError('Login failed. Please check your email and password and try again.');
     } finally {
       setLoading(false);
     }
   }
   return (
     <AuthShell mode="login" onNavigate={onNavigate}>
-      <div className="auth-form-wrap aurelia-form-wrap">
-        <div className="aurelia-form-brand">
-          <div className="aurelia-mark">P</div>
-          <span className="section-kicker">SECURE ACCESS</span>
-        </div>
+      <div className="pw-signup-card">
+        <button type="button" className="pw-signup-brand" onClick={() => onNavigate('landing')}>
+          <PlanWiseMark />
+          <span>PlanWise <em>AI</em></span>
+        </button>
         <h2>Sign in</h2>
-        <p className="auth-subtitle">Use the educator credentials for your PlanWise workspace.</p>
-        <form className="auth-form" onSubmit={submit}>
-          <label className="auth-field"><span>Email</span><div className="auth-input"><Mail size={16} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@institution.edu" autoComplete="email" /></div></label>
-          <PasswordField label="Password" value={password} onChange={setPassword} autoComplete="current-password" />
-          {error && <div className="auth-error">{error}</div>}
-          <div className="auth-options"><label><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Remember me</label><button type="button" onClick={() => onNavigate('forgot-password')}>Forgot password?</button></div>
-          <button className="auth-submit" disabled={loading}>{loading ? 'Signing in...' : <>Sign in <ArrowRight size={16} /></>}</button>
+        <p className="pw-signup-lead">Use the educator credentials for your PlanWise workspace.</p>
+        <form className="auth-form pw-signup-form" onSubmit={submit}>
+          <label className="auth-field"><span>Email</span><div className="auth-input"><Mail size={16} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /></div></label>
+          <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Enter your password" autoComplete="current-password" />
+          {error && <div className="auth-error" role="alert">{error}</div>}
+          <div className="auth-options pw-login-options"><label><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Remember me</label><button type="button" onClick={() => onNavigate('forgot-password')}>Forgot password?</button></div>
+          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</button>
         </form>
-        <p className="auth-switch">Don't have an account? <button onClick={() => onNavigate('register')}>Sign Up</button></p>
-        <p className="aurelia-footnote">Protected workspace for educators and institutions.</p>
+        <p className="pw-signup-switch">Don't have an account? <button type="button" onClick={() => onNavigate('register')}>Sign Up</button></p>
       </div>
     </AuthShell>
   );
@@ -362,29 +380,78 @@ function passwordFeedback(password) {
   return `Still needs ${missing.slice(0, -1).join(', ')}, and ${missing[missing.length - 1]}.`;
 }
 
+function InstitutionField({ label, placeholder, options, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const fieldRef = useRef(null);
+  useEffect(() => {
+    function close(event) {
+      if (!fieldRef.current?.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+  return (
+    <div className="auth-field pw-institution" ref={fieldRef}>
+      <span>{label}</span>
+      <button type="button" className={`auth-input pw-select${open ? ' is-open' : ''}`} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        <Building2 size={16} />
+        <strong className={value ? '' : 'is-placeholder'}>{value || placeholder}</strong>
+        <ChevronDown size={16} />
+      </button>
+      {open && (
+        <div className="pw-menu" role="listbox">
+          {options.map((item) => (
+            <button type="button" role="option" aria-selected={value === item} key={item} onClick={() => { onChange(item); setOpen(false); }}>{item}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RegisterPage({ onRegister, onNavigate }) {
   const [fields, setFields] = useState({ name: '', email: '', password: '', confirm: '', role: 'Lecturer', institution: '', institutionOther: '', department: '' });
-  const [institutionQuery, setInstitutionQuery] = useState('');
-  const [terms, setTerms] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const checks = passwordChecks(fields.password);
   const validPassword = Object.values(checks).every(Boolean);
   const passwordHint = passwordFeedback(fields.password);
-  const filteredInstitutions = LUSAKA_INSTITUTIONS.filter((item) => item.toLowerCase().includes(institutionQuery.trim().toLowerCase()));
+  const isSchoolTeacher = fields.role === 'Teacher';
+  const [institutions, setInstitutions] = useState([]);
+  useEffect(() => {
+    institutionApi.list({ role: isSchoolTeacher ? 'teacher' : 'lecturer' })
+      .then((data) => setInstitutions(data.institutions || []))
+      .catch((err) => setError(err.message || 'Could not load institutions.'));
+  }, [isSchoolTeacher]);
+  const institutionLabel = isSchoolTeacher ? 'School' : 'Institution';
+  const departmentLabel = isSchoolTeacher ? 'Subject or Department' : 'Department';
+  const departmentPlaceholder = isSchoolTeacher ? 'Enter your subject or department' : 'Enter your department';
   function update(field, value) { setFields((current) => ({ ...current, [field]: value })); }
+  function selectRole(role) {
+    setFields((current) => ({ ...current, role, institution: '' }));
+  }
   async function submit(event) {
     event.preventDefault();
     setError('');
-    const institutionRaw = (fields.institution || institutionQuery).trim();
-    const institution = institutionRaw === 'Other Institution' ? fields.institutionOther.trim() : institutionRaw;
+    const institution = fields.institution.trim();
     if (!fields.name.trim() || !fields.email.trim() || !fields.password || !fields.confirm || !fields.role || !institution || !fields.department.trim()) {
-      setError('Please complete all required fields, including role and institution.');
+      const message = 'Please complete all required fields, including role and institution.';
+      setError(message);
+      window.alert(message);
       return;
     }
-    if (!validPassword) { setError('Choose a stronger password that meets all requirements.'); return; }
-    if (fields.password !== fields.confirm) { setError('Passwords do not match.'); return; }
-    if (!terms) { setError('Please agree to the Terms of Service and Privacy Policy.'); return; }
+    if (!validPassword) {
+      const message = 'Choose a stronger password that meets all requirements.';
+      setError(message);
+      window.alert(message);
+      return;
+    }
+    if (fields.password !== fields.confirm) {
+      const message = 'Passwords do not match.';
+      setError(message);
+      window.alert(message);
+      return;
+    }
     setLoading(true);
     try {
       const result = await authApi.register({
@@ -398,57 +465,48 @@ function RegisterPage({ onRegister, onNavigate }) {
       });
       onRegister({ ...result.user, welcomePending: true }, result.token);
     } catch (err) {
-      setError(err.message || 'Unable to create your account.');
+      const message = err.message || 'Unable to create your account.';
+      const network = !err.status && /network|failed to fetch|timeout|ECONNABORTED/i.test(message);
+      setError(network ? 'Could not reach PlanWise. Check your connection and try again.' : message);
+      if (!network) window.alert(message);
       setLoading(false);
     }
   }
   return (
     <AuthShell mode="register" onNavigate={onNavigate}>
-      <div className="auth-form-wrap register-wrap">
-        <div className="mobile-auth-brand"><div className="brand-mark"><GraduationCap size={20} /></div><strong>PlanWise AI</strong></div>
-        <span className="section-kicker">NEW EDUCATOR ACCOUNT</span>
-        <h2>Create your PlanWise AI account</h2>
-        <p className="auth-subtitle">Choose your role and institution, then start planning with AI.</p>
-        <form className="auth-form register-form" onSubmit={submit}>
-          <div className="auth-form-grid">
-            <label className="auth-field"><span>Full Name</span><div className="auth-input"><UserRound size={16} /><input value={fields.name} onChange={(event) => update('name', event.target.value)} placeholder="Your full name" autoComplete="name" /></div></label>
-            <label className="auth-field"><span>Email Address</span><div className="auth-input"><Mail size={16} /><input type="email" value={fields.email} onChange={(event) => update('email', event.target.value)} placeholder="you@institution.edu" autoComplete="email" /></div></label>
+      <div className="pw-signup-card">
+        <button type="button" className="pw-signup-brand" onClick={() => onNavigate('landing')}>
+          <PlanWiseMark />
+          <span>PlanWise <em>AI</em></span>
+        </button>
+        <h2>Create your educator account</h2>
+        <p className="pw-signup-lead">Join PlanWise AI and simplify your teaching workflow.</p>
+        <form className="auth-form register-form pw-signup-form" autoComplete="off" onSubmit={submit}>
+          <div className="pw-role-toggle" role="group" aria-label="What are you?">
+            <button type="button" className={fields.role === 'Lecturer' ? 'is-active' : ''} aria-pressed={fields.role === 'Lecturer'} onClick={() => selectRole('Lecturer')}>Lecturer</button>
+            <button type="button" className={isSchoolTeacher ? 'is-active' : ''} aria-pressed={isSchoolTeacher} onClick={() => selectRole('Teacher')}>Teacher</button>
           </div>
-          <PasswordField label="Password" value={fields.password} onChange={(value) => update('password', value)} autoComplete="new-password" />
+          <div className="pw-signup-grid">
+            <label className="auth-field"><span>Full Name</span><div className="auth-input"><UserRound size={16} /><input value={fields.name} onChange={(event) => update('name', event.target.value)} placeholder="Enter your full name" autoComplete="off" name="planwise-full-name" /></div></label>
+            <label className="auth-field"><span>Email Address</span><div className="auth-input"><Mail size={16} /><input type="email" value={fields.email} onChange={(event) => update('email', event.target.value)} placeholder="you@example.com" autoComplete="off" name="planwise-email" /></div></label>
+            <PasswordField label="Password" value={fields.password} onChange={(value) => update('password', value)} placeholder="Create a password" autoComplete="off" />
+            <PasswordField label="Confirm Password" value={fields.confirm} onChange={(value) => update('confirm', value)} placeholder="Confirm your password" autoComplete="off" />
+          </div>
           {passwordHint && <p className={`password-hint ${validPassword ? 'valid' : ''}`}>{passwordHint}</p>}
-          <PasswordField label="Confirm Password" value={fields.confirm} onChange={(value) => update('confirm', value)} autoComplete="new-password" />
-          <div className="role-section">
-            <span className="role-label">Your Role</span>
-            <div className="role-grid role-grid-two">
-              {roleOptions.map(({ value, icon: Icon, description }) => (
-                <button type="button" className={`role-option ${fields.role === value ? 'selected' : ''}`} key={value} onClick={() => update('role', value)}>
-                  <Icon size={17} /><span><strong>{value}</strong><small>{description}</small></span>
-                </button>
-              ))}
-            </div>
+          <div className="pw-signup-grid">
+            <InstitutionField
+              label={institutionLabel}
+              placeholder={isSchoolTeacher ? 'Select your school' : 'Select your university'}
+              options={institutions}
+              value={fields.institution}
+              onChange={(value) => update('institution', value)}
+            />
+            <label className="auth-field"><span>{departmentLabel}</span><div className="auth-input"><BookOpen size={16} /><input value={fields.department} onChange={(event) => update('department', event.target.value)} placeholder={departmentPlaceholder} autoComplete="off" name="planwise-department" /></div></label>
           </div>
-          <div className="auth-form-grid">
-            <label className="auth-field"><span>Institution (Lusaka)</span>
-              <div className="auth-input"><GraduationCap size={16} /><input value={institutionQuery || fields.institution} onChange={(event) => { setInstitutionQuery(event.target.value); update('institution', ''); }} placeholder="Search universities & schools" list="lusaka-institutions" /></div>
-              <datalist id="lusaka-institutions">{LUSAKA_INSTITUTIONS.map((item) => <option key={item} value={item} />)}</datalist>
-              {institutionQuery && !fields.institution && (
-                <div className="institution-suggestions">
-                  {filteredInstitutions.slice(0, 8).map((item) => (
-                    <button type="button" key={item} onClick={() => { update('institution', item); setInstitutionQuery(item); }}>{item}</button>
-                  ))}
-                </div>
-              )}
-            </label>
-            <label className="auth-field"><span>Department</span><div className="auth-input"><BookOpen size={16} /><input value={fields.department} onChange={(event) => update('department', event.target.value)} placeholder="e.g. Information Technology" /></div></label>
-          </div>
-          {fields.institution === 'Other Institution' && (
-            <label className="auth-field"><span>Other Institution</span><div className="auth-input"><GraduationCap size={16} /><input value={fields.institutionOther} onChange={(event) => update('institutionOther', event.target.value)} placeholder="Enter your institution name" /></div></label>
-          )}
-          {error && <div className="auth-error">{error}</div>}
-          <label className="terms-check"><input type="checkbox" checked={terms} onChange={(event) => setTerms(event.target.checked)} /> <span>I agree to the <button type="button">Terms of Service</button> and <button type="button">Privacy Policy</button>.</span></label>
-          <button className="auth-submit" disabled={loading || !terms}>{loading ? 'Creating account...' : <>Create Account <ArrowRight size={16} /></>}</button>
+          {error && <div className="auth-error" role="alert">{error}</div>}
+          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Creating account...' : <>Create Account <ArrowRight size={18} /></>}</button>
         </form>
-        <p className="auth-switch">Already have an account? <button onClick={() => onNavigate('login')}>Sign In</button></p>
+        <p className="pw-signup-switch">Already have an account? <button type="button" onClick={() => onNavigate('login')}>Sign In</button></p>
       </div>
     </AuthShell>
   );
@@ -467,8 +525,8 @@ function ForgotPasswordPage({ onNavigate }) {
     setLoading(true);
     try {
       const result = await authApi.forgotPassword(email.trim());
-      setDevToken(result.resetToken || '');
-      setSent(true);
+      setDevToken('');
+      setSent(result.message || 'If an account exists for that email, a reset link was sent.');
     } catch (err) {
       setError(err.message || 'Unable to start password reset.');
     } finally {
@@ -484,9 +542,8 @@ function ForgotPasswordPage({ onNavigate }) {
             <div className="success-auth-icon"><Check size={21} /></div>
             <span className="section-kicker">CHECK YOUR INBOX</span>
             <h2>Reset link sent</h2>
-            <p className="auth-subtitle">If an account exists for {email}, we have issued password reset instructions.</p>
-            {devToken && <p className="muted-text">Dev reset token: {devToken}</p>}
-            <button className="auth-submit" onClick={() => onNavigate('login')}>Back to Sign In <ArrowRight size={16} /></button>
+            <p className="auth-subtitle">{typeof sent === 'string' ? sent : 'If an account exists for that email, a reset link was sent.'}</p>
+            <button className="auth-submit" onClick={() => onNavigate('login')}>Back to Sign In</button>
           </>
         ) : (
           <>
@@ -496,9 +553,9 @@ function ForgotPasswordPage({ onNavigate }) {
             <form className="auth-form" onSubmit={submit}>
               <label className="auth-field"><span>Email Address</span><div className="auth-input"><Mail size={16} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@institution.edu" /></div></label>
               {error && <div className="auth-error">{error}</div>}
-              <button className="auth-submit" disabled={loading}>{loading ? 'Sending…' : <>Send Reset Link <ArrowRight size={16} /></>}</button>
+              <button className="auth-submit" disabled={loading}>{loading ? 'Sending…' : 'Send Reset Link'}</button>
             </form>
-            <button className="auth-back" onClick={() => onNavigate('login')}><ArrowRight size={15} className="back-arrow" /> Back to Sign In</button>
+            <button type="button" className="auth-back" onClick={() => onNavigate('login')}>Back to Sign In</button>
           </>
         )}
       </div>
@@ -511,7 +568,58 @@ function Avatar({ user, large = false }) {
   return user.avatar ? <img className={`user-avatar ${large ? 'large' : ''}`} src={user.avatar} alt={`${user.name} profile`} /> : <div className={`initial-avatar ${large ? 'large' : ''}`}>{initials}</div>;
 }
 
+function ResetPasswordPage({ onNavigate }) {
+  const token = new URLSearchParams(window.location.search).get('token') || '';
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState(token ? '' : 'This reset link is invalid.');
+  const [loading, setLoading] = useState(false);
+  const checks = passwordChecks(password);
+  const validPassword = Object.values(checks).every(Boolean);
+  async function submit(event) {
+    event.preventDefault();
+    if (!token) { setError('This reset link is invalid.'); return; }
+    if (!validPassword) { setError('Choose a stronger password that meets all requirements.'); return; }
+    if (password !== confirm) { setError('Passwords do not match.'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      await authApi.resetPassword({ token, password });
+      window.history.pushState({}, '', '/login');
+      onNavigate('login');
+    } catch (err) {
+      setError(err.message || 'Could not reset the password.');
+      setLoading(false);
+    }
+  }
+  return (
+    <AuthShell mode="login" onNavigate={onNavigate}>
+      <div className="pw-signup-card">
+        <h2>Choose a new password</h2>
+        <p className="pw-signup-lead">Use the link from your email. The new password replaces the old one.</p>
+        <form className="auth-form" onSubmit={submit}>
+          <PasswordField label="New password" value={password} onChange={setPassword} autoComplete="new-password" />
+          <PasswordField label="Confirm password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
+          {password ? <p className={`password-hint ${validPassword ? 'valid' : ''}`}>{passwordFeedback(password)}</p> : null}
+          {error && <div className="auth-error" role="alert">{error}</div>}
+          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Saving...' : 'Update password'}</button>
+        </form>
+      </div>
+    </AuthShell>
+  );
+}
+
 function ProfilePage({ user, onSave, onNavigate, startEditing = false }) {
+  const [universities, setUniversities] = useState([]);
+  const [schools, setSchools] = useState([]);
+  useEffect(() => {
+    institutionApi.list()
+      .then((data) => {
+        setUniversities(data.universities || []);
+        setSchools(data.schools || []);
+      })
+      .catch(() => {});
+  }, []);
   const [editing, setEditing] = useState(startEditing);
   const [draft, setDraft] = useState(user);
   const [error, setError] = useState('');
@@ -540,29 +648,37 @@ function ProfilePage({ user, onSave, onNavigate, startEditing = false }) {
     <div className="account-heading"><div><span className="section-kicker">ACCOUNT</span><h1>{editing ? 'Edit your profile' : 'Your profile'}</h1><p>Keep your teaching identity and contact details up to date.</p></div>{!editing && <button className="primary-button" onClick={() => setEditing(true)}><Pencil size={16} /> Edit Profile</button>}</div>
     {editing ? <form className="panel-card profile-form" onSubmit={save}>
       <div className="profile-form-top"><Avatar user={draft} large /><div><label className="upload-button"><input type="file" accept="image/png,image/jpeg,image/webp" onChange={handlePhoto} />Change Photo</label>{draft.avatar && <button type="button" className="text-button" onClick={() => update('avatar', '')}>Remove Photo</button>}{photoError && <small className="field-error">{photoError}</small>}</div></div>
-      <div className="account-form-grid"><label className="field"><span>Full Name</span><input value={draft.name} onChange={(event) => update('name', event.target.value)} /></label><label className="field"><span>Email</span><input type="email" value={draft.email} onChange={(event) => update('email', event.target.value)} /></label><label className="field"><span>Phone Number</span><input value={draft.phone} placeholder="Not provided" onChange={(event) => update('phone', event.target.value)} /></label><label className="field"><span>Institution</span><input value={draft.institution} placeholder="Not provided" onChange={(event) => update('institution', event.target.value)} list="profile-institutions" /><datalist id="profile-institutions">{LUSAKA_INSTITUTIONS.map((item) => <option key={item} value={item} />)}</datalist></label><label className="field"><span>Department</span><input value={draft.department} placeholder="Not provided" onChange={(event) => update('department', event.target.value)} /></label><label className="field"><span>Role</span><select value={draft.role} onChange={(event) => update('role', event.target.value)}>{EDUCATOR_ROLES.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></label></div>
+      <div className="account-form-grid"><label className="field"><span>Full Name</span><input value={draft.name} onChange={(event) => update('name', event.target.value)} /></label><label className="field"><span>Email</span><input type="email" value={draft.email} onChange={(event) => update('email', event.target.value)} /></label><label className="field"><span>Phone Number</span><input value={draft.phone} placeholder="Not provided" onChange={(event) => update('phone', event.target.value)} /></label><InstitutionField label="Institution" placeholder={draft.role === 'Teacher' ? 'Select your school' : 'Select your university'} options={draft.role === 'Teacher' ? schools : universities} value={draft.institution} onChange={(value) => update('institution', value)} /><label className="field"><span>Department</span><input value={draft.department} placeholder="Not provided" onChange={(event) => update('department', event.target.value)} /></label><label className="field"><span>Role</span><select value={draft.role === 'School Teacher' ? 'Teacher' : draft.role} onChange={(event) => { update('role', event.target.value); update('institution', ''); }}>{EDUCATOR_ROLES.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></label></div>
       {error && <div className="error-box">{error}</div>}<div className="footer-actions-row"><button type="button" className="secondary-button" onClick={() => { setDraft(user); setEditing(false); }}>Cancel</button><button type="submit" className="primary-button"><Save size={16} /> Save Changes</button></div>
     </form> : <div className="profile-layout"><div className="panel-card identity-card"><Avatar user={user} large /><h2>{user.name}</h2><p>{user.role}</p><span className="account-status"><ShieldCheck size={14} /> Active</span></div><div className="panel-card details-card"><div className="panel-head"><h3>Personal information</h3><button className="pill-button" onClick={() => setEditing(true)}><Pencil size={13} /> Edit</button></div><div className="detail-grid">{[['Email', user.email, Mail], ['Role', user.role, UserRound], ['Institution', user.institution, ShieldCheck], ['Department', user.department, ShieldCheck], ['Phone number', user.phone, Phone], ['Member since', user.memberSince, ShieldCheck]].map(([label, value, Icon]) => <div className="detail-item" key={label}><Icon size={16} /><span><small>{label}</small><strong>{value || 'Not provided'}</strong></span></div>)}</div></div></div>}
   </section>;
 }
 
 function SettingsPage({ user, onNavigate, onLogout, darkMode, setDarkMode }) {
-  const [preferences, setPreferences] = useState(() => ({
-    notifications: true,
-    lessons: true,
-    assessments: true,
-    ai: true,
-    ...(user?.preferences || {}),
-  }));
+  const [preferences, setPreferences] = useState({
+    emailNotifications: true,
+    lessonPlanNotifications: true,
+    assessmentNotifications: true,
+    calendarNotifications: true,
+    systemNotifications: true,
+  });
+  const [settingsError, setSettingsError] = useState('');
   useEffect(() => {
-    setPreferences((current) => ({ ...current, ...(user?.preferences || {}) }));
-  }, [user]);
+    settingsApi.notifications()
+      .then((saved) => setPreferences((current) => ({ ...current, ...saved })))
+      .catch((err) => setSettingsError(err.message || 'Could not load notification settings.'));
+  }, []);
   async function toggle(key) {
-    setPreferences((current) => {
-      const next = { ...current, [key]: !current[key] };
-      authApi.updateMe({ ...user, preferences: next }).catch(() => {});
-      return next;
-    });
+    const next = { ...preferences, [key]: !preferences[key] };
+    setPreferences(next);
+    try {
+      const saved = await settingsApi.updateNotifications(next);
+      setPreferences((current) => ({ ...current, ...saved }));
+      setSettingsError('');
+    } catch (err) {
+      setPreferences(preferences);
+      setSettingsError(err.message || 'Could not save notification settings.');
+    }
   }
   return (
     <section className="account-page settings-page">
@@ -593,7 +709,8 @@ function SettingsPage({ user, onNavigate, onLogout, darkMode, setDarkMode }) {
           </div>
           <div className="panel-card settings-card">
             <div className="settings-title"><Bell size={18} /><div><h3>Notifications</h3><span>Choose what reaches your inbox</span></div></div>
-            {[['notifications', 'Email notifications'], ['lessons', 'Lesson reminders'], ['assessments', 'Assessment reminders'], ['ai', 'AI activity notifications']].map(([key, label]) => (
+            {settingsError && <div className="error-box">{settingsError}</div>}
+            {[['emailNotifications', 'Email notifications'], ['lessonPlanNotifications', 'Lesson plan notifications'], ['assessmentNotifications', 'Assessment notifications'], ['calendarNotifications', 'Calendar notifications'], ['systemNotifications', 'System notifications']].map(([key, label]) => (
               <label className="toggle-row" key={key}><span>{label}</span><input type="checkbox" checked={preferences[key]} onChange={() => toggle(key)} /><i /></label>
             ))}
           </div>
@@ -625,8 +742,8 @@ function App() {
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState('');
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState(initialForm);
-  const [topics, setTopics] = useState(initialForm.topics);
+  const [form, setForm] = useState(emptyForm);
+  const [topics, setTopics] = useState(['']);
   const [errors, setErrors] = useState({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [generated, setGenerated] = useState(null);
@@ -639,9 +756,19 @@ function App() {
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [aiQuickPrompt, setAiQuickPrompt] = useState('');
-  const [markingHistory, setMarkingHistory] = useState(() => JSON.parse(localStorage.getItem('planwiseMarkingHistory') || '[]'));
-  const [attendanceRecords, setAttendanceRecords] = useState(() => JSON.parse(localStorage.getItem('planwiseAttendance') || '[]'));
-  const [activeClock, setActiveClock] = useState(() => JSON.parse(localStorage.getItem('planwiseActiveClock') || 'null'));
+  const [markingHistory, setMarkingHistory] = useState([]);
+  const [attendanceHistory, setAttendanceHistory] = useState([]);
+  const [activeClock, setActiveClock] = useState(null);
+  const [report, setReport] = useState(null);
+  const [resources, setResources] = useState([]);
+  const [quizzes, setQuizzes] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [planQuery, setPlanQuery] = useState('');
+  const [resourceQuery, setResourceQuery] = useState('');
+  const [resourceType, setResourceType] = useState('all');
   const profileMenuRef = useRef(null);
   useEffect(() => {
     localStorage.setItem('planwiseDarkMode', String(darkMode));
@@ -658,18 +785,32 @@ function App() {
     setDataLoading(true);
     setDataError('');
     try {
-      const [user, plans, events, assessmentList, courseList] = await Promise.all([
+      const [user, plans, events, assessmentList, courseList, attendance, reportData, resourceList, quizList, papers, notes] = await Promise.all([
         authApi.me(),
         lessonPlanApi.list(),
         calendarApi.list(),
         assessmentApi.list(),
         courseApi.list(),
+        attendanceApi.get(),
+        reportApi.get(),
+        resourceApi.list(),
+        quizApi.list(),
+        markingApi.list(),
+        notificationApi.list(),
       ]);
       setCurrentUser(user);
       setSavedPlans(plans);
       setCalendarEvents(events);
       setAssessments(assessmentList);
       setCourses(courseList.map(normalizeCourse));
+      setActiveClock(attendance.active || null);
+      setAttendanceHistory(attendance.history || []);
+      setReport(reportData);
+      setResources(resourceList);
+      setQuizzes(quizList);
+      setMarkingHistory(papers);
+      setNotifications(notes.notifications || []);
+      setUnreadCount(notes.unread || 0);
       setIsAuthenticated(true);
     } catch (err) {
       if (err.status === 401) {
@@ -688,6 +829,18 @@ function App() {
     if (getToken()) loadWorkspace();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setSearchResults(null);
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      searchApi.query(query).then(setSearchResults).catch((err) => setDataError(err.message || 'Search failed.'));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   function adjustZoom(delta) {
     setUiZoom((current) => {
@@ -824,24 +977,25 @@ function App() {
     }));
   }
 
-  async function savePlan() {
+  async function savePlan(status = 'Saved') {
     if (!generated) return;
     try {
       const plan = generated.id
-        ? await lessonPlanApi.update(generated.id, { ...generated, status: 'Saved' })
-        : await lessonPlanApi.create({ ...generated, status: 'Saved', aiGenerated: true });
+        ? await lessonPlanApi.update(generated.id, { ...generated, status })
+        : await lessonPlanApi.create({ ...generated, status, aiGenerated: true });
       setSavedPlans((previous) => {
         const exists = previous.some((item) => item.id === plan.id);
         return exists ? previous.map((item) => item.id === plan.id ? plan : item) : [plan, ...previous];
       });
       setGenerated(plan);
-      const suggestions = suggestCalendarFromPlan(generated, form);
-      if (suggestions.length) {
+      const alreadyScheduled = calendarEvents.some((event) => event.lessonPlanId === plan.id && event.source === 'lesson-plan');
+      if (!alreadyScheduled) {
+        const suggestions = suggestCalendarFromPlan(plan, form);
         const created = [];
         for (const suggestion of suggestions) {
-          created.push(await calendarApi.create(suggestion));
+          created.push(await calendarApi.create({ ...suggestion, source: 'lesson-plan', lessonPlanId: plan.id, status: 'suggested' }));
         }
-        setCalendarEvents((current) => [...created, ...current]);
+        if (created.length) setCalendarEvents((current) => [...created, ...current]);
       }
     } catch (error) {
       setErrors({ general: error.message || 'Unable to save the lesson plan.' });
@@ -859,6 +1013,21 @@ function App() {
 
   async function saveAssessment(next) {
     try {
+      if (next.recordKind === 'quiz') {
+        const saved = await quizApi.update(next.id, {
+          title: next.title,
+          difficulty: next.difficulty,
+          questions: (next.questions || []).map((question) => ({
+            question: question.prompt || question.question,
+            questionType: question.type || question.questionType,
+            marks: question.marks,
+            correctAnswer: question.answer || question.correctAnswer,
+            options: question.options || [],
+          })),
+        });
+        setQuizzes((current) => current.map((item) => item.id === saved.id ? saved : item));
+        return;
+      }
       const saved = next.id && assessments.some((item) => item.id === next.id)
         ? await assessmentApi.update(next.id, next)
         : await assessmentApi.create(next);
@@ -900,17 +1069,18 @@ function App() {
     }
   }
 
-  function mergeCalendarEvents(incoming) {
+  async function persistCalendarSuggestions(incoming, source) {
     const items = Array.isArray(incoming) ? incoming : [];
-    setCalendarEvents((current) => {
-      const next = [...current];
-      items.forEach((event) => {
-        const index = next.findIndex((item) => item.id === event.id);
-        if (index >= 0) next[index] = event;
-        else next.unshift(event);
-      });
-      return next;
-    });
+    if (!items.length) return;
+    try {
+      const created = [];
+      for (const item of items) {
+        created.push(await calendarApi.create({ ...item, source, status: item.status || 'suggested' }));
+      }
+      setCalendarEvents((current) => [...created, ...current]);
+    } catch (error) {
+      setDataError(error.message || 'Unable to save the suggested date.');
+    }
   }
 
   function navigateTo(section, options = {}) {
@@ -920,6 +1090,10 @@ function App() {
       return;
     }
     if (section === 'create-plan') {
+      setForm(emptyForm);
+      setTopics(['']);
+      setGenerated(null);
+      setErrors({});
       setStep(1);
       setActiveSection('plans');
       setProfileOpen(false);
@@ -949,29 +1123,43 @@ function App() {
     if (showWelcome) setWelcomeOpen(true);
   }
 
-  function clockIn() {
-    if (activeClock) return;
-    const now = new Date();
-    setActiveClock({
-      id: makeId('clock'),
-      userId: currentUser.id,
-      institution: currentUser.institution || '',
-      date: now.toISOString().slice(0, 10),
-      clockIn: now.toISOString(),
-    });
+  async function clockIn() {
+    try {
+      const result = await attendanceApi.clockIn();
+      setActiveClock(result.active || null);
+      const attendance = await attendanceApi.get();
+      setAttendanceHistory(attendance.history || []);
+      setReport(await reportApi.get());
+      setDataError('');
+    } catch (error) {
+      setDataError(error.message || 'Could not clock in.');
+    }
   }
 
-  function clockOut() {
-    if (!activeClock) return;
-    const now = new Date();
-    const durationMs = Math.max(0, now.getTime() - new Date(activeClock.clockIn).getTime());
-    const record = {
-      ...activeClock,
-      clockOut: now.toISOString(),
-      durationMs,
-    };
-    setAttendanceRecords((current) => [record, ...current].slice(0, 60));
-    setActiveClock(null);
+  async function clockOut() {
+    try {
+      await attendanceApi.clockOut();
+      setActiveClock(null);
+      const attendance = await attendanceApi.get();
+      setAttendanceHistory(attendance.history || []);
+      setReport(await reportApi.get());
+      setDataError('');
+    } catch (error) {
+      setDataError(error.message || 'Could not clock out.');
+    }
+  }
+
+  async function generateCheckedWork(payload) {
+    const saved = payload.kind === 'quiz'
+      ? await quizApi.generate(payload)
+      : await assessmentApi.generate(payload);
+    if (payload.kind === 'quiz') setQuizzes((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+    else setAssessments((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+    setReport(await reportApi.get());
+    const notes = await notificationApi.list();
+    setNotifications(notes.notifications || []);
+    setUnreadCount(notes.unread || 0);
+    return saved;
   }
 
   async function saveUser(nextUser) {
@@ -1068,6 +1256,7 @@ function App() {
       initialPrompt={isAuthenticated ? aiQuickPrompt : ''}
       material={aiMaterial}
       onMaterialChange={setAiMaterial}
+      corner="right"
     />
   );
 
@@ -1086,20 +1275,33 @@ function App() {
   }
 
   if (!isAuthenticated) {
-    if (window.location.pathname === '/register') {
+    const path = window.location.pathname;
+    if (path.startsWith('/reset-password')) {
+      return <><ResetPasswordPage onNavigate={navigateTo} />{floatingAssistant}</>;
+    }
+    const guestSection = activeSection === 'login' || activeSection === 'register' || activeSection === 'forgot-password' || activeSection === 'landing'
+      ? activeSection
+      : path === '/register'
+        ? 'register'
+        : path === '/login'
+          ? 'login'
+          : path === '/forgot-password'
+            ? 'forgot-password'
+            : 'landing';
+    if (guestSection === 'register') {
       return <><RegisterPage onRegister={(user, token) => startSession(user, true, token)} onNavigate={navigateTo} />{floatingAssistant}</>;
     }
-    if (window.location.pathname === '/forgot-password') {
+    if (guestSection === 'forgot-password') {
       return <><ForgotPasswordPage onNavigate={navigateTo} />{floatingAssistant}</>;
     }
-    if (window.location.pathname === '/login') {
+    if (guestSection === 'login') {
       return <><LoginPage onLogin={startSession} onNavigate={navigateTo} />{floatingAssistant}</>;
     }
     return <><LandingPage onNavigate={navigateTo} />{floatingAssistant}</>;
   }
 
   const visibleNavItems = navItems.filter((item) => (roleNav[currentUser.role] || roleNav.Lecturer).includes(item.id));
-  const myAttendance = attendanceRecords.filter((item) => item.userId === currentUser.id);
+  const myAttendance = attendanceHistory;
   const roleLabel = currentUser.role || '';
   const navActive = (id) => activeSection === id
     || (id === 'courses' && (activeSection === 'course-detail' || activeSection === 'upload-course'))
@@ -1138,6 +1340,11 @@ function App() {
             );
           })}
         </nav>
+        <div className="sidebar-footer">
+          <button type="button" className="secondary-button" onClick={activeClock ? clockOut : clockIn}>
+            <Clock3 size={14} /> {activeClock ? 'Clock Out' : 'Clock In'}
+          </button>
+        </div>
         <div className="sidebar-footer" data-ref-image="sidebar-inspiration" role="img" aria-label="Better Lesson Plans. Brighter Futures.">
           <em>Better Lesson Plans. Brighter Futures.</em>
         </div>
@@ -1147,11 +1354,30 @@ function App() {
         <header className="glass-topbar compact-topbar">
           <div className="glass-search">
             <Search size={16} />
-            <input type="text" placeholder="Search anything… (lessons, assessments, courses, etc.)" />
+            <input type="text" value={searchQuery} placeholder="Search lessons, resources, assessments, quizzes, calendar" onChange={(event) => setSearchQuery(event.target.value)} />
+            {searchResults && (
+              <div className="profile-menu" style={{ left: 0, right: 'auto', width: 'min(420px, 70vw)' }}>
+                {[
+                  ['lessonPlans', 'Lesson plans', 'plans'],
+                  ['resources', 'Resources', 'resources'],
+                  ['courses', 'Courses', 'courses'],
+                  ['assessments', 'Assessments', 'assessments'],
+                  ['quizzes', 'Quizzes', 'assessments'],
+                  ['calendar', 'Calendar', 'calendar'],
+                ].map(([key, label, section]) => (
+                  <div key={key}>
+                    <small>{label}</small>
+                    {(searchResults[key] || []).length ? searchResults[key].map((item) => (
+                      <button key={item.id} type="button" onClick={() => { setSearchQuery(''); setSearchResults(null); navigateTo(section); }}>{item.title}<small>{item.subtitle}</small></button>
+                    )) : <p className="muted-text">No {label.toLowerCase()}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="glass-top-actions">
-            <button className="glass-icon-btn notification-button" aria-label="Notifications" onClick={() => navigateTo('notifications')}><Bell size={18} /><span className="notification-dot" /></button>
+            <button className="glass-icon-btn notification-button" aria-label="Notifications" onClick={async () => { navigateTo('notifications'); const notes = await notificationApi.readAll(); setNotifications(notes.notifications || []); setUnreadCount(notes.unread || 0); }}><Bell size={18} />{unreadCount > 0 && <span className="notification-dot" />}</button>
             <button className="glass-icon-btn" aria-label="Toggle theme" onClick={() => setDarkMode((value) => !value)}>{darkMode ? <Sun size={18} /> : <MoonStar size={18} />}</button>
             <div className="profile-anchor" ref={profileMenuRef}>
               <button className="mini-profile" onClick={() => setProfileOpen((value) => !value)} aria-expanded={profileOpen}>
@@ -1179,7 +1405,7 @@ function App() {
         {activeSection === 'profile' && <ProfilePage user={currentUser} onSave={saveUser} onNavigate={navigateTo} startEditing={profileEditing} />}
         {activeSection === 'settings' && <SettingsPage user={currentUser} onNavigate={navigateTo} onLogout={() => setLogoutOpen(true)} darkMode={darkMode} setDarkMode={setDarkMode} />}
         {activeSection === 'courses' && <CoursesPage courses={courses} onOpen={navigateCourse} onUpload={() => navigateTo('upload-course')} />}
-        {activeSection === 'upload-course' && <UploadCoursePage onCreate={createCourse} />}
+        {activeSection === 'upload-course' && <UploadCoursePage onCreate={createCourse} onUploaded={(resource) => setResources((current) => [resource, ...current.filter((item) => item.id !== resource.id)])} />}
         {activeSection === 'course-detail' && <CourseDetailPage course={courses.find((course) => course.id === selectedCourseId)} onBack={() => navigateTo('courses')} onStatusChange={updateTopicStatus} />}
         {activeSection === 'progress' && <ProgressPage courses={courses} onOpen={navigateCourse} onStatusChange={updateTopicStatus} />}
         {activeSection === 'dashboard' && (
@@ -1188,7 +1414,7 @@ function App() {
             savedPlans={savedPlans}
             assessments={assessments}
             calendarEvents={calendarEvents}
-            markingCount={markingHistory.filter((item) => item.userId === currentUser.id).length}
+            markingCount={report?.papersMarked ?? markingHistory.length}
             dateLabel={dateLabel}
             activeClock={activeClock}
             onClockIn={clockIn}
@@ -1360,7 +1586,8 @@ function App() {
                               </div>
                               <div className="plan-actions">
                                 <button className="primary-button" onClick={savePlan}>Save</button>
-                                <button className="secondary-button" onClick={() => exportPlan('pdf')}>Export</button>
+                                <button className="secondary-button" onClick={() => (generated?.id ? downloadLessonPlanPdf(generated.id) : Promise.reject(new Error('Save the lesson plan before exporting.'))).catch((error) => setErrors({ general: error.message }))}>Export PDF</button>
+                                <button className="secondary-button" onClick={() => savePlan('draft')}>Save draft</button>
                                 <button className="secondary-button" onClick={() => exportPlan('print')}>Print</button>
                               </div>
                             </div>
@@ -1426,13 +1653,19 @@ function App() {
 
                 <div className="panel-card summary-card">
                   <h3>Saved Plans</h3>
-                  {savedPlans.length ? (
+                  <input value={planQuery} onChange={(event) => setPlanQuery(event.target.value)} placeholder="Search saved plans" />
+                  {savedPlans.filter((plan) => `${plan.courseName || ''} ${plan.title || ''} ${plan.courseCode || ''}`.toLowerCase().includes(planQuery.trim().toLowerCase())).length ? (
                     <div className="saved-list">
-                      {savedPlans.map((plan) => (
+                      {savedPlans.filter((plan) => `${plan.courseName || ''} ${plan.title || ''} ${plan.courseCode || ''}`.toLowerCase().includes(planQuery.trim().toLowerCase())).map((plan) => (
                         <div key={plan.id} className="saved-item">
-                          <strong>{plan.courseName}</strong>
+                          <button type="button" className="text-button" onClick={() => { setGenerated(plan); setStep(5); }}><strong>{plan.courseName || plan.title}</strong></button>
                           <span>{plan.courseCode}</span>
-                          <small>{plan.dateCreated} · {plan.lessons} lessons</small>
+                          <small>{plan.status} · {(plan.lessons || []).length} lessons</small>
+                          <button type="button" className="secondary-button" onClick={() => downloadLessonPlanPdf(plan.id).catch((error) => setDataError(error.message))}>PDF</button>
+                          <button type="button" className="secondary-button" onClick={async () => {
+                            const copy = await lessonPlanApi.create({ ...plan, title: `${plan.title || plan.courseName} copy`, status: 'draft' });
+                            setSavedPlans((current) => [copy, ...current]);
+                          }}>Duplicate</button>
                         </div>
                       ))}
                     </div>
@@ -1460,19 +1693,26 @@ function App() {
         {activeSection === 'assessments' && (
           <AssessmentsPage
             assessments={assessments}
-            material={aiMaterial}
+            quizzes={quizzes}
+            resources={resources}
             difficulty={aiDifficulty}
             user={currentUser}
+            onGenerate={generateCheckedWork}
             onSave={saveAssessment}
-            onDelete={async (id) => {
+            onDelete={async (item) => {
               try {
-                await assessmentApi.remove(id);
-                setAssessments((current) => current.filter((item) => item.id !== id));
+                if (item.recordKind === 'quiz') {
+                  await quizApi.remove(item.id);
+                  setQuizzes((current) => current.filter((entry) => entry.id !== item.id));
+                } else {
+                  await assessmentApi.remove(item.id);
+                  setAssessments((current) => current.filter((entry) => entry.id !== item.id));
+                }
               } catch (error) {
                 setDataError(error.message || 'Unable to delete assessment.');
               }
             }}
-            onSchedule={mergeCalendarEvents}
+            onSchedule={(items) => persistCalendarSuggestions(items, 'assessment')}
             onOpenAssistant={() => navigateTo('assistant')}
           />
         )}
@@ -1480,8 +1720,12 @@ function App() {
         {activeSection === 'paper-marking' && (
           <PaperMarkingPage
             user={currentUser}
-            history={markingHistory.filter((item) => item.userId === currentUser.id)}
-            onSaveResult={(result) => setMarkingHistory((current) => [{ ...result, userId: currentUser.id }, ...current.filter((item) => item.id !== result.id)].slice(0, 40))}
+            history={markingHistory}
+            onSaveResult={async () => {
+              const papers = await markingApi.list();
+              setMarkingHistory(papers);
+              setReport(await reportApi.get());
+            }}
           />
         )}
 
@@ -1494,7 +1738,7 @@ function App() {
             setArtifact={setAiArtifact}
             assessments={assessments}
             onSaveAssessment={saveAssessment}
-            onScheduleEvents={mergeCalendarEvents}
+            onScheduleEvents={(items) => persistCalendarSuggestions(items, 'assistant')}
             difficulty={aiDifficulty}
             setDifficulty={setAiDifficulty}
           />
@@ -1502,8 +1746,37 @@ function App() {
 
         {activeSection === 'resources' && (
           <section className="account-page">
-            <div className="account-heading"><div><span className="section-kicker">TEACHING LIBRARY</span><h1>Resources</h1><p>Keep uploaded files, generated notes, and revision materials alongside your courses.</p></div></div>
-            <div className="panel-card empty-course"><h2>{aiMaterial?.status === 'ready' ? aiMaterial.name : 'No resource file yet'}</h2><p>{aiMaterial?.status === 'ready' ? 'This file is available to the AI assistant as source material.' : 'Upload a PDF, Word, or PowerPoint file in the AI Assistant to start a resource library.'}</p><button className="primary-button" onClick={() => navigateTo('assistant')}>Open AI Assistant</button></div>
+            <div className="account-heading"><div><span className="section-kicker">TEACHING LIBRARY</span><h1>My Resources</h1><p>Files you upload stay in your account after refresh and the next login.</p></div><button className="primary-button" onClick={() => navigateTo('upload-course')}>Upload</button></div>
+            <div className="panel-card" style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+              <input value={resourceQuery} onChange={(event) => setResourceQuery(event.target.value)} placeholder="Search resources" />
+              <select value={resourceType} onChange={(event) => setResourceType(event.target.value)}>
+                <option value="all">All types</option>
+                <option value=".pdf">PDF</option>
+                <option value=".doc">DOC</option>
+                <option value=".docx">DOCX</option>
+                <option value=".txt">TXT</option>
+              </select>
+            </div>
+            {resources.filter((item) => {
+              const hay = `${item.courseName || ''} ${item.fileName || ''} ${item.courseCode || ''}`.toLowerCase();
+              const typeOk = resourceType === 'all' || String(item.fileType || '').toLowerCase() === resourceType;
+              return typeOk && hay.includes(resourceQuery.trim().toLowerCase());
+            }).length ? resources.filter((item) => {
+              const hay = `${item.courseName || ''} ${item.fileName || ''} ${item.courseCode || ''}`.toLowerCase();
+              const typeOk = resourceType === 'all' || String(item.fileType || '').toLowerCase() === resourceType;
+              return typeOk && hay.includes(resourceQuery.trim().toLowerCase());
+            }).map((item) => (
+              <article className="panel-card" key={item.id}>
+                <strong>{item.courseName || item.fileName}</strong>
+                <p>{item.courseCode || 'Course code not detected'} · {String(item.fileType || '').replace('.', '').toUpperCase()} · {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : ''}</p>
+                <p>{item.description || 'Description not detected'}</p>
+                <div className="footer-actions-row">
+                  <button className="secondary-button" onClick={() => navigateTo('assessments')}>Generate assessment</button>
+                  <button className="secondary-button" onClick={() => navigateTo('create-plan')}>Generate plan</button>
+                  <button className="secondary-button danger" onClick={async () => { await resourceApi.remove(item.id); setResources((current) => current.filter((entry) => entry.id !== item.id)); }}>Delete</button>
+                </div>
+              </article>
+            )) : <div className="panel-card empty-course"><h2>No resources yet</h2><p>Upload a TXT, PDF, DOC, or DOCX outline.</p></div>}
           </section>
         )}
 
@@ -1511,10 +1784,13 @@ function App() {
           <section className="account-page reports-page">
             <div className="account-heading"><div><span className="section-kicker">TEACHING INSIGHTS</span><h1>Reports</h1><p>A snapshot of your lesson plans, assessments, paper marking, and attendance.</p></div></div>
             <div className="reports-grid">
-              <article className="panel-card"><span className="glass-kicker">Lesson plans</span><strong>{savedPlans.length}</strong><p>Saved plans in your workspace</p></article>
-              <article className="panel-card"><span className="glass-kicker">Assessments</span><strong>{assessments.length}</strong><p>Quizzes and tests created</p></article>
-              <article className="panel-card"><span className="glass-kicker">Papers marked</span><strong>{markingHistory.filter((item) => item.userId === currentUser.id).length}</strong><p>AI-assisted marking sessions</p></article>
-              <article className="panel-card"><span className="glass-kicker">Attendance sessions</span><strong>{myAttendance.length}</strong><p>Completed clock-in records</p></article>
+              <article className="panel-card"><span className="glass-kicker">Lesson plans</span><strong>{report?.lessonPlans ?? savedPlans.length}</strong><p>Saved plans in your workspace</p></article>
+              <article className="panel-card"><span className="glass-kicker">Assessments</span><strong>{report?.assessments ?? assessments.length}</strong><p>Assessments created</p></article>
+              <article className="panel-card"><span className="glass-kicker">Quizzes</span><strong>{report?.quizzes ?? quizzes.length}</strong><p>Quizzes generated</p></article>
+              <article className="panel-card"><span className="glass-kicker">Resources</span><strong>{report?.resources ?? resources.length}</strong><p>Uploaded files</p></article>
+              <article className="panel-card"><span className="glass-kicker">Papers marked</span><strong>{report?.papersMarked ?? markingHistory.length}</strong><p>Saved marking sessions</p></article>
+              <article className="panel-card"><span className="glass-kicker">Days present</span><strong>{report?.daysPresent ?? 0}</strong><p>{report?.totalHours ?? 0} hours worked</p></article>
+              <article className="panel-card"><span className="glass-kicker">Clock in / out</span><strong>{report?.clockInCount ?? 0} / {report?.clockOutCount ?? 0}</strong><p>Completed sessions stay after refresh</p></article>
             </div>
             <div className="panel-card">
               <div className="panel-head"><h3>Recent attendance</h3></div>
@@ -1523,14 +1799,14 @@ function App() {
                   {myAttendance.slice(0, 8).map((row) => (
                     <div className="attendance-row" key={row.id}>
                       <strong>{row.date}</strong>
-                      <span>{formatClock(row.clockIn)} – {formatClock(row.clockOut)}</span>
-                      <span>{formatDuration(row.durationMs)}</span>
+                      <span>{formatClock(row.clockIn)} – {row.clockOut ? formatClock(row.clockOut) : 'Still clocked in'}</span>
+                      <span>{row.workedMinutes != null ? formatDuration(row.workedMinutes * 60000) : '—'}</span>
                       <small>{row.institution || currentUser.institution || 'Institution'}</small>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="muted-text">No attendance records yet. Use Clock In from the sidebar or dashboard.</p>
+                <p className="muted-text">No attendance records yet. Use Clock In on the dashboard or at the bottom of the sidebar.</p>
               )}
             </div>
           </section>
@@ -1541,13 +1817,9 @@ function App() {
             <div className="account-heading"><div><span className="section-kicker">UPDATES</span><h1>Notifications</h1><p>Lesson, assessment, and AI activity reminders appear here.</p></div></div>
             <div className="panel-card">
               <div className="activity-list">
-                {assessments.slice(0, 3).map((item) => (
-                  <div className="activity-item" key={item.id}><div className="activity-dot" /><div className="activity-copy"><strong>{item.title}</strong><span>{item.status}</span></div><small>Assessment</small></div>
-                ))}
-                {calendarEvents.filter((item) => item.status === 'suggested').slice(0, 3).map((item) => (
-                  <div className="activity-item" key={item.id}><div className="activity-dot" /><div className="activity-copy"><strong>{item.title}</strong><span>Suggested calendar entry waiting for review</span></div><small>{item.date}</small></div>
-                ))}
-                {!assessments.length && !calendarEvents.length && <p className="muted-text">No notifications yet. Generate a lesson or assessment to see activity here.</p>}
+                {notifications.length ? notifications.map((item) => (
+                  <div className="activity-item" key={item.id}><div className="activity-dot" /><div className="activity-copy"><strong>{item.title}</strong><span>{item.message}</span></div><small>{item.isRead ? 'Read' : 'New'}</small></div>
+                )) : <p className="muted-text">No notifications yet.</p>}
               </div>
             </div>
           </section>

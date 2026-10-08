@@ -31,15 +31,8 @@ export const LUSAKA_INSTITUTIONS = [
   'Other Institution',
 ];
 
-export const EDUCATOR_ROLES = [
-  {
-    value: 'Lecturer',
-    label: 'Lecturer',
-    description: 'Plan and manage university or college courses and lessons.',
-  },
-  {
-    value: 'School Teacher',
-    label: 'School Teacher',
-    description: 'Create and manage school lessons, assessments and marking.',
-  },
-];
+export {
+  ZAMBIAN_UNIVERSITIES,
+  ZAMBIAN_SCHOOLS,
+  EDUCATOR_ROLES,
+} from '../../shared/institutions.js';

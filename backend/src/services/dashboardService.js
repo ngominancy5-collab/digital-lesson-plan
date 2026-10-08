@@ -1,5 +1,9 @@
-import prisma from '../config/database.js';
 import { mapAssessment, mapCalendarEvent, mapLessonPlan } from '../utils/mappers.js';
+import * as lessonPlanRepository from '../repositories/lessonPlanRepository.js';
+import * as quizRepository from '../repositories/quizRepository.js';
+import * as assessmentRepository from '../repositories/assessmentRepository.js';
+import * as documentRepository from '../repositories/documentRepository.js';
+import * as calendarRepository from '../repositories/calendarRepository.js';
 
 export async function getDashboard(userId) {
   const [
@@ -13,30 +17,15 @@ export async function getDashboard(userId) {
     upcomingEvents,
     recentDocuments,
   ] = await Promise.all([
-    prisma.lessonPlan.count({ where: { userId } }),
-    prisma.quiz.count({ where: { userId } }),
-    prisma.assessment.count({ where: { userId } }),
-    prisma.document.count({ where: { userId } }),
-    prisma.lessonPlan.count({ where: { userId, aiGenerated: true } }),
-    prisma.lessonPlan.findMany({ where: { userId }, orderBy: { updatedAt: 'desc' }, take: 5 }),
-    prisma.assessment.findMany({ where: { userId }, orderBy: { updatedAt: 'desc' }, take: 5 }),
-    prisma.calendarEvent.findMany({
-      where: { userId, startAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
-      orderBy: { startAt: 'asc' },
-      take: 8,
-    }),
-    prisma.document.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-      select: {
-        id: true,
-        originalName: true,
-        fileType: true,
-        status: true,
-        createdAt: true,
-      },
-    }),
+    lessonPlanRepository.countByUser(userId),
+    quizRepository.countByUser(userId),
+    assessmentRepository.countByUser(userId),
+    documentRepository.countByUser(userId),
+    lessonPlanRepository.countByUser(userId, { aiGenerated: true }),
+    lessonPlanRepository.recentForUser(userId),
+    assessmentRepository.recentForUser(userId),
+    calendarRepository.upcomingForUser(userId),
+    documentRepository.recentForUser(userId),
   ]);
 
   return {

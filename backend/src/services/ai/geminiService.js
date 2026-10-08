@@ -1,7 +1,7 @@
 /**
  * Gemini-facing AI helpers. All Gemini calls stay on the server.
  */
-import { completeJson, completeText, getLlmStatus, streamText } from './llm.js';
+import { completeJson, completeText, getLlmStatus, streamText } from './aiClient.js';
 
 export { getLlmStatus };
 

@@ -1,19 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { LoaderCircle, SendHorizontal, Sparkles } from 'lucide-react';
-import { getToken } from '../services/api.js';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { streamAiChat } from '../services/api.js';
 
 function nowTime() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function authHeaders() {
-  const token = getToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
 }
 
 export default function SectionAiPanel({
@@ -62,18 +52,13 @@ export default function SectionAiPanel({
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const response = await fetch(`${API_BASE}/ai/chat/stream`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({
-          message: `[Context: ${context}] ${systemHint ? `${systemHint}\n\n` : ''}${prompt}`,
-          history,
-          profile: { id: user?.id, name: user?.name, role: user?.role },
-          session: { mode: 'tutor', difficulty: 'Intermediate', topics: [context] },
-          difficulty: 'Intermediate',
-        }),
-        signal: controller.signal,
-      });
+      const response = await streamAiChat({
+        message: `[Context: ${context}] ${systemHint ? `${systemHint}\n\n` : ''}${prompt}`,
+        history,
+        profile: { id: user?.id, name: user?.name, role: user?.role },
+        session: { mode: 'tutor', difficulty: 'Intermediate', topics: [context] },
+        difficulty: 'Intermediate',
+      }, { signal: controller.signal });
       if (!response.ok || !response.body) throw new Error('stream unavailable');
       const reader = response.body.getReader();
       const decoder = new TextDecoder();

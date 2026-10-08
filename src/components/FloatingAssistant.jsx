@@ -8,19 +8,8 @@ import {
   X,
 } from 'lucide-react';
 import { ACCEPT_ATTR, ACCEPTED_EXTENSIONS, extractLocalDocument, fileExtension, fileToBase64 } from '../lib/documentExtractor';
-import { getToken } from '../services/api.js';
+import { api, streamAiChat } from '../services/api.js';
 import './floating-assistant.css';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-
-function authHeaders(extra = {}) {
-  const token = getToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...extra,
-  };
-}
 
 const HELP_STARTERS = [
   'What is this system?',
@@ -105,6 +94,7 @@ export default function FloatingAssistant({
   initialPrompt = '',
   material = null,
   onMaterialChange,
+  corner = 'right',
 }) {
   const mode = isAuthenticated ? 'interactive' : 'help';
   const controlled = typeof openProp === 'boolean';
@@ -259,12 +249,7 @@ export default function FloatingAssistant({
     abortRef.current = controller;
 
     try {
-      const response = await fetch(`${API_BASE}/ai/chat/stream`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
+      const response = await streamAiChat(payload, { signal: controller.signal });
       if (!response.ok || !response.body) throw new Error('stream unavailable');
 
       const reader = response.body.getReader();
@@ -370,13 +355,11 @@ export default function FloatingAssistant({
       let text = await extractLocalDocument(file);
       if (!String(text || '').trim()) {
         const contentBase64 = await fileToBase64(file);
-        const response = await fetch(`${API_BASE}/ai/extract`, {
-          method: 'POST',
-          headers: authHeaders(),
-          body: JSON.stringify({ fileName: file.name, mimeType: file.type, contentBase64 }),
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Could not read this file.');
+        const data = await api.post('/ai/extract', {
+          fileName: file.name,
+          mimeType: file.type,
+          contentBase64,
+        }).then((response) => response.data);
         text = data.text;
       }
       if (!String(text || '').trim()) throw new Error('No readable text was found in this file.');
@@ -451,7 +434,7 @@ export default function FloatingAssistant({
     sendInteractive(prompt);
   }, [initialPrompt, open, isAuthenticated, mode]);
 
-  const cornerClass = 'fa-corner-right';
+  const cornerClass = corner === 'left' ? 'fa-corner-left' : 'fa-corner-right';
   const starters = mode === 'help' ? HELP_STARTERS : INTERACTIVE_STARTERS;
 
   return (

@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import { completeJson } from './llm.js';
+import { completeJson } from './aiClient.js';
 
 dotenv.config();
 

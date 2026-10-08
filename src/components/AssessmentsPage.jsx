@@ -1,10 +1,35 @@
 import { useMemo, useState } from 'react';
 import { Check, ClipboardCheck, Plus, Trash2, Wand2 } from 'lucide-react';
-import { DIFFICULTY_LEVELS, QUESTION_TYPES, buildAssessmentFromMaterial, suggestCalendarFromAssessment } from '../../shared/learningEngine.js';
+import { DIFFICULTY_LEVELS, QUESTION_TYPES, suggestCalendarFromAssessment } from '../../shared/learningEngine.js';
 import SectionAiPanel from './SectionAiPanel.jsx';
 
-export default function AssessmentsPage({ assessments, material, difficulty, onSave, onDelete, onSchedule, onOpenAssistant, user }) {
-  const [selectedId, setSelectedId] = useState(assessments[0]?.id || '');
+function asQuiz(quiz) {
+  return {
+    ...quiz,
+    recordKind: 'quiz',
+    kind: 'quiz',
+    status: quiz.status || 'saved',
+    totalMarks: (quiz.questions || []).reduce((sum, item) => sum + Number(item.marks || 0), 0),
+    timeAllowed: quiz.timeAllowed || '',
+    questions: (quiz.questions || []).map((question) => ({
+      id: question.id,
+      type: question.questionType || question.type || 'multiple-choice',
+      prompt: question.question || question.prompt || '',
+      marks: question.marks,
+      answer: question.correctAnswer || question.answer || '',
+      options: (question.options || []).map((option) => (typeof option === 'string' ? option : option.optionText)),
+    })),
+  };
+}
+
+export default function AssessmentsPage({ assessments, quizzes = [], resources = [], difficulty, onGenerate, onSave, onDelete, onSchedule, onOpenAssistant, user }) {
+  const library = [
+    ...assessments.map((item) => ({ ...item, recordKind: 'assessment' })),
+    ...quizzes.map(asQuiz),
+  ];
+  const [selectedId, setSelectedId] = useState(library[0]?.id || '');
+  const [resourceId, setResourceId] = useState(resources[0]?.id || '');
+  const [busy, setBusy] = useState(false);
   const [generator, setGenerator] = useState({
     count: 10,
     difficulty: difficulty || 'Intermediate',
@@ -19,8 +44,8 @@ export default function AssessmentsPage({ assessments, material, difficulty, onS
   const [error, setError] = useState('');
 
   const selected = useMemo(
-    () => assessments.find((item) => item.id === selectedId) || assessments[0] || null,
-    [assessments, selectedId],
+    () => library.find((item) => item.id === selectedId) || library[0] || null,
+    [library, selectedId],
   );
 
   function toggleType(id) {
@@ -31,29 +56,22 @@ export default function AssessmentsPage({ assessments, material, difficulty, onS
     });
   }
 
-  function generate(event) {
+  async function generate(event) {
     event.preventDefault();
-    if (material?.status !== 'ready' || !material.text) {
-      setError('Upload and process a learning file in the AI Assistant first. Assessments are generated from that source, not from generic questions.');
+    if (!resourceId) {
+      setError('Choose a saved resource. Questions are generated on the server from that file.');
       return;
     }
-    const result = buildAssessmentFromMaterial({
-      text: material.text,
-      fileName: material.name,
-      kind: generator.kind,
-      difficulty: generator.difficulty,
-      count: generator.count,
-      questionTypes: generator.questionTypes,
-      marksPerQuestion: generator.marksPerQuestion,
-      totalMarks: generator.totalMarks,
-      timeAllowed: generator.timeAllowed,
-      topicsInclude: generator.topicsInclude,
-      topicsExclude: generator.topicsExclude,
-    });
-    if (result.error) { setError(result.error); return; }
+    setBusy(true);
     setError('');
-    onSave({ ...result, status: 'draft' });
-    setSelectedId(result.id);
+    try {
+      const result = await onGenerate({ ...generator, documentId: resourceId });
+      setSelectedId(result.id);
+    } catch (err) {
+      setError(err.message || 'The AI could not generate questions.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   function updateQuestion(questionId, patch) {
@@ -77,7 +95,12 @@ export default function AssessmentsPage({ assessments, material, difficulty, onS
       <div className="assessments-layout">
         <form className="panel-card assessment-builder" onSubmit={generate}>
           <div className="panel-head"><h3>Generate from uploaded material</h3></div>
-          <p className="muted-text">{material?.status === 'ready' ? `Source: ${material.name}` : 'No processed file yet. Upload notes in the AI Assistant, then generate here.'}</p>
+          <label className="field"><span>Saved resource</span>
+            <select value={resourceId} onChange={(event) => setResourceId(event.target.value)}>
+              <option value="">Choose a resource</option>
+              {resources.map((item) => <option key={item.id} value={item.id}>{item.courseName || item.fileName}</option>)}
+            </select>
+          </label>
           <div className="grid-2">
             <label className="field"><span>Type</span>
               <select value={generator.kind} onChange={(event) => setGenerator({ ...generator, kind: event.target.value })}>
@@ -105,12 +128,12 @@ export default function AssessmentsPage({ assessments, material, difficulty, onS
             ))}
           </div>
           {error ? <div className="error-box">{error}</div> : null}
-          <button className="primary-button" type="submit"><Plus size={15} /> Generate assessment</button>
+          <button className="primary-button" type="submit" disabled={busy}><Plus size={15} /> {busy ? 'Generating...' : 'Generate with AI'}</button>
         </form>
 
         <div className="panel-card assessment-list">
           <div className="panel-head"><h3>Your assessments</h3></div>
-          {assessments.length ? assessments.map((item) => (
+          {library.length ? library.map((item) => (
             <button type="button" className={`assessment-row ${selected?.id === item.id ? 'active' : ''}`} key={item.id} onClick={() => setSelectedId(item.id)}>
               <strong>{item.title}</strong>
               <small>{item.difficulty} · {item.questions?.length || 0} questions · {item.status}</small>
@@ -144,7 +167,7 @@ export default function AssessmentsPage({ assessments, material, difficulty, onS
               <button className="secondary-button" onClick={() => onSave({ ...selected, status: 'approved' })}><Check size={14} /> Approve</button>
               <button className="primary-button" onClick={() => onSave({ ...selected, status: 'published' })}><ClipboardCheck size={14} /> Publish</button>
               <button className="secondary-button" onClick={() => onSchedule(suggestCalendarFromAssessment(selected))}><ClipboardCheck size={14} /> Suggest date</button>
-              <button className="secondary-button danger" onClick={() => onDelete(selected.id)}><Trash2 size={14} /> Delete</button>
+              <button className="secondary-button danger" onClick={() => onDelete(selected)}><Trash2 size={14} /> Delete</button>
             </div>
           </div>
           <label className="field"><span>Title</span><input value={selected.title} onChange={(event) => onSave({ ...selected, title: event.target.value })} /></label>

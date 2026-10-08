@@ -7,19 +7,10 @@ import {
   LoaderCircle,
   UploadCloud,
 } from 'lucide-react';
-import axios from 'axios';
 import { ACCEPT_ATTR, ACCEPTED_EXTENSIONS, extractLocalDocument, fileExtension, fileToBase64 } from '../lib/documentExtractor.js';
 import { isReadableEducationalText } from '../../shared/learningEngine.js';
-import { getToken } from '../services/api.js';
+import { api, markingApi } from '../services/api.js';
 import SectionAiPanel from './SectionAiPanel.jsx';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-const api = axios.create({ baseURL: API_BASE });
-api.interceptors.request.use((config) => {
-  const token = getToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
 const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/jpg';
 
 async function extractTextFromFile(file, onProgress) {
@@ -105,21 +96,21 @@ export default function PaperMarkingPage({ user, history = [], onSaveResult }) {
     setError('');
     setBusy('mark');
     try {
-      const response = await api.post('/ai/mark-paper', {
+      const saved = await markingApi.mark({
         markingKeyText: markingKey.text,
         studentPaperText: studentPaper.text,
         subject,
         studentLabel: studentLabel || studentPaper.name || 'Student paper',
-        userId: user?.id,
       });
       const next = {
-        ...response.data,
+        ...saved,
         markingKeyName: markingKey.name,
         studentPaperName: studentPaper.name,
         status: 'review',
       };
       setResult(next);
       setSelectedHistoryId('');
+      onSaveResult?.(next);
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Marking failed.');
     } finally {

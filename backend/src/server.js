@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { assertEnv, env } from './config/env.js';
 import { errorHandler } from './utils/errors.js';
 import authRoutes from './routes/authRoutes.js';
+import userRoutes from './routes/userRoutes.js';
+import institutionRoutes from './routes/institutionRoutes.js';
 import {
   aiRoutes,
   assessmentRoutes,
@@ -18,7 +20,18 @@ import {
   lessonPlanRoutes,
   quizRoutes,
 } from './routes/index.js';
-import { getLlmStatus } from './services/llm.js';
+import { getLlmStatus } from './services/ai/aiClient.js';
+import { responseEnvelope } from './middleware/response.js';
+import {
+  attendanceRoutes,
+  markingRoutes,
+  notificationRoutes,
+  reportRoutes,
+  resourceRoutes,
+  searchRoutes,
+  settingsRoutes,
+} from './routes/featureRoutes.js';
+import { ensureSeeded } from './services/institutionService.js';
 
 assertEnv();
 
@@ -32,6 +45,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use(responseEnvelope);
 
 app.use('/uploads', express.static(env.fileStoragePath));
 
@@ -52,14 +66,24 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/institutions', institutionRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/uploads', documentRoutes);
 app.use('/api/lesson-plans', lessonPlanRoutes);
 app.use('/api/assessments', assessmentRoutes);
 app.use('/api/quizzes', quizRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/search', searchRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/resources', resourceRoutes);
+app.use('/api/marking', markingRoutes);
 
 const distPath = path.resolve(__dirname, '../../dist');
 if (existsSync(distPath)) {
@@ -71,6 +95,10 @@ if (existsSync(distPath)) {
 }
 
 app.use(errorHandler);
+
+ensureSeeded().catch((error) => {
+  console.error('Could not seed institutions', error);
+});
 
 app.listen(env.port, () => {
   const llm = getLlmStatus();

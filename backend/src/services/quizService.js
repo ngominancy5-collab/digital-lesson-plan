@@ -1,6 +1,9 @@
-import prisma from '../config/database.js';
 import { AppError } from '../utils/errors.js';
-import { completeJson } from './llm.js';
+import { completeJson } from './ai/aiClient.js';
+import * as quizRepository from '../repositories/quizRepository.js';
+import * as documentRepository from '../repositories/documentRepository.js';
+import * as lessonPlanRepository from '../repositories/lessonPlanRepository.js';
+import { notify } from './notificationService.js';
 
 function mapQuiz(quiz) {
   return {
@@ -28,26 +31,18 @@ function mapQuiz(quiz) {
 }
 
 export async function listQuizzes(userId) {
-  const quizzes = await prisma.quiz.findMany({
-    where: { userId },
-    include: { questions: { include: { options: true }, orderBy: { sortOrder: 'asc' } } },
-    orderBy: { createdAt: 'desc' },
-  });
+  const quizzes = await quizRepository.listByUser(userId);
   return quizzes.map(mapQuiz);
 }
 
 export async function getQuiz(userId, id) {
-  const quiz = await prisma.quiz.findFirst({
-    where: { id, userId },
-    include: { questions: { include: { options: true }, orderBy: { sortOrder: 'asc' } } },
-  });
+  const quiz = await quizRepository.findOwned(userId, id, true);
   if (!quiz) throw new AppError('Quiz not found.', 404);
   return mapQuiz(quiz);
 }
 
 async function createQuizWithQuestions(userId, body) {
-  const quiz = await prisma.quiz.create({
-    data: {
+  const quiz = await quizRepository.createWithQuestions({
       userId,
       lessonPlanId: body.lessonPlanId || null,
       title: String(body.title || 'Untitled quiz').trim(),
@@ -81,8 +76,6 @@ async function createQuizWithQuestions(userId, body) {
           },
         })),
       },
-    },
-    include: { questions: { include: { options: true }, orderBy: { sortOrder: 'asc' } } },
   });
   return mapQuiz(quiz);
 }
@@ -92,26 +85,21 @@ export async function createQuiz(userId, body) {
 }
 
 export async function updateQuiz(userId, id, body) {
-  const existing = await prisma.quiz.findFirst({ where: { id, userId } });
+  const existing = await quizRepository.findOwned(userId, id);
   if (!existing) throw new AppError('Quiz not found.', 404);
 
-  await prisma.quizOption.deleteMany({ where: { question: { quizId: id } } });
-  await prisma.quizQuestion.deleteMany({ where: { quizId: id } });
+  await quizRepository.clearQuestions(id);
 
-  await prisma.quiz.update({
-    where: { id },
-    data: {
+  await quizRepository.updateQuiz(id, {
       title: body.title ?? existing.title,
       instructions: body.instructions ?? existing.instructions,
       difficulty: body.difficulty || existing.difficulty,
       lessonPlanId: body.lessonPlanId !== undefined ? body.lessonPlanId : existing.lessonPlanId,
-    },
   });
 
   if (Array.isArray(body.questions)) {
     for (const [index, q] of body.questions.entries()) {
-      await prisma.quizQuestion.create({
-        data: {
+      await quizRepository.addQuestion({
           quizId: id,
           question: q.question || q.prompt || '',
           questionType: q.questionType || q.type || 'multiple-choice',
@@ -133,7 +121,6 @@ export async function updateQuiz(userId, id, body) {
                 }
             )),
           },
-        },
       });
     }
   }
@@ -142,20 +129,20 @@ export async function updateQuiz(userId, id, body) {
 }
 
 export async function deleteQuiz(userId, id) {
-  const existing = await prisma.quiz.findFirst({ where: { id, userId } });
+  const existing = await quizRepository.findOwned(userId, id);
   if (!existing) throw new AppError('Quiz not found.', 404);
-  await prisma.quiz.delete({ where: { id } });
+  await quizRepository.remove(id);
   return { ok: true };
 }
 
 export async function generateQuiz(userId, body) {
   let materialText = body.materialText || '';
   if (body.documentId) {
-    const doc = await prisma.document.findFirst({ where: { id: body.documentId, userId } });
+    const doc = await documentRepository.findOwned(userId, body.documentId);
     if (doc?.extractedText) materialText = doc.extractedText;
   }
   if (body.lessonPlanId) {
-    const plan = await prisma.lessonPlan.findFirst({ where: { id: body.lessonPlanId, userId } });
+    const plan = await lessonPlanRepository.findOwned(userId, body.lessonPlanId);
     if (plan) materialText += `\n\n${JSON.stringify(plan.lessons || []).slice(0, 6000)}`;
   }
   if (!String(materialText).trim()) {
@@ -188,8 +175,14 @@ Return JSON:
   );
 
   if (!data?.questions?.length) throw new AppError('AI could not generate the quiz.', 502);
-  return createQuizWithQuestions(userId, {
+  const saved = await createQuizWithQuestions(userId, {
     ...data,
     lessonPlanId: body.lessonPlanId || null,
   });
+  await notify(userId, {
+    title: 'Quiz ready',
+    message: saved.title || 'A new quiz was generated.',
+    type: 'quiz',
+  });
+  return saved;
 }

@@ -1,6 +1,6 @@
 import { verifyAccessToken } from '../utils/tokens.js';
 import { AppError } from '../utils/errors.js';
-import prisma from '../config/database.js';
+import * as userRepository from '../repositories/userRepository.js';
 
 export async function requireAuth(req, _res, next) {
   try {
@@ -15,10 +15,7 @@ export async function requireAuth(req, _res, next) {
       throw new AppError('Your session has expired. Please sign in again.', 401);
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: payload.sub },
-      include: { profile: true },
-    });
+    const user = await userRepository.findByIdWithProfile(payload.sub);
     if (!user) throw new AppError('Account not found.', 401);
 
     req.user = user;

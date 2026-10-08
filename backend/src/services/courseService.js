@@ -1,22 +1,18 @@
-import prisma from '../config/database.js';
+import * as courseRepository from '../repositories/courseRepository.js';
 import { AppError } from '../utils/errors.js';
 
 export async function listCourses(userId) {
-  return prisma.course.findMany({
-    where: { userId },
-    orderBy: { updatedAt: 'desc' },
-  });
+  return courseRepository.listByUser(userId);
 }
 
 export async function getCourse(userId, id) {
-  const course = await prisma.course.findFirst({ where: { id, userId } });
+  const course = await courseRepository.findOwned(userId, id);
   if (!course) throw new AppError('Course not found.', 404);
   return course;
 }
 
 export async function createCourse(userId, body) {
-  return prisma.course.create({
-    data: {
+  return courseRepository.create({
       userId,
       name: String(body.name || 'Untitled course').trim(),
       code: body.code || '',
@@ -30,17 +26,14 @@ export async function createCourse(userId, body) {
       meta: {
         assessments: body.assessments || [],
         ...(body.meta || {}),
-      },
     },
   });
 }
 
 export async function updateCourse(userId, id, body) {
-  const existing = await prisma.course.findFirst({ where: { id, userId } });
+  const existing = await courseRepository.findOwned(userId, id);
   if (!existing) throw new AppError('Course not found.', 404);
-  return prisma.course.update({
-    where: { id },
-    data: {
+  return courseRepository.update(id, {
       name: body.name ?? existing.name,
       code: body.code ?? existing.code,
       description: body.description ?? existing.description,
@@ -51,13 +44,12 @@ export async function updateCourse(userId, id, body) {
       endDate: body.endDate ?? existing.endDate,
       modules: body.modules ?? existing.modules,
       meta: body.meta ?? existing.meta,
-    },
   });
 }
 
 export async function deleteCourse(userId, id) {
-  const existing = await prisma.course.findFirst({ where: { id, userId } });
+  const existing = await courseRepository.findOwned(userId, id);
   if (!existing) throw new AppError('Course not found.', 404);
-  await prisma.course.delete({ where: { id } });
+  await courseRepository.remove(id);
   return { ok: true };
 }

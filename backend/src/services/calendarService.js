@@ -1,6 +1,6 @@
-import prisma from '../config/database.js';
 import { AppError } from '../utils/errors.js';
 import { mapCalendarEvent } from '../utils/mappers.js';
+import * as calendarRepository from '../repositories/calendarRepository.js';
 
 function combineDateTime(date, time, fallbackHour = 9) {
   const day = String(date || '').slice(0, 10);
@@ -14,10 +14,7 @@ function combineDateTime(date, time, fallbackHour = 9) {
 }
 
 export async function listEvents(userId) {
-  const events = await prisma.calendarEvent.findMany({
-    where: { userId },
-    orderBy: { startAt: 'asc' },
-  });
+  const events = await calendarRepository.listByUser(userId);
   return events.map(mapCalendarEvent);
 }
 
@@ -31,27 +28,25 @@ export async function createEvent(userId, body) {
     ? new Date(body.endAt)
     : (body.endTime ? combineDateTime(date || startAt.toISOString().slice(0, 10), body.endTime, 11) : null);
 
-  const event = await prisma.calendarEvent.create({
-    data: {
-      userId,
-      title: body.title.trim(),
-      description: body.description || '',
-      eventType: body.eventType || body.type || 'lesson',
-      startAt,
-      endAt,
-      date: date || startAt.toISOString().slice(0, 10),
-      startTime: body.startTime || '',
-      endTime: body.endTime || '',
-      status: body.status || 'confirmed',
-      source: body.source || 'manual',
-      lessonPlanId: body.lessonPlanId || null,
-    },
+  const event = await calendarRepository.create({
+    userId,
+    title: body.title.trim(),
+    description: body.description || '',
+    eventType: body.eventType || body.type || 'lesson',
+    startAt,
+    endAt,
+    date: date || startAt.toISOString().slice(0, 10),
+    startTime: body.startTime || '',
+    endTime: body.endTime || '',
+    status: body.status || 'confirmed',
+    source: body.source || 'manual',
+    lessonPlanId: body.lessonPlanId || null,
   });
   return mapCalendarEvent(event);
 }
 
 export async function updateEvent(userId, id, body) {
-  const existing = await prisma.calendarEvent.findFirst({ where: { id, userId } });
+  const existing = await calendarRepository.findOwned(userId, id);
   if (!existing) throw new AppError('Calendar event not found.', 404);
 
   const date = body.date ?? existing.date;
@@ -64,35 +59,31 @@ export async function updateEvent(userId, id, body) {
     ? new Date(body.endAt)
     : (endTime ? combineDateTime(date, endTime, 11) : existing.endAt);
 
-  const event = await prisma.calendarEvent.update({
-    where: { id },
-    data: {
-      title: body.title ?? existing.title,
-      description: body.description ?? existing.description,
-      eventType: body.eventType || body.type || existing.eventType,
-      startAt,
-      endAt,
-      date,
-      startTime,
-      endTime,
-      status: body.status ?? existing.status,
-      source: body.source ?? existing.source,
-      lessonPlanId: body.lessonPlanId !== undefined ? body.lessonPlanId : existing.lessonPlanId,
-    },
+  const event = await calendarRepository.update(id, {
+    title: body.title ?? existing.title,
+    description: body.description ?? existing.description,
+    eventType: body.eventType || body.type || existing.eventType,
+    startAt,
+    endAt,
+    date,
+    startTime,
+    endTime,
+    status: body.status ?? existing.status,
+    source: body.source ?? existing.source,
+    lessonPlanId: body.lessonPlanId !== undefined ? body.lessonPlanId : existing.lessonPlanId,
   });
   return mapCalendarEvent(event);
 }
 
 export async function deleteEvent(userId, id) {
-  const existing = await prisma.calendarEvent.findFirst({ where: { id, userId } });
+  const existing = await calendarRepository.findOwned(userId, id);
   if (!existing) throw new AppError('Calendar event not found.', 404);
-  await prisma.calendarEvent.delete({ where: { id } });
+  await calendarRepository.remove(id);
   return { ok: true };
 }
 
 export async function replaceAllEvents(userId, events) {
-  // Used when frontend syncs a full calendar list after local edits.
-  await prisma.calendarEvent.deleteMany({ where: { userId, source: { in: ['manual', 'suggested'] } } });
+  await calendarRepository.clearManual(userId);
   const created = [];
   for (const item of events || []) {
     created.push(await createEvent(userId, item));

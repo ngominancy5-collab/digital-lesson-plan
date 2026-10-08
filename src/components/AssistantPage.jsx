@@ -16,9 +16,8 @@ import {
   Trash2,
   UploadCloud,
 } from 'lucide-react';
-import axios from 'axios';
 import { ACCEPT_ATTR, ACCEPTED_EXTENSIONS, extractLocalDocument, fileExtension, fileToBase64 } from '../lib/documentExtractor.js';
-import { getToken } from '../services/api.js';
+import { api, streamAiChat } from '../services/api.js';
 import {
   DIFFICULTY_LEVELS,
   fallbackAnalyze,
@@ -31,14 +30,6 @@ import {
   looksLikeReadablePhrase,
 } from '../../shared/learningEngine.js';
 import { converse, LEARNING_MODES } from '../../shared/tutorEngine.js';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-const api = axios.create({ baseURL: API_BASE });
-api.interceptors.request.use((config) => {
-  const token = getToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
 
 function RichText({ text }) {
   const source = String(text || '');
@@ -309,15 +300,7 @@ export default function AssistantPage({
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const response = await fetch(`${API_BASE}/ai/chat/stream`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
+      const response = await streamAiChat(payload, { signal: controller.signal });
       if (!response.ok || !response.body) throw new Error('stream unavailable');
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
