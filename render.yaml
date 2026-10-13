@@ -60,11 +60,15 @@ services:
         value: PlanWise Administrator
 
       # Email delivery over SMTP (used when Nexus is not configured).
-      # A Gmail/Google Workspace app password works: host smtp.gmail.com, port 587.
+      # Render FREE web services block outbound ports 25, 465 and 587, so use a
+      # provider that offers port 2525. Example: SMTP2GO, host mail.smtp2go.com,
+      # port 2525, STARTTLS (SMTP_SECURE=false, SMTP_REQUIRE_TLS=true).
+      # Gmail SMTP (587/465) only works on a paid Render instance.
+      # Verify your sending address with the provider, then set SMTP_FROM to it.
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
-        value: "587"
+        sync: false
       - key: SMTP_SECURE
         value: "false"
       - key: SMTP_REQUIRE_TLS
