@@ -14,7 +14,8 @@
     "db:push": "npm --prefix backend run db:push",
     "db:generate": "npm --prefix backend run db:generate",
     "db:seed": "npm --prefix backend run db:seed",
-    "postinstall": "npm --prefix backend install"
+    "start:prod": "npm --prefix backend run db:push && npm --prefix backend start",
+    "postinstall": "npm --prefix backend install --include=dev"
   },
   "dependencies": {
     "axios": "^1.7.7",
