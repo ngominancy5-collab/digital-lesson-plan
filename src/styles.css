@@ -2155,3 +2155,51 @@ button.auth-brand {
   margin-top: 12px;
 }
 
+/* Mobile touch + overflow safety */
+@media (max-width: 760px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  .course-tabs {
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .course-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .course-tabs button {
+    min-height: 44px;
+  }
+
+  .back-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .wizard-steps {
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .wizard-steps::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .primary-button,
+  .secondary-button,
+  .action-button,
+  .pill-button,
+  .auth-submit,
+  .pw-signup-submit {
+    min-height: 44px;
+  }
+}
+
+

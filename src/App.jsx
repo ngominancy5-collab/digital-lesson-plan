@@ -37,6 +37,7 @@ import {
   LayoutDashboard,
   LogOut,
   Mail,
+  Menu,
   Pencil,
   Phone,
   Save,
@@ -63,6 +64,7 @@ import {
   TrendingUp,
   UserCircle2,
   Wand2,
+  X,
   BriefcaseBusiness,
   Building2,
   School,
@@ -938,11 +940,11 @@ function AccountsPage() {
             <tbody>
               {users.map((user) => (
                 <tr key={user.id}>
-                  <td>{user.fullName || user.name}</td>
-                  <td>{user.email}</td>
-                  <td>{user.role}</td>
-                  <td>{user.accountStatus}</td>
-                  <td className="account-actions">
+                  <td data-label="Name">{user.fullName || user.name}</td>
+                  <td data-label="Email">{user.email}</td>
+                  <td data-label="Role">{user.role}</td>
+                  <td data-label="Status">{user.accountStatus}</td>
+                  <td data-label="Actions" className="account-actions">
                     {user.accountStatus !== 'approved' && <button type="button" onClick={() => run(adminApi.approve, user.id)}>Approve</button>}
                     {user.accountStatus === 'pending' && <button type="button" onClick={() => run(adminApi.reject, user.id)}>Reject</button>}
                     {user.accountStatus === 'approved' && user.role !== 'Administrator' && <button type="button" onClick={() => run(adminApi.suspend, user.id)}>Suspend</button>}
@@ -1007,6 +1009,7 @@ function App() {
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [aiQuickPrompt, setAiQuickPrompt] = useState('');
   const [markingHistory, setMarkingHistory] = useState([]);
   const [attendanceHistory, setAttendanceHistory] = useState([]);
@@ -1119,7 +1122,7 @@ function App() {
   }
   useEffect(() => {
     function closeProfile(event) { if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) setProfileOpen(false); }
-    function closeOnEscape(event) { if (event.key === 'Escape') { setProfileOpen(false); setLogoutOpen(false); } }
+    function closeOnEscape(event) { if (event.key === 'Escape') { setProfileOpen(false); setLogoutOpen(false); setSidebarOpen(false); } }
     function onPopState() {
       const path = window.location.pathname;
       if (path === '/forgot-password') setActiveSection('forgot-password');
@@ -1135,6 +1138,13 @@ function App() {
       window.removeEventListener('popstate', onPopState);
     };
   }, [isAuthenticated, currentUser]);
+
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [sidebarOpen]);
 
   const currentStepLabel = useMemo(() => {
     const labels = ['Course', 'Topics', 'Schedule', 'Preferences', 'Generate'];
@@ -1349,6 +1359,7 @@ function App() {
   }
 
   function navigateTo(section, options = {}) {
+    setSidebarOpen(false);
     if (section === 'assistant') {
       setAiDrawerOpen(true);
       setProfileOpen(false);
@@ -1587,13 +1598,21 @@ function App() {
       className={`edu-shell glass-shell left-rail-shell dlp-shell ${darkMode ? 'dark-mode' : ''}`}
       style={{ '--ui-zoom': uiZoom }}
     >
-      <aside className="glass-sidebar" aria-label="Workspace navigation">
+      <button
+        type="button"
+        className={`sidebar-scrim ${sidebarOpen ? 'is-open' : ''}`}
+        aria-label="Close navigation"
+        tabIndex={sidebarOpen ? 0 : -1}
+        onClick={() => setSidebarOpen(false)}
+      />
+      <aside className={`glass-sidebar ${sidebarOpen ? 'is-open' : ''}`} aria-label="Workspace navigation">
         <div className="sidebar-brand">
           <div className="brand-mark"><BookOpen size={18} /></div>
           <div>
             <strong>Digital Lesson Plan</strong>
             <small>Plan • Teach • Inspire</small>
           </div>
+          <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
         </div>
         <nav className="sidebar-nav">
           {visibleNavItems.map(({ id, label, icon: Icon }) => {
@@ -1627,6 +1646,15 @@ function App() {
 
       <div className="glass-stage">
         <header className="glass-topbar compact-topbar">
+          <button
+            type="button"
+            className="mobile-nav-toggle"
+            aria-label="Open navigation"
+            aria-expanded={sidebarOpen}
+            onClick={() => setSidebarOpen(true)}
+          >
+            <Menu size={20} />
+          </button>
           <div className="glass-search">
             <Search size={16} />
             <input type="text" value={searchQuery} placeholder="Search lessons, resources, assessments, quizzes, calendar" onChange={(event) => setSearchQuery(event.target.value)} />
