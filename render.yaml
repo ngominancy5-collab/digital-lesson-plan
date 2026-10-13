@@ -59,6 +59,23 @@ services:
       - key: ADMIN_NAME
         value: PlanWise Administrator
 
+      # Email delivery over SMTP (used when Nexus is not configured).
+      # A Gmail/Google Workspace app password works: host smtp.gmail.com, port 587.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_REQUIRE_TLS
+        value: "true"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
       # Uploaded-file storage (ephemeral on the free plan).
       - key: FILE_STORAGE_PATH
         value: ./uploads

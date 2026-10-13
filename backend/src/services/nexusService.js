@@ -1,3 +1,5 @@
+import { emailConfigured, sendMail } from './emailService.js';
+
 const captured = [];
 
 function nexusConfig() {
@@ -9,6 +11,68 @@ function nexusConfig() {
 
 export function nexusConfigured() {
   return Boolean(nexusConfig());
+}
+
+export function emailDeliveryConfigured() {
+  return nexusConfigured() || emailConfigured();
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderEmail({ template, data }) {
+  const payload = data || {};
+  const name = String(payload.user_name || payload.name || '').trim() || 'there';
+  const secret = String(payload.password || '').trim();
+  const appName = 'PlanWise AI';
+  const isReset = String(template || '').trim() === resetTemplateName();
+  const isLink = /^https?:\/\//i.test(secret);
+
+  if (isLink) {
+    const purpose = isReset ? 'reset your password' : 'set up your account';
+    const subject = isReset ? `Reset your ${appName} password` : `Set up your ${appName} account`;
+    const cta = isReset ? 'Choose a new password' : 'Set your password';
+    const text = [
+      `Hello ${name},`,
+      '',
+      `Use the link below to ${purpose}. The link expires in 1 hour.`,
+      '',
+      secret,
+      '',
+      'If you did not request this, you can ignore this email.',
+    ].join('\n');
+    const html = [
+      `<p>Hello ${escapeHtml(name)},</p>`,
+      `<p>Use the button below to ${purpose}. The link expires in 1 hour.</p>`,
+      `<p><a href="${escapeHtml(secret)}">${cta}</a></p>`,
+      `<p>If the button does not work, paste this link into your browser:<br>${escapeHtml(secret)}</p>`,
+      '<p>If you did not request this, you can ignore this email.</p>',
+    ].join('');
+    return { subject, text, html };
+  }
+
+  const subject = `Your ${appName} access`;
+  const text = [
+    `Hello ${name},`,
+    '',
+    `An administrator created your ${appName} account.`,
+    `Temporary password: ${secret}`,
+    '',
+    'Sign in and choose a new password.',
+  ].join('\n');
+  const html = [
+    `<p>Hello ${escapeHtml(name)},</p>`,
+    `<p>An administrator created your ${appName} account.</p>`,
+    `<p>Temporary password: <strong>${escapeHtml(secret)}</strong></p>`,
+    '<p>Sign in and choose a new password.</p>',
+  ].join('');
+  return { subject, text, html };
 }
 
 export function loginTemplateName() {
@@ -29,11 +93,6 @@ function captureOnly() {
 
 export async function sendNotification({ template, to, data }) {
   const config = nexusConfig();
-  if (!config && !captureOnly()) {
-    const error = new Error('Nexus email is not configured.');
-    error.code = 'NEXUS_NOT_CONFIGURED';
-    throw error;
-  }
 
   const payload = {
     template: String(template || '').trim(),
@@ -44,6 +103,24 @@ export async function sendNotification({ template, to, data }) {
   if (captureOnly()) {
     captured.push(payload);
     return { requestId: 'test-request', status: 'queued' };
+  }
+
+  if (!config) {
+    if (emailConfigured()) {
+      const { subject, text, html } = renderEmail({ template: payload.template, data: payload.data });
+      try {
+        const info = await sendMail({ to: payload.to, subject, text, html });
+        return { id: info.messageId || '', requestId: '', status: 'delivered' };
+      } catch (error) {
+        console.error('SMTP delivery failed.', error.code || 'failed');
+        const wrapped = new Error('The email could not be sent.');
+        wrapped.code = 'EMAIL_SEND_FAILED';
+        throw wrapped;
+      }
+    }
+    const error = new Error('Nexus email is not configured.');
+    error.code = 'NEXUS_NOT_CONFIGURED';
+    throw error;
   }
 
   let response;
@@ -82,6 +159,7 @@ export async function sendNotification({ template, to, data }) {
 export async function getNotificationStatus(requestId) {
   const config = nexusConfig();
   if (!config) {
+    if (emailConfigured()) return { status: 'delivered', errorMessage: '' };
     const error = new Error('Nexus email is not configured.');
     error.code = 'NEXUS_NOT_CONFIGURED';
     throw error;

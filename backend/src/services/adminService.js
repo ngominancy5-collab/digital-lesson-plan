@@ -3,7 +3,7 @@ import { hashPassword } from '../utils/password.js';
 import { mapUser, parseRole } from '../utils/mappers.js';
 import { AppError } from '../utils/errors.js';
 import { assertInstitutionForRole } from './institutionService.js';
-import { loginTemplateName, nexusConfigured, sendNotification } from './nexusService.js';
+import { emailDeliveryConfigured, loginTemplateName, sendNotification } from './nexusService.js';
 import * as userRepository from '../repositories/userRepository.js';
 
 function temporaryPassword() {
@@ -80,8 +80,8 @@ export async function approveAccount(userId) {
   if (user.accountStatus === 'approved') {
     throw new AppError('This account is already approved.');
   }
-  if (!nexusConfigured() && !captureOnly()) {
-    throw new AppError('Login email is not available because Nexus is not configured.', 503);
+  if (!emailDeliveryConfigured() && !captureOnly()) {
+    throw new AppError('Login email is not available because email delivery is not configured.', 503);
   }
 
   const temporary = temporaryPassword();

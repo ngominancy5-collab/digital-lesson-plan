@@ -4,7 +4,7 @@ import { signAccessToken, createResetToken, hashToken } from '../utils/tokens.js
 import { mapUser, parseRole } from '../utils/mappers.js';
 import { AppError } from '../utils/errors.js';
 import { env, unapprovedTestAccountsAllowed } from '../config/env.js';
-import { getNotificationStatus, loginTemplateName, nexusConfigured, resetTemplateName, sendNotification } from './nexusService.js';
+import { emailDeliveryConfigured, getNotificationStatus, loginTemplateName, resetTemplateName, sendNotification } from './nexusService.js';
 import { assertInstitutionForRole } from './institutionService.js';
 import * as userRepository from '../repositories/userRepository.js';
 import * as passwordResetRepository from '../repositories/passwordResetRepository.js';
@@ -47,8 +47,8 @@ export async function registerUser(input) {
   if (existing) throw new AppError('An account with this email already exists.', 409);
 
   const skipNexus = process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() !== 'true';
-  if (!skipNexus && !nexusConfigured() && process.env.NODE_ENV !== 'test') {
-    throw new AppError('Login email is not available because Nexus is not configured.', 503);
+  if (!skipNexus && !emailDeliveryConfigured() && process.env.NODE_ENV !== 'test') {
+    throw new AppError('Login email is not available because email delivery is not configured.', 503);
   }
 
   const passwordHash = await hashPassword(password);
@@ -261,8 +261,8 @@ export async function createUnapprovedTestAccount(input) {
   if (!validEmail(email)) throw new AppError('Enter a valid email address.');
 
   const captureOnly = process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() === 'true';
-  if (!nexusConfigured() && !captureOnly) {
-    throw new AppError('Login email is not available because Nexus is not configured.', 503);
+  if (!emailDeliveryConfigured() && !captureOnly) {
+    throw new AppError('Login email is not available because email delivery is not configured.', 503);
   }
 
   let user = await userRepository.findByEmailWithProfile(email);
@@ -279,8 +279,8 @@ export async function createUnapprovedTestAccount(input) {
         inboxVerified: verified,
         requestId: prior.requestId,
         message: verified
-          ? 'Nexus already reported this login email as delivered. A second email was not sent.'
-          : 'Nexus already accepted this login email for processing. Final inbox delivery has not been verified, and a second email was not sent.',
+          ? 'The email service already reported this login email as delivered. A second email was not sent.'
+          : 'The email service already accepted this login email for processing. Final inbox delivery has not been verified, and a second email was not sent.',
       };
     }
   } else {
@@ -339,7 +339,7 @@ export async function createUnapprovedTestAccount(input) {
         }),
       });
       console.error('Nexus login email was not delivered.', looked.providerStatus);
-      throw new AppError(looked.detail || 'Nexus accepted the request, then reported that delivery failed. You can try again.', 502);
+      throw new AppError(looked.detail || 'The email service accepted the request, then reported that delivery failed. You can try again.', 502);
     }
     const verified = inboxVerified(looked.providerStatus);
     await notificationRepository.create({
@@ -361,8 +361,8 @@ export async function createUnapprovedTestAccount(input) {
       inboxVerified: verified,
       requestId: delivery.requestId || '',
       message: verified
-        ? 'Nexus reported the login email as delivered.'
-        : 'Nexus accepted the email for processing. Final inbox delivery has not been verified.',
+        ? 'The email service reported the login email as delivered.'
+        : 'The email service accepted the email for processing. Final inbox delivery has not been verified.',
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -379,7 +379,7 @@ export async function createUnapprovedTestAccount(input) {
       }),
     }).catch(() => {});
     console.error('Nexus login email failed.', error.status || error.code || 'failed');
-    throw new AppError('Nexus did not accept the login email. Nothing was marked as sent. You can try again.', 502);
+    throw new AppError('The email service did not accept the login email. Nothing was marked as sent. You can try again.', 502);
   }
 }
 
@@ -395,17 +395,20 @@ function captureOnly() {
   return process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() === 'true';
 }
 
-function missingNexusVars() {
+function missingEmailVars() {
   const missing = [];
-  if (!String(process.env.NEXUS_API_KEY || '').trim()) missing.push('NEXUS_API_KEY');
-  if (!String(process.env.NEXUS_BASE_URL || '').trim()) missing.push('NEXUS_BASE_URL');
+  if (!String(process.env.SMTP_HOST || '').trim()) missing.push('SMTP_HOST');
+  if (!String(process.env.SMTP_FROM || process.env.MAIL_FROM || '').trim()) missing.push('SMTP_FROM');
   return missing;
 }
 
-function requireNexus() {
-  if (nexusConfigured() || captureOnly()) return;
-  const missing = missingNexusVars();
-  throw new AppError(`Email is not available because ${missing.join(' and ') || 'Nexus'} is not configured.`, 503);
+function requireEmailDelivery() {
+  if (emailDeliveryConfigured() || captureOnly()) return;
+  const missing = missingEmailVars();
+  throw new AppError(
+    `Email is not available because email delivery is not configured. Set ${missing.join(' and ')} (with SMTP_USER and SMTP_PASS), or set NEXUS_API_KEY and NEXUS_BASE_URL.`,
+    503,
+  );
 }
 
 async function queueSetupLink(user, template) {
@@ -430,7 +433,7 @@ async function queueSetupLink(user, template) {
     const looked = await readProviderStatus(delivery);
     if (/^failed$/i.test(looked.providerStatus)) {
       await passwordResetRepository.remove(record.id).catch(() => {});
-      throw new AppError(looked.detail || 'Nexus accepted the request, then reported that delivery failed. You can try again.', 502);
+      throw new AppError(looked.detail || 'The email service accepted the request, then reported that delivery failed. You can try again.', 502);
     }
     const verified = inboxVerified(looked.providerStatus);
     await notificationRepository.create({
@@ -478,7 +481,7 @@ async function queueSetupLink(user, template) {
         }),
       }).catch(() => {});
       console.error('Nexus account email failed.', error.status || error.code || 'failed');
-      throw new AppError('Nexus did not accept the email. Nothing was marked as sent. You can try again.', 502);
+      throw new AppError('The email service did not accept the email. Nothing was marked as sent. You can try again.', 502);
     }
     throw error;
   }
@@ -489,7 +492,7 @@ export async function requestAccount(input) {
   const fullName = String(input.fullName || input.name || input.username || '').trim();
   if (!fullName || !email) throw new AppError('Name and email are required.');
   if (!validEmail(email)) throw new AppError('Enter a valid email address.');
-  requireNexus();
+  requireEmailDelivery();
 
   const byEmail = await userRepository.findByEmailWithProfile(email);
   if (byEmail?.role === 'admin' || (byEmail?.emailVerified && byEmail.accountStatus === 'approved')) {
@@ -508,7 +511,7 @@ export async function requestAccount(input) {
         emailStatus: verified ? 'delivered' : 'accepted',
         inboxVerified: verified,
         message: verified
-          ? 'Nexus already reported the setup email as delivered. A second email was not sent.'
+          ? 'The email service already reported the setup email as delivered. A second email was not sent.'
           : 'A setup email was already accepted for processing. Check your inbox for the link to choose your password. Final inbox delivery has not been verified, and a second email was not sent.',
       };
     }
@@ -533,15 +536,15 @@ export async function requestAccount(input) {
   return {
     ...delivery,
     message: verified
-      ? 'Nexus reported the account-setup email as delivered. Open it and choose your password. The account stays inactive until you do.'
-      : 'Nexus accepted the account-setup email for processing. Check your inbox for the link to choose your password. The account stays inactive until you do. Final inbox delivery has not been verified.',
+      ? 'The email service reported the account-setup email as delivered. Open it and choose your password. The account stays inactive until you do.'
+      : 'The email service accepted the account-setup email for processing. Check your inbox for the link to choose your password. The account stays inactive until you do. Final inbox delivery has not been verified.',
   };
 }
 
 export async function forgotPassword(email) {
   const normalized = String(email || '').trim().toLowerCase();
   if (!validEmail(normalized)) throw new AppError('Enter a valid email address.');
-  requireNexus();
+  requireEmailDelivery();
 
   const generic = { message: 'If an account exists for this email address, a password-reset link will be sent.' };
   const user = await userRepository.findByEmail(normalized);
