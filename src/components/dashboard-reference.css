@@ -1367,10 +1367,12 @@
     border-radius: 18px;
   }
 
-  .dlp-shell .glass-search {
+  .dlp-shell .glass-topbar.compact-topbar .glass-search {
     position: static;
+    left: auto;
     transform: none;
     width: auto;
+    max-width: none;
     flex: 1 1 150px;
     min-width: 0;
     order: 2;
@@ -1378,7 +1380,7 @@
     min-height: 42px;
   }
 
-  .dlp-shell .glass-top-actions {
+  .dlp-shell .glass-topbar.compact-topbar .glass-top-actions {
     position: static;
     order: 3;
     margin-left: 0;
@@ -1392,13 +1394,13 @@
 }
 
 @media (max-width: 620px) {
-  .dlp-shell .glass-search {
+  .dlp-shell .glass-topbar.compact-topbar .glass-search {
     order: 3;
     flex-basis: 100%;
     margin-top: 2px;
   }
 
-  .dlp-shell .glass-top-actions {
+  .dlp-shell .glass-topbar.compact-topbar .glass-top-actions {
     order: 2;
     margin-left: auto;
   }
