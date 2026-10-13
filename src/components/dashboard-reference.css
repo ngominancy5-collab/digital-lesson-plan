@@ -1280,6 +1280,26 @@
 
   .dlp-shell .sidebar-nav {
     grid-template-columns: 1fr;
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .dlp-shell .sidebar-footer:not([data-ref-image]) {
+    height: auto;
+    min-height: 0;
+    background: none;
+    padding: 10px 4px 4px;
+    margin-top: auto;
+  }
+
+  .dlp-shell .sidebar-footer:not([data-ref-image]) .secondary-button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .dlp-shell .sidebar-footer[data-ref-image] {
+    min-height: 150px;
+    height: 170px;
   }
 
   .dlp-shell .sidebar-close {
