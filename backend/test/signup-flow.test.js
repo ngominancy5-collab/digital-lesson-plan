@@ -2,13 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 process.env.NODE_ENV = 'test';
-process.env.NEXUS_CAPTURE = 'true';
-process.env.NEXUS_API_KEY = 'test-key';
-process.env.NEXUS_BASE_URL = 'https://nexuszm.com/api/v1';
-process.env.NEXUS_ACCOUNT_SETUP_TEMPLATE = 'user_created';
 
 const { requestAccount, loginUser, resetPassword } = await import('../src/services/authService.js');
-const { takeCapturedNotifications } = await import('../src/services/nexusService.js');
 const prisma = (await import('../src/config/database.js')).default;
 
 const stamp = Date.now();
@@ -21,11 +16,10 @@ test.after(async () => {
 });
 
 test('sign up stays inactive until the user chooses a password', async () => {
-  takeCapturedNotifications();
   const created = await requestAccount({ fullName, email, role: 'admin', password: 'ShouldNotBeUsed1' });
   assert.equal(created.inboxVerified, false);
-  assert.match(created.message, /accepted the account-setup email/i);
-  assert.match(created.message, /not been verified/i);
+  assert.match(created.setupLink, /\/reset-password\?token=/);
+  assert.match(created.message, /choose your password/i);
 
   const user = await prisma.user.findUnique({ where: { email } });
   assert.equal(user.fullName, fullName);
@@ -34,19 +28,12 @@ test('sign up stays inactive until the user chooses a password', async () => {
   assert.equal(user.emailVerified, false);
   assert.equal(user.passwordHash.includes('ShouldNotBeUsed1'), false);
 
-  const [sent] = takeCapturedNotifications();
-  assert.equal(sent.template, 'user_created');
-  assert.equal(sent.data.user_name, fullName);
-  assert.equal(sent.data.email, email);
-  assert.match(sent.data.password, /\/reset-password\?token=/);
-  assert.equal(Object.hasOwn(sent.data, 'otp_code'), false);
-
   await assert.rejects(
     () => loginUser({ email, password: 'PlanwiseSignup1' }),
     (error) => error.status === 401,
   );
 
-  const token = sent.data.password.match(/token=([a-f0-9]+)/)[1];
+  const token = created.setupLink.match(/token=([a-f0-9]+)/)[1];
   await resetPassword({ token, password: 'PlanwiseSignup1' });
   await assert.rejects(
     () => resetPassword({ token, password: 'PlanwiseSignup2' }),

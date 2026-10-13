@@ -376,12 +376,14 @@ function CreateAccountPage({ onNavigate }) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
+  const [setupLink, setSetupLink] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   async function submit(event) {
     event.preventDefault();
     setError('');
     setMessage('');
+    setSetupLink('');
     if (!fullName.trim() || !email.trim()) {
       setError('Name and email are required.');
       return;
@@ -389,10 +391,11 @@ function CreateAccountPage({ onNavigate }) {
     setLoading(true);
     try {
       const result = await authApi.createTestAccount({ fullName: fullName.trim(), name: fullName.trim(), email: email.trim() });
-      setMessage(result.message || 'Check your inbox for the link to choose your password.');
+      setSetupLink(result.setupLink || '');
+      setMessage(result.message || 'Use the link below to choose your password.');
     } catch (err) {
       const offline = !err.status && /network|failed to fetch|timeout|ECONNABORTED/i.test(err.message || '');
-      setError(offline ? 'Could not reach PlanWise. Check your connection and try again.' : (err.message || 'The setup email was not accepted.'));
+      setError(offline ? 'Could not reach PlanWise. Check your connection and try again.' : (err.message || 'The account could not be created.'));
     } finally {
       setLoading(false);
     }
@@ -405,11 +408,12 @@ function CreateAccountPage({ onNavigate }) {
           <span>PlanWise <em>AI</em></span>
         </div>
         <h2>Create account</h2>
-        <p className="pw-signup-lead">Enter your name and email. PlanWise will send a link so you can choose your own password.</p>
+        <p className="pw-signup-lead">Enter your name and email. You'll get a link to choose your own password.</p>
         <form className="auth-form pw-signup-form" onSubmit={submit}>
           <label className="auth-field"><span>Full name</span><div className="auth-input"><UserRound size={16} /><input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Enter your name" autoComplete="name" /></div></label>
           <label className="auth-field"><span>Email address</span><div className="auth-input"><Mail size={16} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /></div></label>
           {message && <div className="auth-note" role="status">{message}</div>}
+          {setupLink && <a className="pw-signup-submit pw-link-button" href={setupLink}>Open setup link</a>}
           {error && <div className="auth-error" role="alert">{error}</div>}
           <button className="pw-signup-submit" disabled={loading}>{loading ? 'Sending...' : 'Create Account'}</button>
         </form>
@@ -571,7 +575,7 @@ function ForgotPasswordPage({ onNavigate }) {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [devToken, setDevToken] = useState('');
+  const [resetLink, setResetLink] = useState('');
   async function submit(event) {
     event.preventDefault();
     if (!/^\S+@\S+\.\S+$/.test(email)) { setError('Enter a valid email address.'); return; }
@@ -579,7 +583,7 @@ function ForgotPasswordPage({ onNavigate }) {
     setLoading(true);
     try {
       const result = await authApi.forgotPassword(email.trim());
-      setDevToken('');
+      setResetLink(result.resetLink || '');
       setSent(result.message || 'If an account exists for that email, a reset link was sent.');
     } catch (err) {
       setError(err.message || 'Unable to start password reset.');
@@ -594,10 +598,11 @@ function ForgotPasswordPage({ onNavigate }) {
         {sent ? (
           <>
             <div className="success-auth-icon"><Check size={21} /></div>
-            <span className="section-kicker">CHECK YOUR INBOX</span>
-            <h2>Reset link sent</h2>
+            <span className="section-kicker">PASSWORD RESET</span>
+            <h2>Reset link ready</h2>
             <p className="auth-subtitle">{typeof sent === 'string' ? sent : 'If an account exists for that email, a reset link was sent.'}</p>
-            <button className="auth-submit" onClick={() => onNavigate('login')}>Back to Sign In</button>
+            {resetLink ? <a className="auth-submit pw-link-button" href={resetLink}>Open reset link</a> : null}
+            <button className="auth-back" onClick={() => onNavigate('login')}>Back to Sign In</button>
           </>
         ) : (
           <>
@@ -694,7 +699,7 @@ function ChangePasswordPage({ onChanged }) {
           <span>PlanWise <em>AI</em></span>
         </div>
         <h2>Choose a new password</h2>
-        <p className="pw-signup-lead">The password in your email is temporary. Set your own before entering PlanWise.</p>
+        <p className="pw-signup-lead">The password you were given is temporary. Set your own before entering PlanWise.</p>
         <form className="auth-form" onSubmit={submit}>
           <PasswordField label="Temporary password" value={currentPassword} onChange={setCurrentPassword} autoComplete="current-password" />
           <PasswordField label="New password" value={password} onChange={setPassword} autoComplete="new-password" />
@@ -828,6 +833,7 @@ function AccountsPage() {
   const [form, setForm] = useState({ name: '', email: '', role: 'Lecturer', institution: '', department: '' });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [tempPassword, setTempPassword] = useState('');
   const [loading, setLoading] = useState(true);
   const isTeacher = form.role === 'Teacher';
 
@@ -865,7 +871,7 @@ function AccountsPage() {
       });
       setUsers((current) => [result.user, ...current.filter((item) => item.id !== result.user.id)]);
       setForm({ name: '', email: '', role: 'Lecturer', institution: '', department: '' });
-      setNotice('Account created. Approve it to email the login credentials.');
+      setNotice('Account created. Approve it to get a temporary password.');
     } catch (err) {
       setError(err.message || 'Could not create the account.');
     }
@@ -874,10 +880,12 @@ function AccountsPage() {
   async function run(action, id) {
     setError('');
     setNotice('');
+    setTempPassword('');
     try {
       const result = await action(id);
       setUsers((current) => current.map((item) => item.id === result.user.id ? result.user : item));
       setNotice(result.message || 'Updated.');
+      setTempPassword(result.temporaryPassword || '');
     } catch (err) {
       setError(err.message || 'Could not update the account.');
     }
@@ -894,6 +902,11 @@ function AccountsPage() {
       </div>
       {error && <div className="error-box" role="alert">{error}</div>}
       {notice && <div className="auth-error" role="status">{notice}</div>}
+      {tempPassword && (
+        <div className="auth-note" role="status">
+          Temporary password: <strong>{tempPassword}</strong> — share it with the user; they must change it on first sign-in.
+        </div>
+      )}
       <form className="panel-card account-form-grid" onSubmit={createAccount}>
         <label className="field"><span>Full name</span><input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></label>
         <label className="field"><span>Email</span><input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} /></label>

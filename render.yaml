@@ -59,31 +59,10 @@ services:
       - key: ADMIN_NAME
         value: PlanWise Administrator
 
-      # Email delivery. Two options (Nexus wins if it is also set):
-      #  1) HTTP email API over HTTPS — WORKS ON THE FREE PLAN (HTTPS is never blocked).
-      #     Set EMAIL_HTTP_PROVIDER to resend | brevo | sendgrid | mailjet, plus
-      #     EMAIL_HTTP_API_KEY (Mailjet: "APIKey:SecretKey"). Sender is SMTP_FROM below.
-      #  2) SMTP — blocked on free web services for ports 25/465/587. Use a provider
-      #     with port 2525 (e.g. SMTP2GO mail.smtp2go.com:2525), or a paid instance.
-      - key: EMAIL_HTTP_PROVIDER
-        sync: false
-      - key: EMAIL_HTTP_API_KEY
-        sync: false
-
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        sync: false
-      - key: SMTP_SECURE
-        value: "false"
-      - key: SMTP_REQUIRE_TLS
-        value: "true"
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
-        sync: false
-      - key: SMTP_FROM
-        sync: false
+      # Email is intentionally not used. Account-setup and password-reset links
+      # are returned by the API and shown in the UI, and administrators share the
+      # temporary password shown after approving an account. CLIENT_URL above is
+      # used to build those links.
 
       # Uploaded-file storage (ephemeral on the free plan).
       - key: FILE_STORAGE_PATH

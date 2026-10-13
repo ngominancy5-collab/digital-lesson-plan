@@ -3,12 +3,10 @@ import { hashPassword, verifyPassword } from '../utils/password.js';
 import { signAccessToken, createResetToken, hashToken } from '../utils/tokens.js';
 import { mapUser, parseRole } from '../utils/mappers.js';
 import { AppError } from '../utils/errors.js';
-import { env, unapprovedTestAccountsAllowed } from '../config/env.js';
-import { emailDeliveryConfigured, getNotificationStatus, loginTemplateName, resetTemplateName, sendNotification } from './nexusService.js';
+import { env } from '../config/env.js';
 import { assertInstitutionForRole } from './institutionService.js';
 import * as userRepository from '../repositories/userRepository.js';
 import * as passwordResetRepository from '../repositories/passwordResetRepository.js';
-import * as notificationRepository from '../repositories/notificationRepository.js';
 
 function publicAuthPayload(user) {
   const token = signAccessToken(user);
@@ -46,11 +44,6 @@ export async function registerUser(input) {
   const existing = await userRepository.findByEmail(email);
   if (existing) throw new AppError('An account with this email already exists.', 409);
 
-  const skipNexus = process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() !== 'true';
-  if (!skipNexus && !emailDeliveryConfigured() && process.env.NODE_ENV !== 'test') {
-    throw new AppError('Login email is not available because email delivery is not configured.', 503);
-  }
-
   const passwordHash = await hashPassword(password);
   const user = await userRepository.createWithProfile({
     fullName,
@@ -77,33 +70,6 @@ export async function registerUser(input) {
     },
   });
 
-  if (!skipNexus) {
-    const { token } = createResetToken();
-    const tokenHash = hashToken(token);
-    await passwordResetRepository.invalidateOpen(user.id);
-    await passwordResetRepository.create({
-      userId: user.id,
-      tokenHash,
-      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-    });
-    const setupLink = `${env.clientUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
-    try {
-      const delivery = await sendNotification({
-        template: loginTemplateName(),
-        to: user.email,
-        data: {
-          user_name: user.fullName,
-          password: setupLink,
-        },
-      });
-      console.info('Nexus login email queued.', delivery.status || 'queued');
-    } catch (error) {
-      await userRepository.remove(user.id).catch(() => {});
-      console.error('Nexus login email failed.', error.status || error.code || 'failed');
-      throw new AppError('The account was not kept because the login email was not accepted. Try again.', 502);
-    }
-  }
-
   return publicAuthPayload(user);
 }
 
@@ -118,7 +84,7 @@ export async function loginUser({ email, username, identifier, password }) {
     throw new AppError('Incorrect username or password.', 401);
   }
   if (!user.emailVerified || user.accountStatus === 'pending') {
-    throw new AppError('This account is not active yet. Open the setup link in your email and choose a password.', 403);
+    throw new AppError('This account is not active yet. Use the setup link you were given to choose a password, or ask an administrator to approve it.', 403);
   }
   assertApprovedAccount(user);
 
@@ -204,84 +170,47 @@ export async function updateProfile(userId, input) {
   return mapUser(user);
 }
 
-function emailNotice(record) {
-  const message = String(record?.message || '');
-  const read = (key) => message.match(new RegExp(`${key}=([^;]*)`))?.[1] || '';
-  return {
-    status: read('status'),
-    providerStatus: read('provider'),
-    requestId: read('requestId'),
-    detail: read('detail'),
-  };
+function validEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !/[\r\n]/.test(email);
 }
 
-function noticeMessage({ status, providerStatus, requestId, detail }) {
-  return `status=${status};provider=${providerStatus || ''};requestId=${requestId || ''};detail=${String(detail || '').replace(/[;\r\n]/g, ' ').slice(0, 180)}`;
-}
-
-function inboxVerified(providerStatus) {
-  return /^(delivered|sent|completed)$/i.test(String(providerStatus || ''));
+function strongPassword(password) {
+  return String(password).length >= 8 && /\d/.test(password) && /[A-Z]/.test(password) && /[a-z]/.test(password);
 }
 
 async function unknownPasswordHash() {
   return hashPassword(crypto.randomBytes(32).toString('hex'));
 }
 
-async function readProviderStatus(delivery) {
-  let providerStatus = delivery.status || 'queued';
-  let detail = '';
-  if (!delivery.requestId || delivery.requestId === 'test-request') {
-    return { providerStatus, detail };
-  }
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (attempt === 1 && /queued|processing|accepted/i.test(providerStatus)) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
-    try {
-      const looked = await getNotificationStatus(delivery.requestId);
-      providerStatus = looked.status || providerStatus;
-      detail = looked.errorMessage || '';
-      if (!/queued|processing/i.test(providerStatus)) break;
-    } catch (error) {
-      detail = error.message || '';
-      break;
-    }
-  }
-  return { providerStatus, detail };
+async function issueSetupLink(user) {
+  const { token, tokenHash } = createResetToken();
+  await passwordResetRepository.invalidateOpen(user.id);
+  await passwordResetRepository.create({
+    userId: user.id,
+    tokenHash,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+  });
+  return `${env.clientUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
 }
 
-export async function createUnapprovedTestAccount(input) {
-  if (!unapprovedTestAccountsAllowed()) {
-    throw new AppError('Administrator approval is required. Unapproved test accounts are turned off.', 403);
-  }
-
+export async function requestAccount(input) {
   const email = String(input.email || '').trim().toLowerCase();
   const fullName = String(input.fullName || input.name || input.username || '').trim();
   if (!fullName || !email) throw new AppError('Name and email are required.');
   if (!validEmail(email)) throw new AppError('Enter a valid email address.');
 
-  const captureOnly = process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() === 'true';
-  if (!emailDeliveryConfigured() && !captureOnly) {
-    throw new AppError('Login email is not available because email delivery is not configured.', 503);
+  const byEmail = await userRepository.findByEmailWithProfile(email);
+  if (byEmail?.role === 'admin' || (byEmail?.emailVerified && byEmail.accountStatus === 'approved')) {
+    throw new AppError('That email address is already registered.', 409);
+  }
+  if (byEmail && ['rejected', 'suspended', 'inactive'].includes(byEmail.accountStatus)) {
+    throw new AppError('This account cannot be registered again. Contact an administrator.', 403);
   }
 
-  let user = await userRepository.findByEmailWithProfile(email);
-  if (user?.role === 'admin') {
-    throw new AppError('This address belongs to an administrator and cannot be used here.', 403);
-  }
+  let user = byEmail;
   if (user) {
-    const prior = emailNotice(await notificationRepository.latestByType(user.id, 'login-email'));
-    if (prior.status === 'accepted' || prior.status === 'delivered') {
-      const verified = prior.status === 'delivered' || inboxVerified(prior.providerStatus);
-      return {
-        emailStatus: verified ? 'delivered' : 'accepted',
-        providerStatus: prior.providerStatus || 'queued',
-        inboxVerified: verified,
-        requestId: prior.requestId,
-        message: verified
-          ? 'The email service already reported this login email as delivered. A second email was not sent.'
-          : 'The email service already accepted this login email for processing. Final inbox delivery has not been verified, and a second email was not sent.',
-      };
+    if (user.fullName !== fullName) {
+      user = await userRepository.updateWithProfile(user.id, { fullName });
     }
   } else {
     user = await userRepository.createWithProfile({
@@ -289,7 +218,8 @@ export async function createUnapprovedTestAccount(input) {
       email,
       passwordHash: await unknownPasswordHash(),
       role: 'lecturer',
-      accountStatus: 'approved',
+      accountStatus: 'pending',
+      emailVerified: false,
       mustChangePassword: false,
       profile: {
         create: {
@@ -304,246 +234,29 @@ export async function createUnapprovedTestAccount(input) {
     });
   }
 
-  const { token, tokenHash } = createResetToken();
-  await passwordResetRepository.invalidateOpen(user.id);
-  const record = await passwordResetRepository.create({
-    userId: user.id,
-    tokenHash,
-    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-  });
-  const setupLink = `${env.clientUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
-
-  try {
-    const delivery = await sendNotification({
-      template: loginTemplateName(),
-      to: user.email,
-      data: {
-        user_name: user.fullName,
-        email: user.email,
-        password: setupLink,
-      },
-    });
-    const looked = await readProviderStatus(delivery);
-    if (/^failed$/i.test(looked.providerStatus)) {
-      await passwordResetRepository.remove(record.id).catch(() => {});
-      await notificationRepository.create({
-        userId: user.id,
-        title: 'Login email',
-        type: 'login-email',
-        isRead: true,
-        message: noticeMessage({
-          status: 'failed',
-          providerStatus: looked.providerStatus,
-          requestId: delivery.requestId,
-          detail: looked.detail,
-        }),
-      });
-      console.error('Nexus login email was not delivered.', looked.providerStatus);
-      throw new AppError(looked.detail || 'The email service accepted the request, then reported that delivery failed. You can try again.', 502);
-    }
-    const verified = inboxVerified(looked.providerStatus);
-    await notificationRepository.create({
-      userId: user.id,
-      title: 'Login email',
-      type: 'login-email',
-      isRead: true,
-      message: noticeMessage({
-        status: verified ? 'delivered' : 'accepted',
-        providerStatus: looked.providerStatus,
-        requestId: delivery.requestId,
-        detail: looked.detail,
-      }),
-    });
-    console.info('Nexus login email accepted.', looked.providerStatus || 'queued');
-    return {
-      emailStatus: verified ? 'delivered' : 'accepted',
-      providerStatus: looked.providerStatus || 'queued',
-      inboxVerified: verified,
-      requestId: delivery.requestId || '',
-      message: verified
-        ? 'The email service reported the login email as delivered.'
-        : 'The email service accepted the email for processing. Final inbox delivery has not been verified.',
-    };
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    await passwordResetRepository.remove(record.id).catch(() => {});
-    await notificationRepository.create({
-      userId: user.id,
-      title: 'Login email',
-      type: 'login-email',
-      isRead: true,
-      message: noticeMessage({
-        status: 'failed',
-        providerStatus: String(error.status || error.code || 'failed'),
-        detail: error.code || 'failed',
-      }),
-    }).catch(() => {});
-    console.error('Nexus login email failed.', error.status || error.code || 'failed');
-    throw new AppError('The email service did not accept the login email. Nothing was marked as sent. You can try again.', 502);
-  }
-}
-
-function validEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !/[\r\n]/.test(email);
-}
-
-function strongPassword(password) {
-  return String(password).length >= 8 && /\d/.test(password) && /[A-Z]/.test(password) && /[a-z]/.test(password);
-}
-
-function captureOnly() {
-  return process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() === 'true';
-}
-
-function requireEmailDelivery() {
-  if (emailDeliveryConfigured() || captureOnly()) return;
-  throw new AppError(
-    'Email is not available because email delivery is not configured. Set an SMTP provider (SMTP_HOST and SMTP_FROM), or an HTTP email API (EMAIL_HTTP_PROVIDER and EMAIL_HTTP_API_KEY with SMTP_FROM), or set NEXUS_API_KEY and NEXUS_BASE_URL.',
-    503,
-  );
-}
-
-async function queueSetupLink(user, template) {
-  const { token, tokenHash } = createResetToken();
-  await passwordResetRepository.invalidateOpen(user.id);
-  const record = await passwordResetRepository.create({
-    userId: user.id,
-    tokenHash,
-    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-  });
-  const setupLink = `${env.clientUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
-  try {
-    const delivery = await sendNotification({
-      template,
-      to: user.email,
-      data: {
-        user_name: user.username || user.fullName,
-        email: user.email,
-        password: setupLink,
-      },
-    });
-    const looked = await readProviderStatus(delivery);
-    if (/^failed$/i.test(looked.providerStatus)) {
-      await passwordResetRepository.remove(record.id).catch(() => {});
-      throw new AppError(looked.detail || 'The email service accepted the request, then reported that delivery failed. You can try again.', 502);
-    }
-    const verified = inboxVerified(looked.providerStatus);
-    await notificationRepository.create({
-      userId: user.id,
-      title: 'Account email',
-      type: 'login-email',
-      isRead: true,
-      message: noticeMessage({
-        status: verified ? 'delivered' : 'accepted',
-        providerStatus: looked.providerStatus,
-        requestId: delivery.requestId,
-        detail: looked.detail,
-      }),
-    });
-    console.info('Nexus account email accepted.', looked.providerStatus || 'queued');
-    return {
-      emailStatus: verified ? 'delivered' : 'accepted',
-      providerStatus: looked.providerStatus || 'queued',
-      inboxVerified: verified,
-      requestId: delivery.requestId || '',
-    };
-  } catch (error) {
-    if (!(error instanceof AppError)) {
-      await passwordResetRepository.remove(record.id).catch(() => {});
-    }
-    if (error instanceof AppError && error.status === 502) {
-      await notificationRepository.create({
-        userId: user.id,
-        title: 'Account email',
-        type: 'login-email',
-        isRead: true,
-        message: noticeMessage({ status: 'failed', providerStatus: 'failed', detail: 'delivery failed' }),
-      }).catch(() => {});
-    }
-    if (!(error instanceof AppError)) {
-      await notificationRepository.create({
-        userId: user.id,
-        title: 'Account email',
-        type: 'login-email',
-        isRead: true,
-        message: noticeMessage({
-          status: 'failed',
-          providerStatus: String(error.status || error.code || 'failed'),
-          detail: error.code || 'failed',
-        }),
-      }).catch(() => {});
-      console.error('Nexus account email failed.', error.status || error.code || 'failed');
-      throw new AppError('The email service did not accept the email. Nothing was marked as sent. You can try again.', 502);
-    }
-    throw error;
-  }
-}
-
-export async function requestAccount(input) {
-  const email = String(input.email || '').trim().toLowerCase();
-  const fullName = String(input.fullName || input.name || input.username || '').trim();
-  if (!fullName || !email) throw new AppError('Name and email are required.');
-  if (!validEmail(email)) throw new AppError('Enter a valid email address.');
-  requireEmailDelivery();
-
-  const byEmail = await userRepository.findByEmailWithProfile(email);
-  if (byEmail?.role === 'admin' || (byEmail?.emailVerified && byEmail.accountStatus === 'approved')) {
-    throw new AppError('That email address is already registered.', 409);
-  }
-  if (byEmail && ['rejected', 'suspended', 'inactive'].includes(byEmail.accountStatus)) {
-    throw new AppError('This account cannot be registered again. Contact an administrator.', 403);
-  }
-
-  let user = byEmail;
-  if (user) {
-    const prior = emailNotice(await notificationRepository.latestByType(user.id, 'login-email'));
-    if (prior.status === 'accepted' || prior.status === 'delivered') {
-      const verified = prior.status === 'delivered' || inboxVerified(prior.providerStatus);
-      return {
-        emailStatus: verified ? 'delivered' : 'accepted',
-        inboxVerified: verified,
-        message: verified
-          ? 'The email service already reported the setup email as delivered. A second email was not sent.'
-          : 'A setup email was already accepted for processing. Check your inbox for the link to choose your password. Final inbox delivery has not been verified, and a second email was not sent.',
-      };
-    }
-    if (user.fullName !== fullName) {
-      user = await userRepository.updateWithProfile(user.id, { fullName });
-    }
-  } else {
-    user = await userRepository.createWithProfile({
-      fullName,
-      email,
-      passwordHash: await unknownPasswordHash(),
-      role: 'lecturer',
-      accountStatus: 'pending',
-      emailVerified: false,
-      mustChangePassword: false,
-      profile: { create: { institution: '', department: '', specialization: '', educationLevel: '', phone: '', preferences: {} } },
-    });
-  }
-
-  const delivery = await queueSetupLink(user, loginTemplateName());
-  const verified = delivery.inboxVerified;
+  const setupLink = await issueSetupLink(user);
   return {
-    ...delivery,
-    message: verified
-      ? 'The email service reported the account-setup email as delivered. Open it and choose your password. The account stays inactive until you do.'
-      : 'The email service accepted the account-setup email for processing. Check your inbox for the link to choose your password. The account stays inactive until you do. Final inbox delivery has not been verified.',
+    emailStatus: 'link-ready',
+    inboxVerified: false,
+    setupLink,
+    message: 'Account created. Open the setup link below to choose your password. The account stays inactive until you do.',
   };
 }
 
 export async function forgotPassword(email) {
   const normalized = String(email || '').trim().toLowerCase();
   if (!validEmail(normalized)) throw new AppError('Enter a valid email address.');
-  requireEmailDelivery();
 
-  const generic = { message: 'If an account exists for this email address, a password-reset link will be sent.' };
   const user = await userRepository.findByEmail(normalized);
-  if (!user) return generic;
+  if (!user) {
+    return { message: 'No account was found for that email address.' };
+  }
 
-  await queueSetupLink(user, resetTemplateName());
-  return generic;
+  const resetLink = await issueSetupLink(user);
+  return {
+    resetLink,
+    message: 'Open the reset link below to choose a new password. It expires in one hour.',
+  };
 }
 
 export async function resetPassword({ token, password }) {

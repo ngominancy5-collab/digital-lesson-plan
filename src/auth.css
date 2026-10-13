@@ -1001,6 +1001,11 @@
   cursor: not-allowed;
 }
 
+.pw-link-button {
+  text-decoration: none;
+  margin-top: 12px;
+}
+
 .pw-signup-switch {
   margin: 14px 0 0;
   color: var(--pw-muted);

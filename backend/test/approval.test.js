@@ -2,14 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 process.env.NODE_ENV = 'test';
-process.env.NEXUS_CAPTURE = 'true';
-process.env.NEXUS_API_KEY = 'test-key';
-process.env.NEXUS_BASE_URL = 'https://nexuszm.com/api/v1';
-process.env.NEXUS_LOGIN_TEMPLATE = 'user_created';
 
 const { createAccount, approveAccount, rejectAccount, suspendAccount } = await import('../src/services/adminService.js');
 const { loginUser, changePassword } = await import('../src/services/authService.js');
-const { takeCapturedNotifications } = await import('../src/services/nexusService.js');
 const prisma = (await import('../src/config/database.js')).default;
 
 const stamp = Date.now();
@@ -32,25 +27,19 @@ test('admin approval controls who can log in', async (t) => {
     assert.equal(created.accountStatus, 'pending');
     await assert.rejects(
       () => loginUser({ email, password: 'NotThePassword1' }),
-      (error) => error.status === 401 && /incorrect email or password/i.test(error.message),
+      (error) => error.status === 401 && /incorrect username or password/i.test(error.message),
     );
   });
 
-  await t.test('approval emails a temporary password and blocks the dashboard password', async () => {
-    takeCapturedNotifications();
-    const approved = await approveAccount((await prisma.user.findUnique({ where: { email } })).id);
-    assert.equal(approved.accountStatus, 'approved');
-    assert.equal(approved.mustChangePassword, true);
-    const [sent] = takeCapturedNotifications();
-    assert.equal(sent.template, 'user_created');
-    assert.equal(sent.to, email);
-    assert.equal(sent.data.user_name, 'Pending Lecturer');
-    assert.equal(Object.hasOwn(sent.data, 'otp_code'), false);
-    assert.match(sent.data.password, /^Pw/);
-    const session = await loginUser({ email, password: sent.data.password });
+  await t.test('approval returns a temporary password and blocks the dashboard password', async () => {
+    const { user, temporaryPassword } = await approveAccount((await prisma.user.findUnique({ where: { email } })).id);
+    assert.equal(user.accountStatus, 'approved');
+    assert.equal(user.mustChangePassword, true);
+    assert.match(temporaryPassword, /^Pw/);
+    const session = await loginUser({ email, password: temporaryPassword });
     assert.equal(session.user.mustChangePassword, true);
     const updated = await changePassword(session.user.id, {
-      currentPassword: sent.data.password,
+      currentPassword: temporaryPassword,
       password: 'PlanwiseApproved1',
     });
     assert.equal(updated.mustChangePassword, false);

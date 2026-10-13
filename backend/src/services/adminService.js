@@ -3,7 +3,6 @@ import { hashPassword } from '../utils/password.js';
 import { mapUser, parseRole } from '../utils/mappers.js';
 import { AppError } from '../utils/errors.js';
 import { assertInstitutionForRole } from './institutionService.js';
-import { emailDeliveryConfigured, loginTemplateName, sendNotification } from './nexusService.js';
 import * as userRepository from '../repositories/userRepository.js';
 
 function temporaryPassword() {
@@ -18,10 +17,6 @@ function temporaryPassword() {
 
 async function unknownPasswordHash() {
   return hashPassword(crypto.randomBytes(32).toString('hex'));
-}
-
-function captureOnly() {
-  return process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() === 'true';
 }
 
 export async function createAccount(input) {
@@ -80,9 +75,6 @@ export async function approveAccount(userId) {
   if (user.accountStatus === 'approved') {
     throw new AppError('This account is already approved.');
   }
-  if (!emailDeliveryConfigured() && !captureOnly()) {
-    throw new AppError('Login email is not available because email delivery is not configured.', 503);
-  }
 
   const temporary = temporaryPassword();
   const approved = await userRepository.updateWithProfile(user.id, {
@@ -92,26 +84,7 @@ export async function approveAccount(userId) {
     mustChangePassword: true,
   });
 
-  try {
-    await sendNotification({
-      template: loginTemplateName(),
-      to: approved.email,
-      data: {
-        user_name: approved.fullName,
-        password: temporary,
-      },
-    });
-  } catch (error) {
-    await userRepository.updateWithProfile(user.id, {
-      passwordHash: await unknownPasswordHash(),
-      accountStatus: 'pending',
-      mustChangePassword: false,
-    }).catch(() => {});
-    console.error('Nexus login email failed.', error.status || error.code || 'failed');
-    throw new AppError('The account was not approved because the login email was not accepted.', 502);
-  }
-
-  return mapUser(approved);
+  return { user: mapUser(approved), temporaryPassword: temporary };
 }
 
 async function setStatus(userId, accountStatus) {
