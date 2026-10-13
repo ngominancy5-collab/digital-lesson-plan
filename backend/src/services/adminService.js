@@ -3,6 +3,7 @@ import { hashPassword } from '../utils/password.js';
 import { mapUser, parseRole } from '../utils/mappers.js';
 import { AppError } from '../utils/errors.js';
 import { assertInstitutionForRole } from './institutionService.js';
+import { trySendMail } from './emailService.js';
 import * as userRepository from '../repositories/userRepository.js';
 
 function temporaryPassword() {
@@ -84,7 +85,20 @@ export async function approveAccount(userId) {
     mustChangePassword: true,
   });
 
-  return { user: mapUser(approved), temporaryPassword: temporary };
+  const delivery = await trySendMail({
+    to: approved.email,
+    subject: 'Your PlanWise AI account is approved',
+    text: `Hi ${approved.fullName || 'there'},\n\nYour PlanWise AI account has been approved.\n\nEmail: ${approved.email}\nTemporary password: ${temporary}\n\nSign in and you will be asked to choose a new password.\n\n— PlanWise AI`,
+    html: `<div style="font-family:Segoe UI,Arial,sans-serif;color:#1f2c26;line-height:1.5">
+  <h2 style="color:#1a3026">Your PlanWise AI account is approved</h2>
+  <p>Hi ${approved.fullName || 'there'},</p>
+  <p>Your account has been approved. Sign in with:</p>
+  <p><strong>Email:</strong> ${approved.email}<br><strong>Temporary password:</strong> ${temporary}</p>
+  <p style="color:#6a746c;font-size:13px">You will be asked to choose a new password after signing in.</p>
+</div>`,
+  });
+
+  return { user: mapUser(approved), temporaryPassword: temporary, emailed: delivery.sent };
 }
 
 async function setStatus(userId, accountStatus) {

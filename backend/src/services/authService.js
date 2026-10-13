@@ -5,8 +5,22 @@ import { mapUser, parseRole } from '../utils/mappers.js';
 import { AppError } from '../utils/errors.js';
 import { env } from '../config/env.js';
 import { assertInstitutionForRole } from './institutionService.js';
+import { trySendMail } from './emailService.js';
 import * as userRepository from '../repositories/userRepository.js';
 import * as passwordResetRepository from '../repositories/passwordResetRepository.js';
+
+function emailShell(heading, bodyText, link) {
+  const text = `Hi ${bodyText.name || 'there'},\n\n${bodyText.intro}\n\n${link}\n\n${bodyText.outro}\n\n— PlanWise AI`;
+  const html = `<div style="font-family:Segoe UI,Arial,sans-serif;color:#1f2c26;line-height:1.5">
+  <h2 style="color:#1a3026">${heading}</h2>
+  <p>Hi ${bodyText.name || 'there'},</p>
+  <p>${bodyText.intro}</p>
+  <p><a href="${link}" style="display:inline-block;padding:12px 20px;background:#1a3026;color:#fff;border-radius:10px;text-decoration:none">${bodyText.action}</a></p>
+  <p style="color:#6a746c;font-size:13px">${bodyText.outro}</p>
+  <p style="color:#6a746c;font-size:13px">If the button does not work, copy this link:<br>${link}</p>
+</div>`;
+  return { text, html };
+}
 
 function publicAuthPayload(user) {
   const token = signAccessToken(user);
@@ -235,11 +249,21 @@ export async function requestAccount(input) {
   }
 
   const setupLink = await issueSetupLink(user);
+  const mail = emailShell('Set up your PlanWise AI account', {
+    name: user.fullName,
+    intro: 'An account was created for you on PlanWise AI. Choose your password using the button below. The link expires in one hour.',
+    action: 'Choose my password',
+    outro: 'If you did not expect this, you can ignore this email.',
+  }, setupLink);
+  const delivery = await trySendMail({ to: user.email, subject: 'Set up your PlanWise AI account', ...mail });
   return {
-    emailStatus: 'link-ready',
+    emailStatus: delivery.sent ? 'sent' : 'link-ready',
     inboxVerified: false,
+    emailed: delivery.sent,
     setupLink,
-    message: 'Account created. Open the setup link below to choose your password. The account stays inactive until you do.',
+    message: delivery.sent
+      ? 'Account created. We emailed you a setup link to choose your password — it also appears below. The account stays inactive until you set a password.'
+      : 'Account created. Open the setup link below to choose your password. The account stays inactive until you do.',
   };
 }
 
@@ -253,9 +277,19 @@ export async function forgotPassword(email) {
   }
 
   const resetLink = await issueSetupLink(user);
+  const mail = emailShell('Reset your PlanWise AI password', {
+    name: user.fullName,
+    intro: 'We received a request to reset your password. Choose a new one using the button below. The link expires in one hour.',
+    action: 'Reset my password',
+    outro: 'If you did not request this, you can ignore this email.',
+  }, resetLink);
+  const delivery = await trySendMail({ to: normalized, subject: 'Reset your PlanWise AI password', ...mail });
   return {
     resetLink,
-    message: 'Open the reset link below to choose a new password. It expires in one hour.',
+    emailed: delivery.sent,
+    message: delivery.sent
+      ? 'We emailed you a reset link to choose a new password — it also appears below. It expires in one hour.'
+      : 'Open the reset link below to choose a new password. It expires in one hour.',
   };
 }
 
