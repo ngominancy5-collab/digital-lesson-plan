@@ -25,9 +25,9 @@ export function findValid(tokenHash) {
   });
 }
 
-export function markUsedAndUpdatePassword(recordId, userId, passwordHash) {
+export function markUsedAndUpdatePassword(recordId, userId, passwordHash, extra = {}) {
   return prisma.$transaction([
-    prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+    prisma.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false, ...extra } }),
     prisma.passwordResetToken.update({ where: { id: recordId }, data: { usedAt: new Date() } }),
   ]);
 }

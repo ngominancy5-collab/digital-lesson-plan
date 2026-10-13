@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  adminApi,
   attendanceApi,
   authApi,
   assessmentApi,
@@ -72,8 +73,8 @@ import {
 import AssistantPage from './components/AssistantPage.jsx';
 import CalendarPage from './components/CalendarPage.jsx';
 import AssessmentsPage from './components/AssessmentsPage.jsx';
-import LandingPage from './components/LandingPage.jsx';
 import FloatingAssistant from './components/FloatingAssistant.jsx';
+import LandingPage from './components/LandingPage.jsx';
 import DashboardHome from './components/DashboardHome.jsx';
 import PaperMarkingPage from './components/PaperMarkingPage.jsx';
 import { EDUCATOR_ROLES } from './data/institutions.js';
@@ -96,6 +97,7 @@ const navItems = [
   { id: 'resources', label: 'Resources', icon: Folder },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
   { id: 'assistant', label: 'AI Assistant', icon: Sparkles },
+  { id: 'accounts', label: 'Accounts', icon: ShieldCheck },
   { id: 'settings', label: 'Settings', icon: Settings2 },
 ];
 
@@ -105,7 +107,7 @@ const roleNav = {
   'School Teacher': ['dashboard', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'courses', 'resources', 'reports', 'assistant', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
   Student: ['dashboard', 'courses', 'calendar', 'assistant', 'resources', 'progress', 'notifications', 'settings', 'profile'],
   'Academic Coordinator': ['dashboard', 'courses', 'progress', 'calendar', 'assessments', 'reports', 'notifications', 'settings', 'profile'],
-  Administrator: ['dashboard', 'courses', 'progress', 'reports', 'settings', 'profile'],
+  Administrator: ['accounts', 'dashboard', 'courses', 'progress', 'reports', 'settings', 'profile'],
 };
 
 const emptyForm = {
@@ -261,10 +263,10 @@ function AuthShell({ children, mode = 'login', onNavigate }) {
         <div className="pw-signup-shell">
         <aside className="pw-signup-visual">
           <div className="pw-signup-visual-top">
-            <button type="button" className="pw-signup-brand pw-signup-brand-light" onClick={() => onNavigate?.('landing')}>
+            <div className="pw-signup-brand pw-signup-brand-light">
               <PlanWiseMark />
               <span>PlanWise <em>AI</em></span>
-            </button>
+            </div>
             <p>PLAN · TEACH · ASSESS · GROW</p>
           </div>
           <div className="pw-signup-visual-copy">
@@ -290,10 +292,10 @@ function AuthShell({ children, mode = 'login', onNavigate }) {
   return (
     <div className="auth-page">
       <section className="auth-visual">
-        <button type="button" className="auth-brand" onClick={() => onNavigate?.('landing')}>
+        <div className="auth-brand">
           <div className="brand-mark"><GraduationCap size={21} /></div>
           <strong>PlanWise AI</strong>
-        </button>
+        </div>
         <div className="auth-visual-copy">
           <span className="section-kicker">PLAN · TEACH · EMPOWER</span>
           <h1>Plan smarter.<br /><em>Teach better.</em></h1>
@@ -326,19 +328,24 @@ function PasswordField({ label, value, onChange, placeholder = 'Enter your passw
   return <label className="auth-field"><span>{label}</span><div className="password-input"><LockKeyhole size={16} /><input type={visible ? 'text' : 'password'} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} autoComplete={autoComplete} /><button type="button" aria-label={visible ? 'Hide password' : 'Show password'} onClick={() => setVisible((current) => !current)}>{visible ? <EyeOff size={17} /> : <Eye size={17} />}</button></div></label>;
 }
 
-function LoginPage({ onLogin, onNavigate }) {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [remember, setRemember] = useState(true); const [error, setError] = useState(''); const [loading, setLoading] = useState(false);
+function LoginPage({ onLogin, onNavigate, notice = '' }) {
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
+  const [error, setError] = useState(notice);
+  const [loading, setLoading] = useState(false);
   async function submit(event) {
     event.preventDefault();
     setError('');
-    if (!email.trim()) { setError('Please enter your email.'); return; }
-    if (!password) { setError('Please enter your password.'); return; }
+    if (!identifier.trim()) { setError('Enter your username or email.'); return; }
+    if (!password) { setError('Enter your password.'); return; }
     setLoading(true);
     try {
-      const result = await authApi.login({ email: email.trim(), password });
+      const result = await authApi.login({ identifier: identifier.trim(), email: identifier.trim(), password });
       onLogin(result.user, remember, result.token);
-    } catch {
-      setError('Login failed. Please check your email and password and try again.');
+    } catch (err) {
+      const offline = !err.status && /network|failed to fetch|timeout|ECONNABORTED/i.test(err.message || '');
+      setError(offline ? 'Could not reach PlanWise. Check your connection and try again.' : (err.message || 'Incorrect username or password.'));
     } finally {
       setLoading(false);
     }
@@ -346,20 +353,67 @@ function LoginPage({ onLogin, onNavigate }) {
   return (
     <AuthShell mode="login" onNavigate={onNavigate}>
       <div className="pw-signup-card">
-        <button type="button" className="pw-signup-brand" onClick={() => onNavigate('landing')}>
+        <div className="pw-signup-brand">
           <PlanWiseMark />
           <span>PlanWise <em>AI</em></span>
-        </button>
+        </div>
         <h2>Sign in</h2>
-        <p className="pw-signup-lead">Use the educator credentials for your PlanWise workspace.</p>
+        <p className="pw-signup-lead">Use your username or email and the password you chose.</p>
         <form className="auth-form pw-signup-form" onSubmit={submit}>
-          <label className="auth-field"><span>Email</span><div className="auth-input"><Mail size={16} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /></div></label>
+          <label className="auth-field"><span>Username or email</span><div className="auth-input"><UserRound size={16} /><input value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder="username or you@example.com" autoComplete="username" /></div></label>
           <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Enter your password" autoComplete="current-password" />
           {error && <div className="auth-error" role="alert">{error}</div>}
-          <div className="auth-options pw-login-options"><label><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Remember me</label><button type="button" onClick={() => onNavigate('forgot-password')}>Forgot password?</button></div>
-          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</button>
+          <div className="auth-options pw-login-options"><label><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Remember me</label><button type="button" onClick={() => onNavigate('forgot-password')}>Forgot Password?</button></div>
+          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Signing in...' : 'Sign In'}</button>
         </form>
-        <p className="pw-signup-switch">Don't have an account? <button type="button" onClick={() => onNavigate('register')}>Sign Up</button></p>
+        <p className="pw-signup-switch">Need an account? <button type="button" onClick={() => onNavigate('create-account')}>Sign Up</button></p>
+      </div>
+    </AuthShell>
+  );
+}
+
+function CreateAccountPage({ onNavigate }) {
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  async function submit(event) {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+    if (!fullName.trim() || !email.trim()) {
+      setError('Name and email are required.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await authApi.createTestAccount({ fullName: fullName.trim(), name: fullName.trim(), email: email.trim() });
+      setMessage(result.message || 'Check your inbox for the link to choose your password.');
+    } catch (err) {
+      const offline = !err.status && /network|failed to fetch|timeout|ECONNABORTED/i.test(err.message || '');
+      setError(offline ? 'Could not reach PlanWise. Check your connection and try again.' : (err.message || 'The setup email was not accepted.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+  return (
+    <AuthShell mode="login" onNavigate={onNavigate}>
+      <div className="pw-signup-card">
+        <div className="pw-signup-brand">
+          <PlanWiseMark />
+          <span>PlanWise <em>AI</em></span>
+        </div>
+        <h2>Create account</h2>
+        <p className="pw-signup-lead">Enter your name and email. PlanWise will send a link so you can choose your own password.</p>
+        <form className="auth-form pw-signup-form" onSubmit={submit}>
+          <label className="auth-field"><span>Full name</span><div className="auth-input"><UserRound size={16} /><input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Enter your name" autoComplete="name" /></div></label>
+          <label className="auth-field"><span>Email address</span><div className="auth-input"><Mail size={16} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /></div></label>
+          {message && <div className="auth-note" role="status">{message}</div>}
+          {error && <div className="auth-error" role="alert">{error}</div>}
+          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Sending...' : 'Create Account'}</button>
+        </form>
+        <p className="pw-signup-switch">Already have an account? <button type="button" onClick={() => onNavigate('login')}>Sign In</button></p>
       </div>
     </AuthShell>
   );
@@ -595,9 +649,54 @@ function ResetPasswordPage({ onNavigate }) {
   return (
     <AuthShell mode="login" onNavigate={onNavigate}>
       <div className="pw-signup-card">
-        <h2>Choose a new password</h2>
-        <p className="pw-signup-lead">Use the link from your email. The new password replaces the old one.</p>
+        <h2>Set your password</h2>
+        <p className="pw-signup-lead">Choose a password for your account. This link works once and expires in one hour.</p>
         <form className="auth-form" onSubmit={submit}>
+          <PasswordField label="New password" value={password} onChange={setPassword} autoComplete="new-password" />
+          <PasswordField label="Confirm password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
+          {password ? <p className={`password-hint ${validPassword ? 'valid' : ''}`}>{passwordFeedback(password)}</p> : null}
+          {error && <div className="auth-error" role="alert">{error}</div>}
+          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Saving...' : 'Save Password'}</button>
+        </form>
+      </div>
+    </AuthShell>
+  );
+}
+
+function ChangePasswordPage({ onChanged }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const checks = passwordChecks(password);
+  const validPassword = Object.values(checks).every(Boolean);
+  async function submit(event) {
+    event.preventDefault();
+    if (!currentPassword) { setError('Enter the password from your email.'); return; }
+    if (!validPassword) { setError('Choose a stronger password that meets all requirements.'); return; }
+    if (password !== confirm) { setError('Passwords do not match.'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      const result = await authApi.changePassword({ currentPassword, password });
+      onChanged(result.user);
+    } catch (err) {
+      setError(err.message || 'Could not update the password.');
+      setLoading(false);
+    }
+  }
+  return (
+    <AuthShell mode="login">
+      <div className="pw-signup-card">
+        <div className="pw-signup-brand">
+          <PlanWiseMark />
+          <span>PlanWise <em>AI</em></span>
+        </div>
+        <h2>Choose a new password</h2>
+        <p className="pw-signup-lead">The password in your email is temporary. Set your own before entering PlanWise.</p>
+        <form className="auth-form" onSubmit={submit}>
+          <PasswordField label="Temporary password" value={currentPassword} onChange={setCurrentPassword} autoComplete="current-password" />
           <PasswordField label="New password" value={password} onChange={setPassword} autoComplete="new-password" />
           <PasswordField label="Confirm password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
           {password ? <p className={`password-hint ${validPassword ? 'valid' : ''}`}>{passwordFeedback(password)}</p> : null}
@@ -723,9 +822,149 @@ function SettingsPage({ user, onNavigate, onLogout, darkMode, setDarkMode }) {
   );
 }
 
+function AccountsPage() {
+  const [users, setUsers] = useState([]);
+  const [institutions, setInstitutions] = useState({ universities: [], schools: [] });
+  const [form, setForm] = useState({ name: '', email: '', role: 'Lecturer', institution: '', department: '' });
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [loading, setLoading] = useState(true);
+  const isTeacher = form.role === 'Teacher';
+
+  async function refresh() {
+    const rows = await adminApi.list();
+    setUsers(rows);
+  }
+
+  useEffect(() => {
+    Promise.all([
+      adminApi.list(),
+      institutionApi.list(),
+    ]).then(([rows, places]) => {
+      setUsers(rows);
+      setInstitutions({ universities: places.universities || [], schools: places.schools || [] });
+    }).catch((err) => setError(err.message || 'Could not load accounts.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function createAccount(event) {
+    event.preventDefault();
+    setError('');
+    setNotice('');
+    if (!form.name.trim() || !form.email.trim() || (form.role !== 'Administrator' && (!form.institution || !form.department.trim()))) {
+      setError('Name, email, role, and institution are required.');
+      return;
+    }
+    try {
+      const result = await adminApi.create({
+        fullName: form.name.trim(),
+        email: form.email.trim(),
+        role: form.role,
+        institution: form.institution,
+        department: form.department.trim(),
+      });
+      setUsers((current) => [result.user, ...current.filter((item) => item.id !== result.user.id)]);
+      setForm({ name: '', email: '', role: 'Lecturer', institution: '', department: '' });
+      setNotice('Account created. Approve it to email the login credentials.');
+    } catch (err) {
+      setError(err.message || 'Could not create the account.');
+    }
+  }
+
+  async function run(action, id) {
+    setError('');
+    setNotice('');
+    try {
+      const result = await action(id);
+      setUsers((current) => current.map((item) => item.id === result.user.id ? result.user : item));
+      setNotice(result.message || 'Updated.');
+    } catch (err) {
+      setError(err.message || 'Could not update the account.');
+    }
+  }
+
+  return (
+    <section className="account-page">
+      <div className="account-heading">
+        <div>
+          <span className="section-kicker">ADMINISTRATION</span>
+          <h1>Accounts</h1>
+          <p>Create educator accounts, then approve them before they can log in.</p>
+        </div>
+      </div>
+      {error && <div className="error-box" role="alert">{error}</div>}
+      {notice && <div className="auth-error" role="status">{notice}</div>}
+      <form className="panel-card account-form-grid" onSubmit={createAccount}>
+        <label className="field"><span>Full name</span><input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></label>
+        <label className="field"><span>Email</span><input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} /></label>
+        <label className="field"><span>Role</span>
+          <select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value, institution: '' }))}>
+            <option>Lecturer</option>
+            <option>Teacher</option>
+            <option>Administrator</option>
+          </select>
+        </label>
+        {form.role === 'Administrator' ? <label className="field"><span>Institution</span><input value="Not required" disabled /></label> : (
+          <InstitutionField
+            label={isTeacher ? 'School' : 'Institution'}
+            placeholder={isTeacher ? 'Select a school' : 'Select a university'}
+            options={isTeacher ? institutions.schools : institutions.universities}
+            value={form.institution}
+            onChange={(value) => setForm((current) => ({ ...current, institution: value }))}
+          />
+        )}
+        <label className="field"><span>Department</span><input value={form.department} onChange={(event) => setForm((current) => ({ ...current, department: event.target.value }))} /></label>
+        <button className="pw-signup-submit" type="submit">Create account</button>
+      </form>
+      <div className="panel-card accounts-table">
+        {loading ? <p>Loading accounts...</p> : users.length === 0 ? <p>No accounts yet.</p> : (
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.id}>
+                  <td>{user.fullName || user.name}</td>
+                  <td>{user.email}</td>
+                  <td>{user.role}</td>
+                  <td>{user.accountStatus}</td>
+                  <td className="account-actions">
+                    {user.accountStatus !== 'approved' && <button type="button" onClick={() => run(adminApi.approve, user.id)}>Approve</button>}
+                    {user.accountStatus === 'pending' && <button type="button" onClick={() => run(adminApi.reject, user.id)}>Reject</button>}
+                    {user.accountStatus === 'approved' && user.role !== 'Administrator' && <button type="button" onClick={() => run(adminApi.suspend, user.id)}>Suspend</button>}
+                    {user.accountStatus === 'approved' && user.role !== 'Administrator' && <button type="button" onClick={() => run(adminApi.deactivate, user.id)}>Deactivate</button>}
+                    {(user.accountStatus === 'suspended' || user.accountStatus === 'inactive') && <button type="button" onClick={() => run(adminApi.restore, user.id)}>Restore</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function homeSection(user) {
+  return user?.role === 'Administrator' ? 'accounts' : 'dashboard';
+}
+
 function App() {
-  const [activeSection, setActiveSection] = useState(() => window.location.pathname === '/profile' ? 'profile' : window.location.pathname === '/settings' ? 'settings' : window.location.pathname === '/courses' ? 'courses' : window.location.pathname === '/courses/upload' ? 'upload-course' : window.location.pathname === '/progress' ? 'progress' : window.location.pathname.startsWith('/courses/') ? 'course-detail' : 'dashboard');
+  const [activeSection, setActiveSection] = useState(() => {
+    const path = window.location.pathname;
+    if (path === '/profile') return 'profile';
+    if (path === '/settings') return 'settings';
+    if (path === '/accounts') return 'accounts';
+    if (path === '/courses') return 'courses';
+    if (path === '/courses/upload') return 'upload-course';
+    if (path === '/progress') return 'progress';
+    if (path.startsWith('/courses/')) return 'course-detail';
+    return 'dashboard';
+  });
   const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(getToken()));
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [loginNotice, setLoginNotice] = useState('');
   const [currentUser, setCurrentUser] = useState(() => defaultUser);
   const [courses, setCourses] = useState([]);
   const [selectedCourseId, setSelectedCourseId] = useState(() => window.location.pathname.match(/^\/courses\/([^/]+)/)?.[1] || '');
@@ -785,8 +1024,19 @@ function App() {
     setDataLoading(true);
     setDataError('');
     try {
-      const [user, plans, events, assessmentList, courseList, attendance, reportData, resourceList, quizList, papers, notes] = await Promise.all([
-        authApi.me(),
+      const user = await authApi.me();
+      setCurrentUser(user);
+      setIsAuthenticated(true);
+      if (user.mustChangePassword) {
+        setMustChangePassword(true);
+        window.history.replaceState({}, '', '/change-password');
+        return;
+      }
+      setMustChangePassword(false);
+      if (user.role === 'Administrator' && (window.location.pathname === '/' || window.location.pathname === '/login')) {
+        setActiveSection('accounts');
+      }
+      const [plans, events, assessmentList, courseList, attendance, reportData, resourceList, quizList, papers, notes] = await Promise.all([
         lessonPlanApi.list(),
         calendarApi.list(),
         assessmentApi.list(),
@@ -798,7 +1048,6 @@ function App() {
         markingApi.list(),
         notificationApi.list(),
       ]);
-      setCurrentUser(user);
       setSavedPlans(plans);
       setCalendarEvents(events);
       setAssessments(assessmentList);
@@ -813,10 +1062,13 @@ function App() {
       setUnreadCount(notes.unread || 0);
       setIsAuthenticated(true);
     } catch (err) {
-      if (err.status === 401) {
+      if (err.status === 401 || err.status === 403) {
         clearSession();
         setIsAuthenticated(false);
+        setMustChangePassword(false);
+        setLoginNotice(err.status === 403 ? err.message : '');
         setActiveSection('login');
+        window.history.replaceState({}, '', '/login');
       } else {
         setDataError(err.message || 'Unable to load your workspace.');
       }
@@ -857,10 +1109,10 @@ function App() {
     function closeOnEscape(event) { if (event.key === 'Escape') { setProfileOpen(false); setLogoutOpen(false); } }
     function onPopState() {
       const path = window.location.pathname;
-      if (path === '/register') setActiveSection('register');
-      else if (path === '/forgot-password') setActiveSection('forgot-password');
-      else if (path === '/login') setActiveSection('login');
-      else if (path === '/') setActiveSection(isAuthenticated ? 'dashboard' : 'landing');
+      if (path === '/forgot-password') setActiveSection('forgot-password');
+      else if (path === '/create-account' || path === '/register') setActiveSection(isAuthenticated ? homeSection(currentUser) : 'create-account');
+      else if (path === '/login') setActiveSection(isAuthenticated ? homeSection(currentUser) : 'login');
+      else if (path === '/') setActiveSection(isAuthenticated ? homeSection(currentUser) : 'landing');
     }
     document.addEventListener('mousedown', closeProfile); document.addEventListener('keydown', closeOnEscape);
     window.addEventListener('popstate', onPopState);
@@ -869,7 +1121,7 @@ function App() {
       document.removeEventListener('keydown', closeOnEscape);
       window.removeEventListener('popstate', onPopState);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, currentUser]);
 
   const currentStepLabel = useMemo(() => {
     const labels = ['Course', 'Topics', 'Schedule', 'Preferences', 'Generate'];
@@ -1103,7 +1355,8 @@ function App() {
     setActiveSection(section);
     if (section === 'profile') setProfileEditing(Boolean(options.editing));
     setProfileOpen(false);
-    window.history.pushState({}, '', section === 'profile' ? '/profile' : section === 'settings' ? '/settings' : section === 'courses' ? '/courses' : section === 'upload-course' ? '/courses/upload' : section === 'progress' ? '/progress' : section === 'forgot-password' ? '/forgot-password' : section === 'register' ? '/register' : section === 'login' ? '/login' : '/');
+    const paths = { profile: '/profile', settings: '/settings', courses: '/courses', 'upload-course': '/courses/upload', progress: '/progress', 'forgot-password': '/forgot-password', login: '/login', landing: '/', accounts: '/accounts', 'create-account': '/create-account' };
+    window.history.pushState({}, '', paths[section] || '/');
   }
 
   function askAiFromDashboard(prompt) {
@@ -1112,15 +1365,19 @@ function App() {
   }
 
   function startSession(user, _remember = true, token) {
-    if (token) setToken(token);
+    if (token) setToken(token, _remember);
     const safeUser = { ...user };
-    const showWelcome = Boolean(safeUser.welcomePending);
     delete safeUser.welcomePending;
     setCurrentUser(safeUser);
     setIsAuthenticated(true);
-    navigateTo('dashboard');
+    if (safeUser.mustChangePassword) {
+      setMustChangePassword(true);
+      window.history.pushState({}, '', '/change-password');
+      return;
+    }
+    setMustChangePassword(false);
+    navigateTo(homeSection(safeUser));
     loadWorkspace();
-    if (showWelcome) setWelcomeOpen(true);
   }
 
   async function clockIn() {
@@ -1183,8 +1440,9 @@ function App() {
     setAssessments([]);
     setSavedPlans([]);
     setCurrentUser(defaultUser);
-    window.history.pushState({}, '', '/');
-    setActiveSection('landing');
+    setMustChangePassword(false);
+    window.history.pushState({}, '', '/login');
+    setActiveSection('login');
   }
 
   function navigateCourse(courseId) { setSelectedCourseId(courseId); setActiveSection('course-detail'); setProfileOpen(false); window.history.pushState({}, '', `/courses/${courseId}`); }
@@ -1246,7 +1504,7 @@ function App() {
     <FloatingAssistant
       isAuthenticated={isAuthenticated}
       user={currentUser}
-      activeSection={isAuthenticated ? activeSection : (window.location.pathname === '/login' ? 'login' : window.location.pathname === '/register' ? 'register' : 'landing')}
+      activeSection={isAuthenticated ? activeSection : (window.location.pathname === '/forgot-password' ? 'forgot-password' : 'login')}
       onNavigate={navigateTo}
       open={isAuthenticated ? aiDrawerOpen : undefined}
       onOpenChange={(value) => {
@@ -1279,25 +1537,29 @@ function App() {
     if (path.startsWith('/reset-password')) {
       return <><ResetPasswordPage onNavigate={navigateTo} />{floatingAssistant}</>;
     }
-    const guestSection = activeSection === 'login' || activeSection === 'register' || activeSection === 'forgot-password' || activeSection === 'landing'
-      ? activeSection
-      : path === '/register'
-        ? 'register'
-        : path === '/login'
-          ? 'login'
-          : path === '/forgot-password'
-            ? 'forgot-password'
-            : 'landing';
-    if (guestSection === 'register') {
-      return <><RegisterPage onRegister={(user, token) => startSession(user, true, token)} onNavigate={navigateTo} />{floatingAssistant}</>;
+    if (path === '/create-account' || path === '/register' || activeSection === 'create-account') {
+      return <><CreateAccountPage onNavigate={navigateTo} />{floatingAssistant}</>;
     }
-    if (guestSection === 'forgot-password') {
+    if (path === '/forgot-password' || activeSection === 'forgot-password') {
       return <><ForgotPasswordPage onNavigate={navigateTo} />{floatingAssistant}</>;
     }
-    if (guestSection === 'login') {
-      return <><LoginPage onLogin={startSession} onNavigate={navigateTo} />{floatingAssistant}</>;
+    if (path === '/login' || activeSection === 'login') {
+      return <><LoginPage onLogin={startSession} onNavigate={navigateTo} notice={loginNotice} />{floatingAssistant}</>;
     }
     return <><LandingPage onNavigate={navigateTo} />{floatingAssistant}</>;
+  }
+
+  if (mustChangePassword) {
+    return (
+      <ChangePasswordPage
+        onChanged={(user) => {
+          setCurrentUser(user);
+          setMustChangePassword(false);
+          navigateTo(homeSection(user));
+          loadWorkspace();
+        }}
+      />
+    );
   }
 
   const visibleNavItems = navItems.filter((item) => (roleNav[currentUser.role] || roleNav.Lecturer).includes(item.id));
@@ -1402,6 +1664,7 @@ function App() {
         </header>
 
         <main className="glass-workspace main-panel">
+        {activeSection === 'accounts' && currentUser.role === 'Administrator' && <AccountsPage />}
         {activeSection === 'profile' && <ProfilePage user={currentUser} onSave={saveUser} onNavigate={navigateTo} startEditing={profileEditing} />}
         {activeSection === 'settings' && <SettingsPage user={currentUser} onNavigate={navigateTo} onLogout={() => setLogoutOpen(true)} darkMode={darkMode} setDarkMode={setDarkMode} />}
         {activeSection === 'courses' && <CoursesPage courses={courses} onOpen={navigateCourse} onUpload={() => navigateTo('upload-course')} />}

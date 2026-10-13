@@ -4,6 +4,13 @@ export function create(data) {
   return prisma.notification.create({ data });
 }
 
+export function latestByType(userId, type) {
+  return prisma.notification.findFirst({
+    where: { userId, type },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
 export function listByUser(userId) {
   return prisma.notification.findMany({
     where: { userId },

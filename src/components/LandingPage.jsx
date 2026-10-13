@@ -249,8 +249,8 @@ export default function LandingPage({ onNavigate }) {
           <strong>PlanWise AI</strong>
         </button>
         <nav className={`lp-nav-links ${menuOpen ? 'is-open' : ''}`} aria-label="Account">
-          <button type="button" onClick={() => go('login')}>Log In</button>
-          <button type="button" className="lp-nav-signup" onClick={() => go('register')}>Sign Up</button>
+          <button type="button" onClick={() => go('login')}>Sign In</button>
+          <button type="button" className="lp-nav-signup" onClick={() => go('create-account')}>Sign Up</button>
         </nav>
         <button type="button" className="lp-menu" aria-label={menuOpen ? 'Close menu' : 'Open menu'} onClick={() => setMenuOpen((value) => !value)}>
           {menuOpen ? <X size={20} /> : <Menu size={20} />}
@@ -271,7 +271,7 @@ export default function LandingPage({ onNavigate }) {
               designed for lecturers and teachers.
             </p>
             <div className="lp-hero-actions">
-              <button type="button" className="lp-btn lp-btn-gold" onClick={() => go('register')}>
+              <button type="button" className="lp-btn lp-btn-gold" onClick={() => go('create-account')}>
                 Get Started Free
               </button>
             </div>
@@ -323,7 +323,7 @@ export default function LandingPage({ onNavigate }) {
             <ul className="lp-checks">
               {benefits.map((item) => <li key={item}>{item}</li>)}
             </ul>
-            <button type="button" className="lp-btn lp-btn-gold" onClick={() => go('register')}>
+            <button type="button" className="lp-btn lp-btn-gold" onClick={() => go('create-account')}>
               Get Started Free
             </button>
           </Reveal>
@@ -428,7 +428,7 @@ export default function LandingPage({ onNavigate }) {
           <div className="lp-footer-cta">
             <strong>Ready to teach smarter?</strong>
             <p>Open your workspace and start a lesson plan.</p>
-            <button type="button" className="lp-btn lp-btn-gold" onClick={() => go('register')}>Get Started Free</button>
+            <button type="button" className="lp-btn lp-btn-gold" onClick={() => go('create-account')}>Get Started Free</button>
           </div>
         </div>
         <div className="lp-footer-bottom">

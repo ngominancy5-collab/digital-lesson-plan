@@ -30,7 +30,7 @@ const HELP_KB = [
   {
     keys: ['how does it work', 'how it works', 'overview', 'get started', 'start'],
     answer:
-      'Browse the landing page to see features, then Sign Up or Log In. After you sign in you can upload materials, generate lesson plans, run quizzes, schedule teaching dates, and chat with the full AI assistant from any page.',
+      'Log in with the credentials from your administrator. After you sign in you can upload materials, generate lesson plans, run quizzes, schedule teaching dates, and chat with the full AI assistant from any page.',
   },
   {
     keys: ['create a lesson', 'lesson plan', 'make a plan', 'generate lesson'],
@@ -40,7 +40,7 @@ const HELP_KB = [
   {
     keys: ['ai generate', 'what can', 'generate', 'capabilities', 'assistant'],
     answer:
-      'Once you are logged in, the AI can draft lesson plans, improve existing plans, generate quizzes and assessments, explain uploaded teaching materials, answer content questions, and suggest calendar events. On this landing page I only explain how the system works — sign in for the full interactive assistant.',
+      'Once you are logged in, the AI can draft lesson plans, improve existing plans, generate quizzes and assessments, explain uploaded teaching materials, answer content questions, and suggest calendar events. Sign in for the full interactive assistant.',
   },
   {
     keys: ['assessment', 'quiz', 'test', 'exam'],
@@ -60,7 +60,7 @@ const HELP_KB = [
   {
     keys: ['login', 'log in', 'sign up', 'register', 'account', 'sign in'],
     answer:
-      'Use Log In if you already have an account, or Sign Up to create one. After you authenticate, the floating assistant becomes a full interactive lesson-planning AI across your dashboard.',
+      'Use Log In with the email and password from your administrator. After you authenticate, the floating assistant becomes a full interactive lesson-planning AI across your dashboard.',
   },
 ];
 
@@ -76,7 +76,7 @@ function matchHelpAnswer(message) {
   const text = String(message || '').toLowerCase();
   const hit = HELP_KB.find((entry) => entry.keys.some((key) => text.includes(key)));
   if (hit) return hit.answer;
-  return 'I can explain how PlanWise AI works — lesson plans, assessments, quizzes, the calendar, and who it is for. Ask one of the suggested questions, or Sign Up / Log In to use the full interactive AI for creating plans.';
+  return 'I can explain how PlanWise AI works — lesson plans, assessments, quizzes, the calendar, and who it is for. Ask one of the suggested questions, or log in to use the full interactive AI for creating plans.';
 }
 
 function nowTime() {
@@ -143,7 +143,7 @@ export default function FloatingAssistant({
         {
           id: 'welcome-help',
           role: 'assistant',
-          text: 'Hi — I am the PlanWise help guide. Ask how the Digital Lesson Plan system works. For creating personalized lesson plans, Sign Up or Log In first.',
+          text: 'Hi — I am the PlanWise help guide. Ask how the Digital Lesson Plan system works. For creating personalized lesson plans, log in first.',
           time: nowTime(),
         },
       ]);
@@ -480,9 +480,6 @@ export default function FloatingAssistant({
                     <button type="button" className="fa-cta primary" onClick={() => onNavigate?.('login')}>
                       Log In
                     </button>
-                    <button type="button" className="fa-cta" onClick={() => onNavigate?.('register')}>
-                      Sign Up
-                    </button>
                   </div>
                 )}
                 {item.navTarget && (
@@ -509,9 +506,6 @@ export default function FloatingAssistant({
               <div className="fa-cta-row fa-cta-bar">
                 <button type="button" className="fa-cta primary" onClick={() => onNavigate?.('login')}>
                   Log In
-                </button>
-                <button type="button" className="fa-cta" onClick={() => onNavigate?.('register')}>
-                  Sign Up
                 </button>
               </div>
             </>

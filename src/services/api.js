@@ -8,16 +8,20 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 const TOKEN_KEY = 'planwiseToken';
 
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY) || '';
+  return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || '';
 }
 
-export function setToken(token) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+export function setToken(token, remember = true) {
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  if (!token) return;
+  const store = remember ? localStorage : sessionStorage;
+  store.setItem(TOKEN_KEY, token);
 }
 
 export function clearSession() {
-  setToken('');
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
 }
 
 export const api = axios.create({
@@ -74,6 +78,18 @@ export const authApi = {
   updateMe: (payload) => api.put('/auth/me', payload).then((r) => r.data.user),
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }).then((r) => r.data),
   resetPassword: (payload) => api.post('/auth/reset-password', payload).then((r) => r.data),
+  changePassword: (payload) => api.post('/auth/change-password', payload).then((r) => r.data),
+  createTestAccount: (payload) => api.post('/auth/create-account', payload).then((r) => r.data),
+};
+
+export const adminApi = {
+  list: () => api.get('/admin/users').then((r) => r.data.users || []),
+  create: (payload) => api.post('/admin/users', payload).then((r) => r.data),
+  approve: (id) => api.post(`/admin/users/${id}/approve`).then((r) => r.data),
+  reject: (id) => api.post(`/admin/users/${id}/reject`).then((r) => r.data),
+  suspend: (id) => api.post(`/admin/users/${id}/suspend`).then((r) => r.data),
+  deactivate: (id) => api.post(`/admin/users/${id}/deactivate`).then((r) => r.data),
+  restore: (id) => api.post(`/admin/users/${id}/restore`).then((r) => r.data),
 };
 
 export const dashboardApi = {

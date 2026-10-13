@@ -29,13 +29,25 @@ enum DifficultyLevel {
   Professional
 }
 
+enum AccountStatus {
+  pending
+  approved
+  rejected
+  suspended
+  inactive
+}
+
 model User {
   id           String   @id @default(cuid())
   fullName     String
+  username     String?  @unique
   email        String   @unique
+  emailVerified Boolean @default(false)
   passwordHash String
-  role         UserRole @default(lecturer)
-  profileImage String?
+  role                UserRole      @default(lecturer)
+  accountStatus       AccountStatus @default(approved)
+  mustChangePassword  Boolean       @default(false)
+  profileImage        String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

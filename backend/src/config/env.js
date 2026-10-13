@@ -26,6 +26,11 @@ export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
 };
 
+export function unapprovedTestAccountsAllowed() {
+  if (String(process.env.NODE_ENV || env.nodeEnv || '').toLowerCase() === 'production') return false;
+  return String(process.env.ALLOW_UNAPPROVED_TEST_ACCOUNTS || 'false').trim().toLowerCase() === 'true';
+}
+
 export function assertEnv() {
   if (!env.databaseUrl) {
     throw new Error('DATABASE_URL is required. Copy backend/.env.example to backend/.env and set your PostgreSQL URL.');

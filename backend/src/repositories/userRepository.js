@@ -10,6 +10,14 @@ export function findByEmailWithProfile(email) {
   return prisma.user.findUnique({ where: { email }, ...withProfile });
 }
 
+export function findByUsername(username) {
+  return prisma.user.findUnique({ where: { username } });
+}
+
+export function findByUsernameWithProfile(username) {
+  return prisma.user.findUnique({ where: { username }, ...withProfile });
+}
+
 export function findByIdWithProfile(id) {
   return prisma.user.findUnique({ where: { id }, ...withProfile });
 }
@@ -28,4 +36,16 @@ export function updateWithProfile(id, data) {
 
 export function updatePassword(id, passwordHash) {
   return prisma.user.update({ where: { id }, data: { passwordHash } });
+}
+
+export function remove(id) {
+  return prisma.user.delete({ where: { id } });
+}
+
+export function listWithProfiles() {
+  return prisma.user.findMany({ ...withProfile, orderBy: { createdAt: 'desc' } });
+}
+
+export function countByRole(role) {
+  return prisma.user.count({ where: { role } });
 }

@@ -32,6 +32,8 @@ import {
   settingsRoutes,
 } from './routes/featureRoutes.js';
 import { ensureSeeded } from './services/institutionService.js';
+import { ensureBootstrapAdmin } from './services/adminService.js';
+import adminRoutes from './routes/adminRoutes.js';
 
 assertEnv();
 
@@ -66,6 +68,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/institutions', institutionRoutes);
 app.use('/api/dashboard', dashboardRoutes);
@@ -98,6 +101,9 @@ app.use(errorHandler);
 
 ensureSeeded().catch((error) => {
   console.error('Could not seed institutions', error);
+});
+ensureBootstrapAdmin().catch((error) => {
+  console.error('Could not prepare the administrator account', error.message || error);
 });
 
 app.listen(env.port, () => {
