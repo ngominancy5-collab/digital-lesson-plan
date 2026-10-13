@@ -2,18 +2,17 @@
 # https://render.com/docs/blueprint-spec
 #
 # One Node web service runs the Express API and serves the built React app
-# from /dist (see backend/src/server.js). A managed Postgres instance is
-# provisioned and wired in via DATABASE_URL.
+# from /dist (see backend/src/server.js). Postgres is hosted on Neon
+# (https://neon.tech); DATABASE_URL is an external secret set in Render.
+#
+# Use Neon's DIRECT (non-pooled) connection string — the one whose host does
+# NOT contain "-pooler". `prisma db push` runs at startup and needs a direct
+# connection (pooled PgBouncer connections break schema operations).
+# Append `?sslmode=require` if it is not already present.
 #
 # Deploy: push this repo to GitHub, then in Render:
 #   New + > Blueprint > pick this repo > Apply.
 # Render will prompt for the values marked `sync: false`.
-
-databases:
-  - name: planwise-db
-    databaseName: planwise
-    user: planwise
-    plan: free
 
 services:
   - type: web
@@ -28,11 +27,10 @@ services:
       - key: NODE_ENV
         value: production
 
-      # Managed Postgres connection string.
+      # Neon Postgres connection string (DIRECT, not the -pooler host).
+      # e.g. postgresql://user:pass@ep-xxx.aws.neon.tech/planwise?sslmode=require
       - key: DATABASE_URL
-        fromDatabase:
-          name: planwise-db
-          property: connectionString
+        sync: false
 
       # Auth
       - key: JWT_SECRET
