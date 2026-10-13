@@ -14,9 +14,17 @@ function required(name, fallback = '') {
   return value;
 }
 
+function resolveClientUrl() {
+  const configured = String(process.env.CLIENT_URL || '').trim();
+  if (configured) return configured;
+  const renderUrl = String(process.env.RENDER_EXTERNAL_URL || '').trim();
+  if (renderUrl) return renderUrl;
+  return 'http://localhost:5180';
+}
+
 export const env = {
   port: Number(process.env.PORT || 3001),
-  clientUrl: required('CLIENT_URL', 'http://localhost:5180'),
+  clientUrl: resolveClientUrl(),
   databaseUrl: required('DATABASE_URL'),
   jwtSecret: required('JWT_SECRET', 'dev-only-change-me'),
   jwtExpiresIn: required('JWT_EXPIRES_IN', '7d'),
