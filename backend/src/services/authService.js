@@ -395,18 +395,10 @@ function captureOnly() {
   return process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() === 'true';
 }
 
-function missingEmailVars() {
-  const missing = [];
-  if (!String(process.env.SMTP_HOST || '').trim()) missing.push('SMTP_HOST');
-  if (!String(process.env.SMTP_FROM || process.env.MAIL_FROM || '').trim()) missing.push('SMTP_FROM');
-  return missing;
-}
-
 function requireEmailDelivery() {
   if (emailDeliveryConfigured() || captureOnly()) return;
-  const missing = missingEmailVars();
   throw new AppError(
-    `Email is not available because email delivery is not configured. Set ${missing.join(' and ')} (with SMTP_USER and SMTP_PASS), or set NEXUS_API_KEY and NEXUS_BASE_URL.`,
+    'Email is not available because email delivery is not configured. Set an SMTP provider (SMTP_HOST and SMTP_FROM), or an HTTP email API (EMAIL_HTTP_PROVIDER and EMAIL_HTTP_API_KEY with SMTP_FROM), or set NEXUS_API_KEY and NEXUS_BASE_URL.',
     503,
   );
 }
