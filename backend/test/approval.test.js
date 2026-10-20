@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 process.env.NODE_ENV = 'test';
+process.env.NEXUS_CAPTURE = 'true';
+process.env.NEXUS_API_KEY = process.env.NEXUS_API_KEY || 'test-key';
+process.env.NEXUS_BASE_URL = process.env.NEXUS_BASE_URL || 'https://nexuszm.com/api/v1';
 
 const { createAccount, approveAccount, rejectAccount, suspendAccount } = await import('../src/services/adminService.js');
 const { loginUser, changePassword } = await import('../src/services/authService.js');
+const { takeCapturedNotifications, loginTemplateName } = await import('../src/services/nexusService.js');
 const prisma = (await import('../src/config/database.js')).default;
 
 const stamp = Date.now();
@@ -31,11 +35,18 @@ test('admin approval controls who can log in', async (t) => {
     );
   });
 
-  await t.test('approval returns a temporary password and blocks the dashboard password', async () => {
-    const { user, temporaryPassword } = await approveAccount((await prisma.user.findUnique({ where: { email } })).id);
-    assert.equal(user.accountStatus, 'approved');
-    assert.equal(user.mustChangePassword, true);
-    assert.match(temporaryPassword, /^Pw/);
+  await t.test('approval emails a temporary password and blocks the dashboard password', async () => {
+    takeCapturedNotifications();
+    const approved = await approveAccount((await prisma.user.findUnique({ where: { email } })).id, { role: 'lecturer' }, 'admin-actor');
+    assert.equal(approved.accountStatus, 'approved');
+    assert.equal(approved.mustChangePassword, true);
+    const [sent] = takeCapturedNotifications();
+    assert.equal(sent.template, loginTemplateName());
+    assert.equal(sent.to, email);
+    assert.equal(sent.data.user_name, 'Pending Lecturer');
+    assert.equal(Object.hasOwn(sent.data, 'otp_code'), false);
+    assert.match(sent.data.password, /^Pw/);
+    const temporaryPassword = sent.data.password;
     const session = await loginUser({ email, password: temporaryPassword });
     assert.equal(session.user.mustChangePassword, true);
     const updated = await changePassword(session.user.id, {

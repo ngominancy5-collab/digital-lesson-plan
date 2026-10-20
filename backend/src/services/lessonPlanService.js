@@ -4,6 +4,7 @@ import { generateLessonPlan as aiGenerateLessonPlan, regenerateLesson } from './
 import { completeJson } from './ai/aiClient.js';
 import * as lessonPlanRepository from '../repositories/lessonPlanRepository.js';
 import * as documentRepository from '../repositories/documentRepository.js';
+import { recordActivity } from './activityService.js';
 
 function normalizeDifficulty(value) {
   const v = String(value || 'Intermediate');
@@ -50,6 +51,14 @@ export async function createLessonPlan(userId, body) {
       warnings: body.warnings || [],
       meta: body.meta || {},
   });
+  await recordActivity({
+    userId,
+    type: plan.aiGenerated ? 'ai.lesson_plan' : 'lesson.created',
+    summary: plan.aiGenerated ? 'AI lesson plan saved' : 'Lesson plan saved',
+    targetType: 'lessonPlan',
+    targetId: plan.id,
+    meta: { title: plan.title },
+  });
   return mapLessonPlan(plan);
 }
 
@@ -78,6 +87,14 @@ export async function updateLessonPlan(userId, id, body) {
       warnings: body.warnings ?? existing.warnings,
       meta: body.meta ?? existing.meta,
   });
+  await recordActivity({
+    userId,
+    type: 'lesson.updated',
+    summary: 'Lesson plan updated',
+    targetType: 'lessonPlan',
+    targetId: plan.id,
+    meta: { title: plan.title },
+  });
   return mapLessonPlan(plan);
 }
 
@@ -89,70 +106,99 @@ export async function deleteLessonPlan(userId, id) {
 }
 
 export async function generateAndSaveLessonPlan(userId, payload) {
-  let materialText = payload.materialText || '';
-  if (payload.documentId) {
-    const doc = await documentRepository.findOwned(userId, payload.documentId);
+  const notes = String(payload.lessonNotes || payload.materialText || '').trim();
+  const documentIds = [...new Set([
+    ...(Array.isArray(payload.documentIds) ? payload.documentIds : []),
+    payload.documentId,
+  ].filter(Boolean))];
+  const parts = notes ? [notes] : [];
+  for (const documentId of documentIds) {
+    const doc = await documentRepository.findOwned(userId, documentId);
     if (!doc) throw new AppError('Source document not found.', 404);
-    materialText = doc.extractedText || materialText;
+    const extracted = String(doc.extractedText || '').trim();
+    if (!extracted) throw new AppError(`No readable text could be extracted from ${doc.originalName || 'that file'}.`, 422);
+    parts.push(`Source file: ${doc.originalName || 'Uploaded file'}\n${extracted}`);
+  }
+  const materialText = parts.join('\n\n');
+  const topics = (payload.topics || []).map((topic) => String(topic || '').trim()).filter(Boolean);
+  if (!materialText && !topics.length) {
+    throw new AppError('Add lesson notes, topics, or an uploaded file before generating a lesson plan.', 422);
   }
 
-  const result = await aiGenerateLessonPlan({
-    course: {
-      courseName: payload.courseName,
-      courseCode: payload.courseCode,
-      programme: payload.programme,
-      level: payload.level || payload.gradeLevel,
-      department: payload.department,
-      lecturer: payload.lecturer,
-      semester: payload.semester,
-      academicYear: payload.academicYear,
-    },
-    topics: payload.topics || [],
-    schedule: {
-      startDate: payload.startDate,
-      endDate: payload.endDate,
-      numberOfWeeks: payload.numberOfWeeks,
-      lessonsPerWeek: payload.lessonsPerWeek,
-      lessonDuration: payload.lessonDuration,
-      holidays: payload.holidays || [],
-    },
-    preferences: {
-      teachingMethods: payload.teachingMethods || [],
-      learningActivities: payload.learningActivities || [],
-    },
-    customInstructions: [
-      payload.customInstructions || '',
-      materialText ? `Use this uploaded material as the primary source:\n${String(materialText).slice(0, 12000)}` : '',
-    ].filter(Boolean).join('\n\n'),
-    difficulty: payload.difficulty || 'Intermediate',
-  });
+  let result;
+  try {
+    result = await aiGenerateLessonPlan({
+      course: {
+        courseName: payload.courseName,
+        courseCode: payload.courseCode,
+        programme: payload.programme,
+        level: payload.level || payload.gradeLevel,
+        department: payload.department,
+        lecturer: payload.lecturer,
+        semester: payload.semester,
+        academicYear: payload.academicYear,
+      },
+      topics,
+      schedule: {
+        startDate: payload.startDate,
+        endDate: payload.endDate,
+        numberOfWeeks: payload.numberOfWeeks,
+        lessonsPerWeek: payload.lessonsPerWeek,
+        lessonDuration: payload.lessonDuration,
+        holidays: payload.holidays || [],
+      },
+      preferences: {
+        teachingMethods: payload.teachingMethods || [],
+        learningActivities: payload.learningActivities || [],
+      },
+      customInstructions: payload.customInstructions || '',
+      sourceMaterial: materialText,
+      difficulty: payload.difficulty || 'Intermediate',
+    });
+  } catch (error) {
+    await recordActivity({
+      userId,
+      type: 'ai.lesson_plan',
+      outcome: 'failed',
+      summary: 'Lesson plan generation failed',
+      meta: { category: String(error.status || 'error') },
+    });
+    throw error;
+  }
 
   const first = result.lessons?.[0] || {};
   const plan = await lessonPlanRepository.create({
-      userId,
-      title: result.courseName || payload.courseName || 'Generated lesson plan',
-      subject: payload.courseName || '',
-      topic: first.topic || (payload.topics || [])[0] || '',
-      gradeLevel: payload.level || '',
-      duration: payload.lessonDuration || first.duration || '',
-      learningObjectives: first.learningObjectives || [],
-      introduction: first.introduction || '',
-      lessonActivities: first.studentActivities || first.teacherActivities || [],
-      teachingMethods: first.teachingMethods || payload.teachingMethods || [],
-      requiredMaterials: first.learningResources || [],
-      assessmentMethod: first.assessmentMethod || '',
-      conclusion: first.notes || '',
-      difficulty: normalizeDifficulty(payload.difficulty),
-      sourceDocumentId: payload.documentId || null,
-      aiGenerated: true,
-      status: 'Generated',
-      courseName: result.courseName || payload.courseName,
-      courseCode: result.courseCode || payload.courseCode,
-      lessons: result.lessons || [],
-      warnings: result.warnings || [],
-      meta: { schedule: payload },
+    userId,
+    title: result.courseName || payload.courseName || 'Generated lesson plan',
+    subject: payload.courseName || '',
+    topic: first.topic || (payload.topics || [])[0] || '',
+    gradeLevel: payload.level || '',
+    duration: payload.lessonDuration || first.duration || '',
+    learningObjectives: first.learningObjectives || [],
+    introduction: first.introduction || '',
+    lessonActivities: first.studentActivities || first.teacherActivities || [],
+    teachingMethods: first.teachingMethods || payload.teachingMethods || [],
+    requiredMaterials: first.learningResources || [],
+    assessmentMethod: first.assessmentMethod || '',
+    conclusion: first.notes || '',
+    difficulty: normalizeDifficulty(payload.difficulty),
+    sourceDocumentId: payload.documentId || null,
+    aiGenerated: true,
+    status: 'Generated',
+    courseName: result.courseName || payload.courseName,
+    courseCode: result.courseCode || payload.courseCode,
+    lessons: result.lessons || [],
+    warnings: result.warnings || [],
+    meta: { schedule: payload },
   });
-
+  await recordActivity({
+    userId,
+    type: 'ai.lesson_plan',
+    summary: 'AI lesson plan generated',
+    targetType: 'lessonPlan',
+    targetId: plan.id,
+    meta: { title: plan.title },
+  });
   return mapLessonPlan(plan);
 }
 

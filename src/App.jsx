@@ -43,10 +43,12 @@ import {
   Save,
   ShieldCheck,
   UserRound,
+  Users,
   UploadCloud,
   Circle,
   CircleDashed,
   Check,
+  X,
   Eye,
   EyeOff,
   KeyRound,
@@ -78,9 +80,11 @@ import AssessmentsPage from './components/AssessmentsPage.jsx';
 import FloatingAssistant from './components/FloatingAssistant.jsx';
 import LandingPage from './components/LandingPage.jsx';
 import DashboardHome from './components/DashboardHome.jsx';
+import AdminPanel, { AssignRoleDialog } from './components/AdminPanel.jsx';
 import PaperMarkingPage from './components/PaperMarkingPage.jsx';
 import { EDUCATOR_ROLES } from './data/institutions.js';
 import TypedText from './components/TypedText.jsx';
+import Notice from './components/Notice.jsx';
 import './auth.css';
 import './components/dashboard-glass.css';
 import './components/dashboard-reference.css';
@@ -91,25 +95,33 @@ const learningActivitiesList = ['Individual exercises', 'Group activities', 'Pra
 
 const navItems = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'courses', label: 'Courses / Subjects', icon: GraduationCap },
   { id: 'plans', label: 'Lesson Plans', icon: FileText },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays },
   { id: 'assessments', label: 'Assessments', icon: ClipboardCheck },
   { id: 'paper-marking', label: 'Paper Marking', icon: ScanText },
-  { id: 'courses', label: 'Courses / Subjects', icon: GraduationCap },
   { id: 'resources', label: 'Resources', icon: Folder },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
   { id: 'assistant', label: 'AI Assistant', icon: Sparkles },
   { id: 'accounts', label: 'Accounts', icon: ShieldCheck },
+  { id: 'admin-overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'admin-users', label: 'Users', icon: Users },
+  { id: 'admin-activity', label: 'System Activity', icon: Activity },
+  { id: 'admin-plans', label: 'Lesson Plans', icon: FileText },
+  { id: 'admin-assessments', label: 'Assessments & Quizzes', icon: ClipboardCheck },
+  { id: 'admin-attendance', label: 'Attendance', icon: Clock3 },
+  { id: 'admin-ai', label: 'AI Usage', icon: Sparkles },
+  { id: 'admin-analytics', label: 'Analytics & Reports', icon: BarChart3 },
   { id: 'settings', label: 'Settings', icon: Settings2 },
 ];
 
 const roleNav = {
-  Lecturer: ['dashboard', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'courses', 'resources', 'reports', 'assistant', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
-  Teacher: ['dashboard', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'courses', 'resources', 'reports', 'assistant', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
-  'School Teacher': ['dashboard', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'courses', 'resources', 'reports', 'assistant', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
+  Lecturer: ['dashboard', 'courses', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'resources', 'reports', 'assistant', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
+  Teacher: ['dashboard', 'courses', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'resources', 'reports', 'assistant', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
+  'School Teacher': ['dashboard', 'courses', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'resources', 'reports', 'assistant', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
   Student: ['dashboard', 'courses', 'calendar', 'assistant', 'resources', 'progress', 'notifications', 'settings', 'profile'],
   'Academic Coordinator': ['dashboard', 'courses', 'progress', 'calendar', 'assessments', 'reports', 'notifications', 'settings', 'profile'],
-  Administrator: ['accounts', 'dashboard', 'courses', 'progress', 'reports', 'settings', 'profile'],
+  Administrator: ['admin-overview', 'admin-users', 'admin-activity', 'admin-plans', 'admin-assessments', 'admin-attendance', 'admin-ai', 'admin-analytics', 'settings', 'profile'],
 };
 
 const emptyForm = {
@@ -132,6 +144,11 @@ const emptyForm = {
   learningActivities: [],
   difficulty: 'Intermediate',
   customInstructions: '',
+  lessonNotes: '',
+  sourceDocumentId: '',
+  sourceDocumentIds: [],
+  sourceFileName: '',
+  courseId: '',
 };
 
 const assistantPrompts = ['Create a lesson activity', 'Explain this topic simply', 'Create a quiz', 'Make this lesson more practical', 'Give me examples'];
@@ -167,20 +184,29 @@ function UploadCoursePage({ onCreate, onUploaded }) {
   const [status, setStatus] = useState('idle');
   const [fileName, setFileName] = useState('');
   const [error, setError] = useState('');
+  const [errorDetail, setErrorDetail] = useState('');
   const [manual, setManual] = useState(false);
   const [detected, setDetected] = useState({ name: false, code: false, description: false, topics: false });
   const [fields, setFields] = useState({ name: '', code: '', description: '', topics: '' });
   const inputRef = useRef(null);
+  const retryFiles = useRef([]);
   const supported = ['.pdf', '.doc', '.docx', '.txt'];
-  async function analyze(file) {
-    if (!file) return;
-    const extension = `.${file.name.split('.').pop().toLowerCase()}`;
-    if (!supported.includes(extension)) { setError('Please choose a PDF, DOC, DOCX, or TXT course outline.'); return; }
+  async function analyze(fileList) {
+    const files = [...(fileList || [])];
+    if (!files.length) return;
+    const unsupported = files.find((file) => !supported.includes(`.${file.name.split('.').pop().toLowerCase()}`));
+    if (unsupported) { setError('That file type is not supported.'); setErrorDetail('Upload a PDF, DOC, DOCX, or TXT file.'); return; }
     setError('');
-    setFileName(file.name);
+    setErrorDetail('');
+    retryFiles.current = files;
+    setFileName(files.map((file) => file.name).join(', '));
     setStatus('processing');
     try {
-      const resource = await resourceApi.upload(file);
+      let resource = null;
+      for (const file of files) {
+        resource = await resourceApi.upload(file);
+        onUploaded?.(resource);
+      }
       const next = {
         name: resource.courseName || '',
         code: resource.courseCode || '',
@@ -195,14 +221,18 @@ function UploadCoursePage({ onCreate, onUploaded }) {
         topics: Boolean(resource.topics?.length),
       });
       setStatus('success');
-      onUploaded?.(resource);
+      if (resource.extractionNote) {
+        setError('Some pages could not be read.');
+        setErrorDetail(resource.extractionNote);
+      }
     } catch (err) {
       setStatus('error');
-      setError(err.message || 'The file could not be read.');
+      setError(err.message || 'Could not read this file.');
+      setErrorDetail(err.detail || '');
     }
   }
   function submit(event) { event.preventDefault(); const topics = fields.topics.split(/\r?\n|,|;/).map((topic) => topic.trim()).filter(Boolean); onCreate(buildCourse({ ...fields, topics, fileName })); }
-  return <section className="course-upload-page"><div className="account-heading"><div><span className="section-kicker">COURSE WORKSPACE</span><h1>Upload your course outline</h1><p>Let PlanWise turn your source document into a trackable teaching structure.</p></div></div>{status === 'processing' && <div className="panel-card analysis-card"><div className="analysis-spinner" /><h2>Analyzing {fileName}</h2>{['Uploading course outline', 'Reading course outline', 'Identifying course information', 'Extracting topics and objectives', 'Building progress tracker'].map((item, index) => <span className={index < 2 ? 'done' : ''} key={item}>{index < 2 ? '✓' : '○'} {item}...</span>)}</div>}{status !== 'processing' && <><div className="upload-layout"><button className="panel-card upload-dropzone" onClick={() => inputRef.current?.click()}><UploadCloud size={34} /><strong>Drop your file here or browse</strong><span>Supported formats: PDF, DOC, DOCX, TXT</span><input ref={inputRef} type="file" accept=".pdf,.doc,.docx,.txt" onChange={(event) => analyze(event.target.files?.[0])} /></button><div className="panel-card manual-card"><div className="settings-title"><Pencil size={18} /><div><h3>Enter course manually</h3><span>For outlines you would rather type in</span></div></div><button className="secondary-button" onClick={() => setManual(true)}>Start manually</button></div></div>{error && <div className="error-box">{error}</div>}{(manual || status === 'success') && <form className="panel-card extracted-form" onSubmit={submit}><div className="panel-head"><div><span className="section-kicker">{status === 'success' ? 'REVIEW EXTRACTED INFORMATION' : 'MANUAL COURSE'}</span><h2>{status === 'success' ? 'File read. Review what was detected.' : 'Create your course'}</h2></div></div><div className="grid-2"><label className="field"><span>Course Name</span><input value={fields.name} onChange={(event) => setFields({ ...fields, name: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.name && <small className="field-error">Not detected</small>}<label className="field"><span>Course Code</span><input value={fields.code} onChange={(event) => setFields({ ...fields, code: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.code && <small className="field-error">Not detected</small>}<label className="field full-span"><span>Course Description</span><textarea rows={3} value={fields.description} onChange={(event) => setFields({ ...fields, description: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.description && <small className="field-error">Not detected</small>}<label className="field full-span"><span>Topics, one per line</span><textarea rows={7} value={fields.topics} onChange={(event) => setFields({ ...fields, topics: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.topics && <small className="field-error">Not detected</small>}</div><div className="footer-actions-row"><button type="submit" className="primary-button">Create Progress Tracker</button></div></form>}</>}{status === 'success' && <div className="success-toast"><CheckCircle2 size={16} /> The file was read and saved to Resources.</div>}</section>;
+  return <section className="course-upload-page"><div className="account-heading"><div><span className="section-kicker">COURSE WORKSPACE</span><h1>Upload your course outline</h1><p>Let PlanWise turn your source document into a trackable teaching structure.</p></div></div>{status === 'processing' && <p className="pw-stage">Extracting text from {fileName}</p>}{status !== 'processing' && <><div className="upload-layout"><button className="panel-card upload-dropzone" onClick={() => inputRef.current?.click()}><UploadCloud size={34} /><strong>Drop your file here or browse</strong><span>PDF, DOC, DOCX, or TXT. Select more than one file if you need to.</span><input ref={inputRef} type="file" accept=".pdf,.doc,.docx,.txt" multiple onChange={(event) => { analyze(event.target.files); event.target.value = ''; }} /></button><div className="panel-card manual-card"><div className="settings-title"><Pencil size={18} /><div><h3>Enter course manually</h3><span>For outlines you would rather type in</span></div></div><button className="secondary-button" onClick={() => setManual(true)}>Start manually</button></div></div>{error && <Notice tone={status === 'success' ? 'warning' : 'error'} message={error} detail={errorDetail} onRetry={status === 'error' && retryFiles.current.length ? () => analyze(retryFiles.current) : undefined} />}{(manual || status === 'success') && <form className="panel-card extracted-form" onSubmit={submit}><div className="panel-head"><div><span className="section-kicker">{status === 'success' ? 'REVIEW EXTRACTED INFORMATION' : 'MANUAL COURSE'}</span><h2>{status === 'success' ? 'File read. Review what was detected.' : 'Create your course'}</h2></div></div><div className="grid-2"><label className="field"><span>Course Name</span><input value={fields.name} onChange={(event) => setFields({ ...fields, name: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.name && <small className="field-error">Not detected</small>}<label className="field"><span>Course Code</span><input value={fields.code} onChange={(event) => setFields({ ...fields, code: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.code && <small className="field-error">Not detected</small>}<label className="field full-span"><span>Course Description</span><textarea rows={3} value={fields.description} onChange={(event) => setFields({ ...fields, description: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.description && <small className="field-error">Not detected</small>}<label className="field full-span"><span>Topics, one per line</span><textarea rows={7} value={fields.topics} onChange={(event) => setFields({ ...fields, topics: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.topics && <small className="field-error">Not detected</small>}</div><div className="footer-actions-row"><button type="submit" className="primary-button">Create Progress Tracker</button></div></form>}</>}{status === 'success' && <div className="success-toast"><CheckCircle2 size={16} /> The file was read and saved to Resources.</div>}</section>;
 }
 
 function CourseCard({ course, onOpen }) {
@@ -214,10 +244,10 @@ function CoursesPage({ courses, onOpen, onUpload }) {
   return <section className="account-page courses-page"><div className="account-heading"><div><span className="section-kicker">COURSE LIBRARY</span><h1>Your courses</h1><p>Each course is its own source of truth for teaching progress.</p></div><button className="primary-button" onClick={onUpload}><UploadCloud size={16} /> Upload Course</button></div>{courses.length ? <div className="courses-grid">{courses.map((course) => <CourseCard key={course.id} course={course} onOpen={onOpen} />)}</div> : <div className="panel-card empty-course"><div className="empty-course-icon"><BookOpen size={26} /></div><h2>No courses yet</h2><p>Upload your first course outline and let PlanWise AI organize your teaching journey.</p><button className="primary-button" onClick={onUpload}><UploadCloud size={16} /> Upload Course</button></div>}</section>;
 }
 
-function CourseDetailPage({ course, onBack, onStatusChange }) {
+function CourseDetailPage({ course, onBack, onStatusChange, resources = [] }) {
   if (!course) return <section className="account-page empty-course panel-card"><h2>Course not found</h2><p>This course is no longer available in your workspace.</p><button className="primary-button" onClick={onBack}>Back to Courses</button></section>;
   const metrics = courseMetrics(course); const [tab, setTab] = useState('Overview');
-  return <section className="account-page course-detail-page"><button className="back-link" onClick={onBack}><ArrowRight size={15} className="back-arrow" /> Courses</button><div className="course-detail-heading"><div><span className="section-kicker">{course.code || 'COURSE'}</span><h1>{course.name || 'Course name not provided'}</h1><p>{course.description || 'Course description not provided.'}</p></div><div className="detail-progress"><strong>{metrics.percent}%</strong><span>Overall progress</span><div className="progress-bar"><span style={{ width: `${metrics.percent}%` }} /></div></div></div><div className="course-tabs">{['Overview', 'Topics', 'Lesson Plans', 'Assessments', 'Calendar', 'Progress', 'Resources'].map((item) => <button className={tab === item ? 'active' : ''} onClick={() => setTab(item)} key={item}>{item}</button>)}</div>{tab === 'Progress' || tab === 'Topics' || tab === 'Overview' ? <div className="course-detail-grid"><div className="panel-card module-card"><div className="panel-head"><div><span className="section-kicker">COURSE STRUCTURE</span><h3>Modules and topics</h3></div><span className="course-count">{metrics.completed}/{metrics.total} complete</span></div>{course.modules.map((module) => <div className="module-block" key={module.id}><div className="module-heading"><strong>{module.title}</strong><span>{courseMetrics({ modules: [module] }).percent}%</span></div>{module.topics.map((topic) => { const StatusIcon = topicStatuses[topic.status].icon; return <div className="topic-status-row" key={topic.id}><button className={`status-control ${topic.status}`} onClick={() => onStatusChange(course.id, module.id, topic.id)} title="Cycle topic status"><StatusIcon size={18} /><span>{topic.title}</span></button><small>{topicStatuses[topic.status].label}</small></div>; })}</div>)}</div><div className="panel-card insight-card"><div className="settings-title"><Sparkles size={18} /><div><h3>Your Teaching Insights</h3><span>Based on this course's actual progress</span></div></div><p>{metrics.completed === metrics.total ? 'All tracked topics are complete. Your course structure is ready for final review.' : metrics.inProgress ? `You have completed ${metrics.completed} of ${metrics.total} planned topics. Continue the ${metrics.inProgress} topic${metrics.inProgress > 1 ? 's' : ''} in progress.` : `You have completed ${metrics.completed} of ${metrics.total} planned topics. Mark a topic in progress when teaching begins.`}</p><div className="insight-stat"><strong>{metrics.inProgress}</strong><span>in progress</span></div><div className="insight-stat"><strong>{metrics.total - metrics.completed - metrics.inProgress}</strong><span>not started</span></div></div></div> : <div className="panel-card empty-tab"><h2>{tab}</h2><p>No {tab.toLowerCase()} have been created for this course yet.</p></div>}</section>;
+  return <section className="account-page course-detail-page"><button className="back-link" onClick={onBack}><ArrowRight size={15} className="back-arrow" /> Courses</button><div className="course-detail-heading"><div><span className="section-kicker">{course.code || 'COURSE'}</span><h1>{course.name || 'Course name not provided'}</h1><p>{course.description || 'Course description not provided.'}</p></div><div className="detail-progress"><strong>{metrics.percent}%</strong><span>Overall progress</span><div className="progress-bar"><span style={{ width: `${metrics.percent}%` }} /></div></div></div><div className="course-tabs">{['Overview', 'Topics', 'Lesson Plans', 'Assessments', 'Calendar', 'Progress', 'Resources'].map((item) => <button className={tab === item ? 'active' : ''} onClick={() => setTab(item)} key={item}>{item}</button>)}</div>{tab === 'Progress' || tab === 'Topics' || tab === 'Overview' ? <div className="course-detail-grid"><div className="panel-card module-card"><div className="panel-head"><div><span className="section-kicker">COURSE STRUCTURE</span><h3>Modules and topics</h3></div><span className="course-count">{metrics.completed}/{metrics.total} complete</span></div>{course.modules.map((module) => <div className="module-block" key={module.id}><div className="module-heading"><strong>{module.title}</strong><span>{courseMetrics({ modules: [module] }).percent}%</span></div>{module.topics.map((topic) => { const StatusIcon = topicStatuses[topic.status].icon; return <div className="topic-status-row" key={topic.id}><button className={`status-control ${topic.status}`} onClick={() => onStatusChange(course.id, module.id, topic.id)} title="Cycle topic status"><StatusIcon size={18} /><span>{topic.title}</span></button><small>{topicStatuses[topic.status].label}</small></div>; })}</div>)}</div><div className="panel-card insight-card"><div className="settings-title"><Sparkles size={18} /><div><h3>Your Teaching Insights</h3><span>Based on this course's actual progress</span></div></div><p>{metrics.completed === metrics.total ? 'All tracked topics are complete. Your course structure is ready for final review.' : metrics.inProgress ? `You have completed ${metrics.completed} of ${metrics.total} planned topics. Continue the ${metrics.inProgress} topic${metrics.inProgress > 1 ? 's' : ''} in progress.` : `You have completed ${metrics.completed} of ${metrics.total} planned topics. Mark a topic in progress when teaching begins.`}</p><div className="insight-stat"><strong>{metrics.inProgress}</strong><span>in progress</span></div><div className="insight-stat"><strong>{metrics.total - metrics.completed - metrics.inProgress}</strong><span>not started</span></div></div></div> : tab === 'Resources' ? <div className="panel-card"><div className="panel-head"><h3>Subject materials</h3></div>{resources.filter((item) => course.name && item.courseName && item.courseName.toLowerCase() === course.name.toLowerCase()).length ? resources.filter((item) => item.courseName && item.courseName.toLowerCase() === course.name.toLowerCase()).map((item) => <p key={item.id}><strong>{item.fileName}</strong></p>) : <p className="muted-text">No files are saved for this subject yet. Upload a course outline and these materials can be reused in lesson plans and assessments.</p>}</div> : <div className="panel-card empty-tab"><h2>{tab}</h2><p>No {tab.toLowerCase()} have been created for this course yet.</p></div>}</section>;
 }
 
 function ProgressPage({ courses, onOpen, onStatusChange }) {
@@ -360,7 +390,6 @@ function LoginPage({ onLogin, onNavigate, notice = '' }) {
           <span>PlanWise <em>AI</em></span>
         </div>
         <h2>Sign in</h2>
-        <p className="pw-signup-lead">Use your username or email and the password you chose.</p>
         <form className="auth-form pw-signup-form" onSubmit={submit}>
           <label className="auth-field"><span>Username or email</span><div className="auth-input"><UserRound size={16} /><input value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder="username or you@example.com" autoComplete="username" /></div></label>
           <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Enter your password" autoComplete="current-password" />
@@ -374,30 +403,59 @@ function LoginPage({ onLogin, onNavigate, notice = '' }) {
   );
 }
 
+const ACCOUNT_NOTICES = new Set([
+  'Please enter your full name.',
+  'Please enter a valid email address.',
+  'This email address is invalid.',
+  'An account with this email already exists.',
+  "We couldn't create your account. Please try again.",
+  "We couldn't send your login email. Please try again later.",
+  'Account created successfully! Please check your email for your login credentials.',
+  'Your account is waiting for administrator approval.',
+]);
+
+function createAccountNotice(result, error) {
+  if (result?.inboxVerified) return { tone: 'ok', text: 'Your login credentials have been sent to your email.' };
+  if (result?.message) return { tone: 'ok', text: result.message };
+  const message = String(error?.message || '');
+  if (ACCOUNT_NOTICES.has(message)) return { tone: 'error', text: message };
+  if (error?.status === 409) return { tone: 'error', text: 'An account with this email already exists.' };
+  if (error?.status === 400 && /name/i.test(message)) return { tone: 'error', text: 'Please enter your full name.' };
+  if (error?.status === 400 && /email/i.test(message)) return { tone: 'error', text: 'Please enter a valid email address.' };
+  if (error?.status === 502 || error?.status === 503) return { tone: 'error', text: "We couldn't send your login email. Please try again later." };
+  return { tone: 'error', text: "We couldn't create your account. Please try again." };
+}
+
 function CreateAccountPage({ onNavigate }) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [message, setMessage] = useState('');
-  const [setupLink, setSetupLink] = useState('');
-  const [error, setError] = useState('');
+  const [notice, setNotice] = useState(null);
   const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = window.setTimeout(() => setNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   async function submit(event) {
     event.preventDefault();
-    setError('');
-    setMessage('');
-    setSetupLink('');
-    if (!fullName.trim() || !email.trim()) {
-      setError('Name and email are required.');
+    if (loading) return;
+    const name = fullName.trim();
+    const address = email.trim();
+    if (!name) {
+      setNotice({ tone: 'error', text: 'Please enter your full name.' });
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+      setNotice({ tone: 'error', text: 'Please enter a valid email address.' });
+      return;
+    }
+    setNotice(null);
     setLoading(true);
     try {
-      const result = await authApi.createTestAccount({ fullName: fullName.trim(), name: fullName.trim(), email: email.trim() });
-      setSetupLink(result.setupLink || '');
-      setMessage(result.message || 'Use the link below to choose your password.');
+      const result = await authApi.createTestAccount({ fullName: name, name, email: address });
+      setNotice(createAccountNotice(result));
     } catch (err) {
-      const offline = !err.status && /network|failed to fetch|timeout|ECONNABORTED/i.test(err.message || '');
-      setError(offline ? 'Could not reach PlanWise. Check your connection and try again.' : (err.message || 'The account could not be created.'));
+      setNotice(createAccountNotice(null, err));
     } finally {
       setLoading(false);
     }
@@ -410,17 +468,20 @@ function CreateAccountPage({ onNavigate }) {
           <span>PlanWise <em>AI</em></span>
         </div>
         <h2>Create account</h2>
-        <p className="pw-signup-lead">Enter your name and email. You'll get a link to choose your own password.</p>
+        <p className="pw-signup-lead">An administrator assigns your role before you can sign in.</p>
         <form className="auth-form pw-signup-form" onSubmit={submit}>
           <label className="auth-field"><span>Full name</span><div className="auth-input"><UserRound size={16} /><input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Enter your name" autoComplete="name" /></div></label>
           <label className="auth-field"><span>Email address</span><div className="auth-input"><Mail size={16} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /></div></label>
-          {message && <div className="auth-note" role="status">{message}</div>}
-          {setupLink && <a className="pw-signup-submit pw-link-button" href={setupLink}>Open setup link</a>}
-          {error && <div className="auth-error" role="alert">{error}</div>}
-          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Sending...' : 'Create Account'}</button>
+          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Creating account...' : 'Create Account'}</button>
         </form>
         <p className="pw-signup-switch">Already have an account? <button type="button" onClick={() => onNavigate('login')}>Sign In</button></p>
       </div>
+      {notice && (
+        <div className={`pw-auth-toast is-${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}>
+          {notice.tone === 'ok' ? <CheckCircle2 size={16} /> : null}
+          <span>{notice.text}</span>
+        </div>
+      )}
     </AuthShell>
   );
 }
@@ -540,7 +601,6 @@ function RegisterPage({ onRegister, onNavigate }) {
           <span>PlanWise <em>AI</em></span>
         </button>
         <h2>Create your educator account</h2>
-        <p className="pw-signup-lead">Join PlanWise AI and simplify your teaching workflow.</p>
         <form className="auth-form register-form pw-signup-form" autoComplete="off" onSubmit={submit}>
           <div className="pw-role-toggle" role="group" aria-label="What are you?">
             <button type="button" className={fields.role === 'Lecturer' ? 'is-active' : ''} aria-pressed={fields.role === 'Lecturer'} onClick={() => selectRole('Lecturer')}>Lecturer</button>
@@ -577,7 +637,6 @@ function ForgotPasswordPage({ onNavigate }) {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [resetLink, setResetLink] = useState('');
   async function submit(event) {
     event.preventDefault();
     if (!/^\S+@\S+\.\S+$/.test(email)) { setError('Enter a valid email address.'); return; }
@@ -585,8 +644,7 @@ function ForgotPasswordPage({ onNavigate }) {
     setLoading(true);
     try {
       const result = await authApi.forgotPassword(email.trim());
-      setResetLink(result.resetLink || '');
-      setSent(result.message || 'If an account exists for that email, a reset link was sent.');
+      setSent(result.message || 'If an account exists for that email, a temporary password was sent.');
     } catch (err) {
       setError(err.message || 'Unable to start password reset.');
     } finally {
@@ -594,29 +652,28 @@ function ForgotPasswordPage({ onNavigate }) {
     }
   }
   return (
-    <AuthShell mode="forgot" onNavigate={onNavigate}>
-      <div className="auth-form-wrap compact-auth">
-        <div className="mobile-auth-brand"><div className="brand-mark"><GraduationCap size={20} /></div><strong>PlanWise AI</strong></div>
+    <AuthShell mode="login" onNavigate={onNavigate}>
+      <div className="pw-signup-card">
+        <div className="pw-signup-brand">
+          <PlanWiseMark />
+          <span>PlanWise <em>AI</em></span>
+        </div>
         {sent ? (
           <>
-            <div className="success-auth-icon"><Check size={21} /></div>
-            <span className="section-kicker">PASSWORD RESET</span>
-            <h2>Reset link ready</h2>
-            <p className="auth-subtitle">{typeof sent === 'string' ? sent : 'If an account exists for that email, a reset link was sent.'}</p>
-            {resetLink ? <a className="auth-submit pw-link-button" href={resetLink}>Open reset link</a> : null}
-            <button className="auth-back" onClick={() => onNavigate('login')}>Back to Sign In</button>
+            <h2>Check your email</h2>
+            <p className="pw-signup-lead">{typeof sent === 'string' ? sent : 'If an account exists for that email, a temporary password was sent.'}</p>
+            <button className="pw-signup-submit" type="button" onClick={() => onNavigate('login')}>Back to Sign In</button>
           </>
         ) : (
           <>
-            <span className="section-kicker">ACCOUNT RECOVERY</span>
             <h2>Forgot your password?</h2>
-            <p className="auth-subtitle">Enter your email address and we will help you reset your password.</p>
-            <form className="auth-form" onSubmit={submit}>
+            <p className="pw-signup-lead">Enter your email address and we will help you reset your password.</p>
+            <form className="auth-form pw-signup-form" onSubmit={submit}>
               <label className="auth-field"><span>Email Address</span><div className="auth-input"><Mail size={16} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@institution.edu" /></div></label>
-              {error && <div className="auth-error">{error}</div>}
-              <button className="auth-submit" disabled={loading}>{loading ? 'Sending…' : 'Send Reset Link'}</button>
+              {error && <div className="auth-error" role="alert">{error}</div>}
+              <button className="pw-signup-submit" disabled={loading}>{loading ? 'Sending...' : 'Send Reset Link'}</button>
             </form>
-            <button type="button" className="auth-back" onClick={() => onNavigate('login')}>Back to Sign In</button>
+            <p className="pw-signup-switch"><button type="button" onClick={() => onNavigate('login')}>Back to Sign In</button></p>
           </>
         )}
       </div>
@@ -657,7 +714,7 @@ function ResetPasswordPage({ onNavigate }) {
     <AuthShell mode="login" onNavigate={onNavigate}>
       <div className="pw-signup-card">
         <h2>Set your password</h2>
-        <p className="pw-signup-lead">Choose a password for your account. This link works once and expires in one hour.</p>
+        <p className="pw-signup-lead">This link works once and expires in one hour.</p>
         <form className="auth-form" onSubmit={submit}>
           <PasswordField label="New password" value={password} onChange={setPassword} autoComplete="new-password" />
           <PasswordField label="Confirm password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
@@ -670,48 +727,71 @@ function ResetPasswordPage({ onNavigate }) {
   );
 }
 
+const PASSWORD_RULES = [
+  { key: 'length', label: 'At least 8 characters' },
+  { key: 'upper', label: 'One uppercase letter' },
+  { key: 'lower', label: 'One lowercase letter' },
+  { key: 'number', label: 'One number' },
+];
+
+function ChangePasswordField({ label, value, onChange, placeholder, autoComplete }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <label className="auth-field">
+      <span>{label}</span>
+      <div className="password-input">
+        <input type={visible ? 'text' : 'password'} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} autoComplete={autoComplete} />
+        <button type="button" aria-label={visible ? 'Hide password' : 'Show password'} aria-pressed={visible} onClick={() => setVisible((current) => !current)}>
+          {visible ? <Eye size={17} /> : <EyeOff size={17} />}
+        </button>
+      </div>
+    </label>
+  );
+}
+
 function ChangePasswordPage({ onChanged }) {
-  const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const checks = passwordChecks(password);
   const validPassword = Object.values(checks).every(Boolean);
+  const nextRule = PASSWORD_RULES.find((rule) => !checks[rule.key]);
   async function submit(event) {
     event.preventDefault();
-    if (!currentPassword) { setError('Enter the password from your email.'); return; }
-    if (!validPassword) { setError('Choose a stronger password that meets all requirements.'); return; }
-    if (password !== confirm) { setError('Passwords do not match.'); return; }
+    if (loading) return;
+    if (!validPassword) return;
+    if (!confirm || password !== confirm) { setError('Passwords do not match.'); return; }
     setLoading(true);
     setError('');
     try {
-      const result = await authApi.changePassword({ currentPassword, password });
+      const result = await authApi.changePassword({ password });
       onChanged(result.user);
     } catch (err) {
-      setError(err.message || 'Could not update the password.');
+      const message = String(err.message || '');
+      if (/8 characters|uppercase|lowercase|number/i.test(message)) setError('Please meet all password requirements.');
+      else if (/different from the temporary/i.test(message)) setError('Choose a different password.');
+      else setError('Unable to update password. Please try again.');
       setLoading(false);
     }
   }
   return (
-    <AuthShell mode="login">
-      <div className="pw-signup-card">
-        <div className="pw-signup-brand">
-          <PlanWiseMark />
-          <span>PlanWise <em>AI</em></span>
-        </div>
-        <h2>Choose a new password</h2>
-        <p className="pw-signup-lead">The password you were given is temporary. Set your own before entering PlanWise.</p>
-        <form className="auth-form" onSubmit={submit}>
-          <PasswordField label="Temporary password" value={currentPassword} onChange={setCurrentPassword} autoComplete="current-password" />
-          <PasswordField label="New password" value={password} onChange={setPassword} autoComplete="new-password" />
-          <PasswordField label="Confirm password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
-          {password ? <p className={`password-hint ${validPassword ? 'valid' : ''}`}>{passwordFeedback(password)}</p> : null}
-          {error && <div className="auth-error" role="alert">{error}</div>}
-          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Saving...' : 'Update password'}</button>
-        </form>
-      </div>
-    </AuthShell>
+    <section className="pw-password-card" role="dialog" aria-modal="true" aria-labelledby="pw-password-setup-title">
+      <h2 id="pw-password-setup-title">Change Password</h2>
+      <p className="pw-password-lead">Create a new password to continue.</p>
+      <form className="auth-form" onSubmit={submit} aria-busy={loading}>
+        <ChangePasswordField label="New Password" value={password} onChange={(value) => { setPassword(value); setError(''); }} placeholder="Enter new password" autoComplete="new-password" />
+        {password && nextRule && (
+          <p className="pw-password-rule is-missing" role="status" aria-live="polite">
+            <X size={13} />
+            <span>{nextRule.label}</span>
+          </p>
+        )}
+        <ChangePasswordField label="Confirm New Password" value={confirm} onChange={(value) => { setConfirm(value); setError(''); }} placeholder="Confirm new password" autoComplete="new-password" />
+        {error && <p className="auth-error" role="alert">{error}</p>}
+        <button className="pw-signup-submit" disabled={loading}>{loading ? 'Updating...' : 'Update Password'}</button>
+      </form>
+    </section>
   );
 }
 
@@ -755,7 +835,7 @@ function ProfilePage({ user, onSave, onNavigate, startEditing = false }) {
     {editing ? <form className="panel-card profile-form" onSubmit={save}>
       <div className="profile-form-top"><Avatar user={draft} large /><div><label className="upload-button"><input type="file" accept="image/png,image/jpeg,image/webp" onChange={handlePhoto} />Change Photo</label>{draft.avatar && <button type="button" className="text-button" onClick={() => update('avatar', '')}>Remove Photo</button>}{photoError && <small className="field-error">{photoError}</small>}</div></div>
       <div className="account-form-grid"><label className="field"><span>Full Name</span><input value={draft.name} onChange={(event) => update('name', event.target.value)} /></label><label className="field"><span>Email</span><input type="email" value={draft.email} onChange={(event) => update('email', event.target.value)} /></label><label className="field"><span>Phone Number</span><input value={draft.phone} placeholder="Not provided" onChange={(event) => update('phone', event.target.value)} /></label><InstitutionField label="Institution" placeholder={draft.role === 'Teacher' ? 'Select your school' : 'Select your university'} options={draft.role === 'Teacher' ? schools : universities} value={draft.institution} onChange={(value) => update('institution', value)} /><label className="field"><span>Department</span><input value={draft.department} placeholder="Not provided" onChange={(event) => update('department', event.target.value)} /></label><label className="field"><span>Role</span><select value={draft.role === 'School Teacher' ? 'Teacher' : draft.role} onChange={(event) => { update('role', event.target.value); update('institution', ''); }}>{EDUCATOR_ROLES.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></label></div>
-      {error && <div className="error-box">{error}</div>}<div className="footer-actions-row"><button type="button" className="secondary-button" onClick={() => { setDraft(user); setEditing(false); }}>Cancel</button><button type="submit" className="primary-button"><Save size={16} /> Save Changes</button></div>
+      {error && <Notice message={error} />}<div className="footer-actions-row"><button type="button" className="secondary-button" onClick={() => { setDraft(user); setEditing(false); }}>Cancel</button><button type="submit" className="primary-button"><Save size={16} /> Save Changes</button></div>
     </form> : <div className="profile-layout"><div className="panel-card identity-card"><Avatar user={user} large /><h2>{user.name}</h2><p>{user.role}</p><span className="account-status"><ShieldCheck size={14} /> Active</span></div><div className="panel-card details-card"><div className="panel-head"><h3>Personal information</h3><button className="pill-button" onClick={() => setEditing(true)}><Pencil size={13} /> Edit</button></div><div className="detail-grid">{[['Email', user.email, Mail], ['Role', user.role, UserRound], ['Institution', user.institution, ShieldCheck], ['Department', user.department, ShieldCheck], ['Phone number', user.phone, Phone], ['Member since', user.memberSince, ShieldCheck]].map(([label, value, Icon]) => <div className="detail-item" key={label}><Icon size={16} /><span><small>{label}</small><strong>{value || 'Not provided'}</strong></span></div>)}</div></div></div>}
   </section>;
 }
@@ -815,7 +895,7 @@ function SettingsPage({ user, onNavigate, onLogout, darkMode, setDarkMode }) {
           </div>
           <div className="panel-card settings-card">
             <div className="settings-title"><Bell size={18} /><div><h3>Notifications</h3><span>Choose what reaches your inbox</span></div></div>
-            {settingsError && <div className="error-box">{settingsError}</div>}
+            {settingsError ? <Notice message={settingsError} /> : null}
             {[['emailNotifications', 'Email notifications'], ['lessonPlanNotifications', 'Lesson plan notifications'], ['assessmentNotifications', 'Assessment notifications'], ['calendarNotifications', 'Calendar notifications'], ['systemNotifications', 'System notifications']].map(([key, label]) => (
               <label className="toggle-row" key={key}><span>{label}</span><input type="checkbox" checked={preferences[key]} onChange={() => toggle(key)} /><i /></label>
             ))}
@@ -837,6 +917,7 @@ function AccountsPage() {
   const [notice, setNotice] = useState('');
   const [tempPassword, setTempPassword] = useState('');
   const [loading, setLoading] = useState(true);
+  const [assigning, setAssigning] = useState(null);
   const isTeacher = form.role === 'Teacher';
 
   async function refresh() {
@@ -902,7 +983,7 @@ function AccountsPage() {
           <p>Create educator accounts, then approve them before they can log in.</p>
         </div>
       </div>
-      {error && <div className="error-box" role="alert">{error}</div>}
+      {error ? <Notice message={error} /> : null}
       {notice && <div className="auth-error" role="status">{notice}</div>}
       {tempPassword && (
         <div className="auth-note" role="status">
@@ -945,7 +1026,8 @@ function AccountsPage() {
                   <td data-label="Role">{user.role}</td>
                   <td data-label="Status">{user.accountStatus}</td>
                   <td data-label="Actions" className="account-actions">
-                    {user.accountStatus !== 'approved' && <button type="button" onClick={() => run(adminApi.approve, user.id)}>Approve</button>}
+                    {user.accountStatus !== 'approved' && user.role !== 'Administrator' && <button type="button" onClick={() => setAssigning(user)}>Approve and Assign Role</button>}
+                    {user.accountStatus !== 'approved' && user.role === 'Administrator' && <button type="button" onClick={() => run(adminApi.approve, user.id)}>Approve</button>}
                     {user.accountStatus === 'pending' && <button type="button" onClick={() => run(adminApi.reject, user.id)}>Reject</button>}
                     {user.accountStatus === 'approved' && user.role !== 'Administrator' && <button type="button" onClick={() => run(adminApi.suspend, user.id)}>Suspend</button>}
                     {user.accountStatus === 'approved' && user.role !== 'Administrator' && <button type="button" onClick={() => run(adminApi.deactivate, user.id)}>Deactivate</button>}
@@ -957,12 +1039,17 @@ function AccountsPage() {
           </table>
         )}
       </div>
+      <AssignRoleDialog user={assigning} onClose={() => setAssigning(null)} onApproved={() => { setAssigning(null); setNotice('Role assigned and login email queued.'); refresh().catch((err) => setError(err.message || 'Could not load accounts.')); }} />
     </section>
   );
 }
 
 function homeSection(user) {
-  return user?.role === 'Administrator' ? 'accounts' : 'dashboard';
+  return user?.role === 'Administrator' ? 'admin-overview' : 'dashboard';
+}
+
+function awaitingRoleConfirmation(user) {
+  return Boolean(user) && user.roleConfirmed === false && (user.role === 'Teacher' || user.role === 'Lecturer');
 }
 
 function App() {
@@ -979,6 +1066,12 @@ function App() {
   });
   const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(getToken()));
   const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [roleSnoozed, setRoleSnoozed] = useState(false);
+  const [roleConfirmOpen, setRoleConfirmOpen] = useState(false);
+  const [roleConfirmError, setRoleConfirmError] = useState('');
+  const [roleConfirming, setRoleConfirming] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(() => !getToken());
+  const [passwordToast, setPasswordToast] = useState(false);
   const [loginNotice, setLoginNotice] = useState('');
   const [currentUser, setCurrentUser] = useState(() => defaultUser);
   const [courses, setCourses] = useState([]);
@@ -1005,6 +1098,7 @@ function App() {
   const [savedPlans, setSavedPlans] = useState([]);
   const [openWeeks, setOpenWeeks] = useState({ 1: true });
   const [profileOpen, setProfileOpen] = useState(false);
+  const [adminCollapsed, setAdminCollapsed] = useState(false);
   const [profileEditing, setProfileEditing] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
@@ -1025,6 +1119,7 @@ function App() {
   const [resourceQuery, setResourceQuery] = useState('');
   const [resourceType, setResourceType] = useState('all');
   const profileMenuRef = useRef(null);
+  const lessonRetryFiles = useRef([]);
   useEffect(() => {
     localStorage.setItem('planwiseDarkMode', String(darkMode));
     const enabled = Boolean(isAuthenticated && darkMode);
@@ -1034,6 +1129,11 @@ function App() {
   useEffect(() => {
     localStorage.setItem('planwiseZoom', String(uiZoom));
   }, [uiZoom]);
+  useEffect(() => {
+    if (!passwordToast) return undefined;
+    const timer = window.setTimeout(() => setPasswordToast(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [passwordToast]);
 
   async function loadWorkspace() {
     if (!getToken()) return;
@@ -1045,12 +1145,19 @@ function App() {
       setIsAuthenticated(true);
       if (user.mustChangePassword) {
         setMustChangePassword(true);
-        window.history.replaceState({}, '', '/change-password');
+        setActiveSection('dashboard');
+        if (window.location.pathname !== '/') window.history.replaceState({}, '', '/');
         return;
       }
       setMustChangePassword(false);
+      if (awaitingRoleConfirmation(user)) {
+        const notes = await notificationApi.list();
+        setNotifications(notes.notifications || []);
+        setUnreadCount(notes.unread || 0);
+        return;
+      }
       if (user.role === 'Administrator' && (window.location.pathname === '/' || window.location.pathname === '/login')) {
-        setActiveSection('accounts');
+        setActiveSection('admin-overview');
       }
       const [plans, events, assessmentList, courseList, attendance, reportData, resourceList, quizList, papers, notes] = await Promise.all([
         lessonPlanApi.list(),
@@ -1078,7 +1185,9 @@ function App() {
       setUnreadCount(notes.unread || 0);
       setIsAuthenticated(true);
     } catch (err) {
-      if (err.status === 401 || err.status === 403) {
+      const message = err.message || '';
+      const blockedAccount = err.status === 403 && /waiting for administrator|not approved|suspended|inactive/i.test(message);
+      if (err.status === 401 || blockedAccount) {
         clearSession();
         setIsAuthenticated(false);
         setMustChangePassword(false);
@@ -1090,6 +1199,24 @@ function App() {
       }
     } finally {
       setDataLoading(false);
+      setSessionChecked(true);
+    }
+  }
+
+  async function confirmAssignedRole() {
+    if (roleConfirming) return;
+    setRoleConfirming(true);
+    setRoleConfirmError('');
+    try {
+      const result = await authApi.confirmRole();
+      setCurrentUser(result.user);
+      setRoleConfirmOpen(false);
+      setRoleSnoozed(false);
+      await loadWorkspace();
+    } catch (err) {
+      setRoleConfirmError(err.message || 'Unable to confirm your role. Please try again.');
+    } finally {
+      setRoleConfirming(false);
     }
   }
 
@@ -1099,6 +1226,10 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (mustChangePassword || awaitingRoleConfirmation(currentUser)) {
+      setSearchResults(null);
+      return undefined;
+    }
     const query = searchQuery.trim();
     if (query.length < 2) {
       setSearchResults(null);
@@ -1108,7 +1239,7 @@ function App() {
       searchApi.query(query).then(setSearchResults).catch((err) => setDataError(err.message || 'Search failed.'));
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, mustChangePassword, currentUser]);
 
   function adjustZoom(delta) {
     setUiZoom((current) => {
@@ -1124,6 +1255,11 @@ function App() {
     function closeProfile(event) { if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) setProfileOpen(false); }
     function closeOnEscape(event) { if (event.key === 'Escape') { setProfileOpen(false); setLogoutOpen(false); setSidebarOpen(false); } }
     function onPopState() {
+      if (mustChangePassword) {
+        setActiveSection('dashboard');
+        if (window.location.pathname !== '/') window.history.replaceState({}, '', '/');
+        return;
+      }
       const path = window.location.pathname;
       if (path === '/forgot-password') setActiveSection('forgot-password');
       else if (path === '/create-account' || path === '/register') setActiveSection(isAuthenticated ? homeSection(currentUser) : 'create-account');
@@ -1137,7 +1273,7 @@ function App() {
       document.removeEventListener('keydown', closeOnEscape);
       window.removeEventListener('popstate', onPopState);
     };
-  }, [isAuthenticated, currentUser]);
+  }, [isAuthenticated, currentUser, mustChangePassword]);
 
   useEffect(() => {
     if (!sidebarOpen) return undefined;
@@ -1153,6 +1289,76 @@ function App() {
 
   function updateField(field, value) {
     setForm((previous) => ({ ...previous, [field]: value }));
+  }
+
+  async function attachLessonSource(fileList) {
+    const files = [...(fileList || [])];
+    if (!files.length) return;
+    const rejected = files.find((file) => !/\.(pdf|docx?|txt)$/i.test(file.name) || file.size > 15 * 1024 * 1024);
+    if (rejected && !/\.(pdf|docx?|txt)$/i.test(rejected.name)) {
+      lessonRetryFiles.current = [];
+      setErrors({ source: 'That file type is not supported.', sourceDetail: 'Upload a PDF, DOC, DOCX, or TXT file.' });
+      return;
+    }
+    if (rejected) {
+      lessonRetryFiles.current = [];
+      setErrors({ source: `${rejected.name} is too large.`, sourceDetail: 'The limit is 15 MB.' });
+      return;
+    }
+    setErrors({});
+    const added = [];
+    const failures = [];
+    const failedFiles = [];
+    for (const file of files) {
+      try {
+        const resource = await resourceApi.upload(file, {
+          courseName: form.courseName,
+          courseCode: form.courseCode,
+        });
+        added.push(resource);
+      } catch (error) {
+        failedFiles.push(file);
+        failures.push({
+          name: file.name,
+          message: error.message || `Could not read ${file.name}.`,
+          detail: error.detail || '',
+        });
+      }
+    }
+    if (added.length) {
+      setResources((current) => [...added, ...current.filter((item) => !added.some((resource) => resource.id === item.id))]);
+      setForm((previous) => {
+        const ids = [...new Set([...(previous.sourceDocumentIds || []), ...added.map((resource) => resource.id)])];
+        const names = added.map((resource) => resource.fileName).filter(Boolean);
+        const first = added[0];
+        return {
+          ...previous,
+          sourceDocumentIds: ids,
+          sourceDocumentId: ids[0] || '',
+          sourceFileName: [...new Set([...(previous.sourceFileName ? previous.sourceFileName.split(', ') : []), ...names])].join(', '),
+          courseName: previous.courseName || first.courseName || '',
+          courseCode: previous.courseCode || first.courseCode || '',
+        };
+      });
+      const withTopics = added.find((resource) => Array.isArray(resource.topics) && resource.topics.length);
+      if (withTopics) setTopics((current) => (current.filter(Boolean).length ? current : withTopics.topics));
+    }
+    lessonRetryFiles.current = failedFiles;
+    if (failures.length) {
+      setErrors({
+        source: failures.length === 1 ? failures[0].message : `Could not read ${failures.length} files.`,
+        sourceDetail: failures.map((item) => item.detail || item.message).filter(Boolean).join(' '),
+      });
+    } else {
+      const notes = added.map((resource) => resource.extractionNote).filter(Boolean);
+      if (notes.length) {
+        setErrors({
+          source: 'Some pages could not be read.',
+          sourceDetail: notes.join(' '),
+          sourceTone: 'warning',
+        });
+      }
+    }
   }
 
   function toggleSelection(listName, value) {
@@ -1224,7 +1430,16 @@ function App() {
       topics: topics.filter(Boolean).map((topic) => topic.trim()),
       numberOfWeeks: Number(form.numberOfWeeks || Math.ceil((new Date(form.endDate) - new Date(form.startDate)) / (1000 * 60 * 60 * 24 * 7)) || 1),
       holidays: (form.holidays || []).map((holiday) => ({ date: holiday.date || holiday, name: holiday.name || 'Holiday' })),
+      lessonNotes: form.lessonNotes,
+      materialText: form.lessonNotes,
+      documentId: form.sourceDocumentId || undefined,
+      documentIds: form.sourceDocumentIds || [],
     };
+    if (!payload.topics.length && !String(form.lessonNotes || '').trim() && !(form.sourceDocumentIds || []).length && !form.sourceDocumentId) {
+      setErrors({ general: 'Add topics, lesson notes, or an uploaded file before generating.' });
+      setStep(2);
+      return;
+    }
 
     setIsGenerating(true);
     setErrors({});
@@ -1360,6 +1575,8 @@ function App() {
 
   function navigateTo(section, options = {}) {
     setSidebarOpen(false);
+    if (mustChangePassword) return;
+    if (section === 'dashboard') setRoleSnoozed(false);
     if (section === 'assistant') {
       setAiDrawerOpen(true);
       setProfileOpen(false);
@@ -1392,15 +1609,22 @@ function App() {
     if (token) setToken(token, _remember);
     const safeUser = { ...user };
     delete safeUser.welcomePending;
+    const needsPassword = Boolean(safeUser.mustChangePassword);
     setCurrentUser(safeUser);
     setIsAuthenticated(true);
-    if (safeUser.mustChangePassword) {
-      setMustChangePassword(true);
-      window.history.pushState({}, '', '/change-password');
-      return;
+    setSessionChecked(true);
+    setMustChangePassword(needsPassword);
+    setRoleSnoozed(false);
+    setRoleConfirmOpen(false);
+    setActiveSection(needsPassword ? 'dashboard' : homeSection(safeUser));
+    setProfileOpen(false);
+    if (needsPassword) {
+      if (window.location.pathname !== '/') window.history.replaceState({}, '', '/');
+    } else {
+      const section = homeSection(safeUser);
+      const paths = { accounts: '/accounts', dashboard: '/', 'admin-overview': '/' };
+      window.history.pushState({}, '', paths[section] || '/');
     }
-    setMustChangePassword(false);
-    navigateTo(homeSection(safeUser));
     loadWorkspace();
   }
 
@@ -1465,6 +1689,7 @@ function App() {
     setSavedPlans([]);
     setCurrentUser(defaultUser);
     setMustChangePassword(false);
+    setSessionChecked(true);
     window.history.pushState({}, '', '/login');
     setActiveSection('login');
   }
@@ -1538,6 +1763,8 @@ function App() {
       initialPrompt={isAuthenticated ? aiQuickPrompt : ''}
       material={aiMaterial}
       onMaterialChange={setAiMaterial}
+      calendarEvents={calendarEvents}
+      onCalendarCreated={(event) => setCalendarEvents((current) => [...current, event])}
       corner="right"
     />
   );
@@ -1573,19 +1800,6 @@ function App() {
     return <><LandingPage onNavigate={navigateTo} />{floatingAssistant}</>;
   }
 
-  if (mustChangePassword) {
-    return (
-      <ChangePasswordPage
-        onChanged={(user) => {
-          setCurrentUser(user);
-          setMustChangePassword(false);
-          navigateTo(homeSection(user));
-          loadWorkspace();
-        }}
-      />
-    );
-  }
-
   const visibleNavItems = navItems.filter((item) => (roleNav[currentUser.role] || roleNav.Lecturer).includes(item.id));
   const myAttendance = attendanceHistory;
   const roleLabel = currentUser.role || '';
@@ -1595,9 +1809,16 @@ function App() {
 
   return (
     <div
-      className={`edu-shell glass-shell left-rail-shell dlp-shell ${darkMode ? 'dark-mode' : ''}`}
+      className={`edu-shell glass-shell left-rail-shell dlp-shell ${darkMode ? 'dark-mode' : ''} ${mustChangePassword ? 'is-password-locked' : ''} ${isAuthenticated && !sessionChecked ? 'is-session-checking' : ''} ${currentUser.role === 'Administrator' && adminCollapsed ? 'is-admin-collapsed' : ''}`}
       style={{ '--ui-zoom': uiZoom }}
     >
+      {passwordToast && (
+        <div className="success-toast" role="status">
+          <CheckCircle2 size={16} />
+          <span>Password changed successfully.</span>
+          <button type="button" onClick={() => setPasswordToast(false)} aria-label="Close">×</button>
+        </div>
+      )}
       <button
         type="button"
         className={`sidebar-scrim ${sidebarOpen ? 'is-open' : ''}`}
@@ -1605,12 +1826,17 @@ function App() {
         tabIndex={sidebarOpen ? 0 : -1}
         onClick={() => setSidebarOpen(false)}
       />
-      <aside className={`glass-sidebar ${sidebarOpen ? 'is-open' : ''}`} aria-label="Workspace navigation">
+      <aside className={`glass-sidebar ${sidebarOpen ? 'is-open' : ''}`} aria-label="Workspace navigation" inert={mustChangePassword || (isAuthenticated && !sessionChecked) ? true : undefined}>
         <div className="sidebar-brand">
           <div className="brand-mark"><BookOpen size={18} /></div>
           <div>
             <strong>Digital Lesson Plan</strong>
             <small>Plan • Teach • Inspire</small>
+            {currentUser.role === 'Administrator' && (
+              <button type="button" className="text-button" onClick={() => setAdminCollapsed((value) => !value)} aria-expanded={!adminCollapsed}>
+                {adminCollapsed ? 'Show menu' : 'Hide menu'}
+              </button>
+            )}
           </div>
           <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
         </div>
@@ -1623,10 +1849,16 @@ function App() {
                 type="button"
                 className={active ? 'active' : ''}
                 onClick={() => {
+                  if (mustChangePassword) return;
+                  if (id === 'assistant') {
+                    setAiDrawerOpen(true);
+                    return;
+                  }
                   navigateTo(id);
                   if (id === 'plans') setStep(5);
                   if (id === 'dashboard') setStep(5);
                 }}
+                disabled={mustChangePassword}
               >
                 <Icon size={17} />
                 <span>{label}</span>
@@ -1634,17 +1866,12 @@ function App() {
             );
           })}
         </nav>
-        <div className="sidebar-footer">
-          <button type="button" className="secondary-button" onClick={activeClock ? clockOut : clockIn}>
-            <Clock3 size={14} /> {activeClock ? 'Clock Out' : 'Clock In'}
-          </button>
-        </div>
-        <div className="sidebar-footer" data-ref-image="sidebar-inspiration" role="img" aria-label="Better Lesson Plans. Brighter Futures.">
+        <div className="sidebar-footer sidebar-inspiration" data-ref-image="sidebar-inspiration" role="img" aria-label="Better Lesson Plans. Brighter Futures.">
           <em>Better Lesson Plans. Brighter Futures.</em>
         </div>
       </aside>
 
-      <div className="glass-stage">
+      <div className="glass-stage" inert={mustChangePassword || (isAuthenticated && !sessionChecked) ? true : undefined}>
         <header className="glass-topbar compact-topbar">
           <button
             type="button"
@@ -1705,12 +1932,13 @@ function App() {
         </header>
 
         <main className="glass-workspace main-panel">
-        {activeSection === 'accounts' && currentUser.role === 'Administrator' && <AccountsPage />}
+        {currentUser.role === 'Administrator' && (activeSection === 'accounts' || activeSection === 'admin-users') && <AccountsPage />}
+        {currentUser.role === 'Administrator' && String(activeSection).startsWith('admin-') && <AdminPanel section={activeSection} />}
         {activeSection === 'profile' && <ProfilePage user={currentUser} onSave={saveUser} onNavigate={navigateTo} startEditing={profileEditing} />}
         {activeSection === 'settings' && <SettingsPage user={currentUser} onNavigate={navigateTo} onLogout={() => setLogoutOpen(true)} darkMode={darkMode} setDarkMode={setDarkMode} />}
         {activeSection === 'courses' && <CoursesPage courses={courses} onOpen={navigateCourse} onUpload={() => navigateTo('upload-course')} />}
         {activeSection === 'upload-course' && <UploadCoursePage onCreate={createCourse} onUploaded={(resource) => setResources((current) => [resource, ...current.filter((item) => item.id !== resource.id)])} />}
-        {activeSection === 'course-detail' && <CourseDetailPage course={courses.find((course) => course.id === selectedCourseId)} onBack={() => navigateTo('courses')} onStatusChange={updateTopicStatus} />}
+        {activeSection === 'course-detail' && <CourseDetailPage course={courses.find((course) => course.id === selectedCourseId)} resources={resources} onBack={() => navigateTo('courses')} onStatusChange={updateTopicStatus} />}
         {activeSection === 'progress' && <ProgressPage courses={courses} onOpen={navigateCourse} onStatusChange={updateTopicStatus} />}
         {activeSection === 'dashboard' && (
           <DashboardHome
@@ -1746,6 +1974,26 @@ function App() {
                 {step === 1 && (
                   <>
                     <div className="section-title-row"><h2>Create Your Lesson Plan</h2></div>
+                    {courses.length ? (
+                      <label className="field">
+                        <span>Saved subject</span>
+                        <select value={form.courseId || ''} onChange={(event) => {
+                          const course = courses.find((item) => item.id === event.target.value);
+                          setForm((previous) => ({
+                            ...previous,
+                            courseId: event.target.value,
+                            courseName: course?.name || previous.courseName,
+                            courseCode: course?.code || previous.courseCode,
+                            sourceDocumentId: '',
+                            sourceDocumentIds: [],
+                            sourceFileName: '',
+                          }));
+                        }}>
+                          <option value="">Choose a subject, or type one below</option>
+                          {courses.map((course) => <option key={course.id} value={course.id}>{course.name}</option>)}
+                        </select>
+                      </label>
+                    ) : null}
                     <div className="grid-2">
                       <label className="field"><span>Course Name</span><input value={form.courseName} onChange={(e) => updateField('courseName', e.target.value)} /></label>
                       <label className="field"><span>Course Code</span><input value={form.courseCode} onChange={(e) => updateField('courseCode', e.target.value)} /></label>
@@ -1779,6 +2027,43 @@ function App() {
                       ))}
                     </div>
                     <div className="footer-actions-row topic-add-row"><button className="secondary-button" onClick={addTopic}>+ Add Topic</button></div>
+                    <label className="field full-span">
+                      <span>Lesson notes</span>
+                      <textarea rows={5} value={form.lessonNotes} onChange={(event) => updateField('lessonNotes', event.target.value)} placeholder="Paste the notes, objectives, or instructions this lesson must follow" />
+                    </label>
+                    <div className="field">
+                      <span>Subject materials</span>
+                      <div className="choice-group wrap">
+                        {resources
+                          .filter((item) => !form.courseName || !item.courseName || String(item.courseName).toLowerCase() === form.courseName.trim().toLowerCase())
+                          .map((item) => {
+                            const selected = (form.sourceDocumentIds || []).includes(item.id);
+                            return (
+                              <button
+                                type="button"
+                                key={item.id}
+                                className={`choice-btn ${selected ? 'active' : ''}`}
+                                onClick={() => setForm((previous) => {
+                                  const ids = new Set(previous.sourceDocumentIds || []);
+                                  if (ids.has(item.id)) ids.delete(item.id);
+                                  else ids.add(item.id);
+                                  const nextIds = [...ids];
+                                  const names = resources.filter((resource) => nextIds.includes(resource.id)).map((resource) => resource.fileName);
+                                  return { ...previous, sourceDocumentIds: nextIds, sourceDocumentId: nextIds[0] || '', sourceFileName: names.join(', ') };
+                                })}
+                              >
+                                {item.fileName}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </div>
+                    <label className="field">
+                      <span>Upload notes</span>
+                      <input type="file" multiple accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={(event) => { attachLessonSource(event.target.files); event.target.value = ''; }} />
+                    </label>
+                    {form.sourceFileName ? <p className="muted-text">Using {form.sourceFileName}</p> : null}
+                    {errors.source ? <Notice tone={errors.sourceTone || 'error'} message={errors.source} detail={errors.sourceDetail} onRetry={!errors.sourceTone && lessonRetryFiles.current.length ? () => attachLessonSource(lessonRetryFiles.current) : undefined} /> : null}
                     {errors.topics ? <div className="error-box">{errors.topics}</div> : null}
                   </>
                 )}
@@ -1874,7 +2159,7 @@ function App() {
                       </div>
                     ) : (
                       <div className="generate-summary">
-                        {errors.general ? <div className="error-box">{errors.general}</div> : null}
+                        {errors.general ? <Notice tone={/success/i.test(errors.general) ? 'success' : 'error'} message={errors.general} /> : null}
                         {!generated ? (
                           <div className="summary-box">
                             <p>Review your inputs and click generate to produce a complete lesson plan.</p>
@@ -1999,8 +2284,8 @@ function App() {
             assessments={assessments}
             quizzes={quizzes}
             resources={resources}
+            courses={courses}
             difficulty={aiDifficulty}
-            user={currentUser}
             onGenerate={generateCheckedWork}
             onSave={saveAssessment}
             onDelete={async (item) => {
@@ -2017,7 +2302,6 @@ function App() {
               }
             }}
             onSchedule={(items) => persistCalendarSuggestions(items, 'assessment')}
-            onOpenAssistant={() => navigateTo('assistant')}
           />
         )}
 
@@ -2110,7 +2394,7 @@ function App() {
                   ))}
                 </div>
               ) : (
-                <p className="muted-text">No attendance records yet. Use Clock In on the dashboard or at the bottom of the sidebar.</p>
+                <p className="muted-text">No attendance records yet. Use Clock In on the dashboard.</p>
               )}
             </div>
           </section>
@@ -2122,7 +2406,20 @@ function App() {
             <div className="panel-card">
               <div className="activity-list">
                 {notifications.length ? notifications.map((item) => (
-                  <div className="activity-item" key={item.id}><div className="activity-dot" /><div className="activity-copy"><strong>{item.title}</strong><span>{item.message}</span></div><small>{item.isRead ? 'Read' : 'New'}</small></div>
+                  <div className="activity-item" key={item.id}>
+                    <div className="activity-dot" />
+                    <div className="activity-copy">
+                      <strong>{item.title}</strong>
+                      <span>{item.message}</span>
+                      {item.type === 'role-confirmation' && awaitingRoleConfirmation(currentUser) && (
+                        <>
+                          <button type="button" className="primary-button" onClick={() => { setRoleConfirmError(''); setRoleConfirmOpen(true); }}>Confirm Role</button>
+                          <small>If this role is incorrect, contact an administrator to request a correction.</small>
+                        </>
+                      )}
+                    </div>
+                    <small>{item.type === 'role-confirmation' && awaitingRoleConfirmation(currentUser) ? 'Action needed' : (item.isRead ? 'Read' : 'New')}</small>
+                  </div>
                 )) : <p className="muted-text">No notifications yet.</p>}
               </div>
             </div>
@@ -2130,7 +2427,7 @@ function App() {
         )}
         {errors.general === 'Profile updated successfully.' && <div className="success-toast"><CheckCircle2 size={16} /> Profile updated successfully.</div>}
         {logoutOpen && <div className="dialog-backdrop" role="presentation"><div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="logout-title"><div className="dialog-icon"><LogOut size={19} /></div><h2 id="logout-title">Are you sure you want to log out?</h2><p>Your session will end and you will return to the sign-in screen.</p><div className="dialog-actions"><button className="secondary-button" onClick={() => setLogoutOpen(false)}>Cancel</button><button className="logout-confirm" onClick={confirmLogout}>Log Out</button></div></div></div>}
-        {welcomeOpen && (
+        {welcomeOpen && !mustChangePassword && (
           <div className="dialog-backdrop welcome-backdrop" role="presentation">
             <div className="confirm-dialog welcome-dialog" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
               <div className="dialog-icon"><Sparkles size={19} /></div>
@@ -2150,7 +2447,48 @@ function App() {
         </main>
       </div>
 
-      {floatingAssistant}
+      {mustChangePassword && (
+        <div className="pw-password-lock">
+          <ChangePasswordPage
+            onChanged={(user) => {
+              setCurrentUser(user);
+              setMustChangePassword(false);
+              setPasswordToast(true);
+              setRoleSnoozed(false);
+              loadWorkspace();
+            }}
+          />
+        </div>
+      )}
+      {sessionChecked && !mustChangePassword && !roleSnoozed && awaitingRoleConfirmation(currentUser) && (
+        <div className="dialog-backdrop" role="presentation">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="role-assign-title">
+            <h2 id="role-assign-title">Confirm Your Assigned Role</h2>
+            <p>The administrator has assigned you the role of <strong>{currentUser.role}</strong>.</p>
+            <p>Please confirm your assigned role to continue.</p>
+            <p>If this role is incorrect, contact an administrator to request a correction.</p>
+            <div className="dialog-actions">
+              <button type="button" className="primary-button" onClick={() => { setRoleConfirmError(''); setRoleConfirmOpen(true); }}>Confirm Role</button>
+              <button type="button" className="secondary-button" onClick={() => setRoleSnoozed(true)}>Review Later</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {roleConfirmOpen && (
+        <div className="dialog-backdrop" role="presentation">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="role-confirm-title">
+            <h2 id="role-confirm-title">Confirm this role?</h2>
+            <p>This saves <strong>{currentUser.role}</strong> as your role. You cannot change it yourself.</p>
+            <p>If it is incorrect, contact an administrator to request a correction.</p>
+            {roleConfirmError && <p className="auth-error" role="alert">{roleConfirmError}</p>}
+            <div className="dialog-actions">
+              <button type="button" className="secondary-button" onClick={() => setRoleConfirmOpen(false)} disabled={roleConfirming}>Cancel</button>
+              <button type="button" className="primary-button" disabled={roleConfirming} onClick={confirmAssignedRole}>{roleConfirming ? 'Confirming...' : 'Confirm Role'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {sessionChecked && !mustChangePassword && !awaitingRoleConfirmation(currentUser) && floatingAssistant}
     </div>
   );
 }

@@ -59,7 +59,10 @@ export const getResource = asyncHandler(async (req, res) => {
 });
 
 export const uploadResource = asyncHandler(async (req, res) => {
-  const resource = await resourceService.uploadResource(req.userId, req.file);
+  const resource = await resourceService.uploadResource(req.userId, req.file, {
+    courseName: req.body?.courseName,
+    courseCode: req.body?.courseCode,
+  });
   res.status(201).json({ message: 'Resource saved.', resource });
 });
 

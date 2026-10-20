@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { ACCEPT_ATTR, ACCEPTED_EXTENSIONS, extractLocalDocument, fileExtension, fileToBase64 } from '../lib/documentExtractor.js';
 import { api, streamAiChat } from '../services/api.js';
+import Notice from './Notice.jsx';
 import {
   DIFFICULTY_LEVELS,
   fallbackAnalyze,
@@ -546,7 +547,7 @@ export default function AssistantPage({
         </div>
       </div>
 
-      {material?.status === 'error' && <div className="error-box ai-error"><AlertCircle size={16} /> {material.error}</div>}
+      {material?.status === 'error' ? <Notice message={material.error || 'Could not read this file.'} /> : null}
 
       {staff && (
         <ArtifactEditor

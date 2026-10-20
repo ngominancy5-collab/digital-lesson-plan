@@ -11,11 +11,16 @@ export function findByEmailWithProfile(email) {
 }
 
 export function findByUsername(username) {
-  return prisma.user.findUnique({ where: { username } });
+  return prisma.user.findFirst({
+    where: { username: { equals: username, mode: 'insensitive' } },
+  });
 }
 
 export function findByUsernameWithProfile(username) {
-  return prisma.user.findUnique({ where: { username }, ...withProfile });
+  return prisma.user.findFirst({
+    where: { username: { equals: username, mode: 'insensitive' } },
+    ...withProfile,
+  });
 }
 
 export function findByIdWithProfile(id) {

@@ -12,6 +12,7 @@ export function mapUser(user) {
     roleKey: user.role,
     accountStatus: user.accountStatus || 'approved',
     mustChangePassword: Boolean(user.mustChangePassword),
+    roleConfirmed: user.roleConfirmed !== false,
     institution: profile.institution || '',
     department: profile.department || '',
     phone: profile.phone || '',
@@ -27,13 +28,14 @@ export function mapUser(user) {
   };
 }
 
-function formatRole(role) {
+export function formatRole(role) {
   const map = {
     teacher: 'Teacher',
     lecturer: 'Lecturer',
     admin: 'Administrator',
     student: 'Student',
     coordinator: 'Academic Coordinator',
+    unassigned: 'Not assigned',
   };
   return map[role] || 'Lecturer';
 }

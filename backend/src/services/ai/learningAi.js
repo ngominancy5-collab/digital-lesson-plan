@@ -111,14 +111,27 @@ Source excerpt:
 ${isReadableEducationalText(materialText) ? truncateText(materialText, 8000) : 'NO SOURCE MATERIAL'}
 Known progress: ${JSON.stringify(progress || {})}
 
+Current section: ${session.activeSection || 'general'}
+Section focus: ${session.sectionHint || 'General PlanWise help. The user can still ask about other supported tasks.'}
+Saved materials this user owns: ${(session.ownedDocumentTitles || []).join(', ') || 'none'}
+Saved lesson plans: ${(session.ownedPlanTitles || []).join(', ') || 'none'}
+Calendar events already saved: ${JSON.stringify(session.calendarEvents || []).slice(0, 4000)}
+
 Return JSON:
 {
   "reply": "natural conversational reply",
   "mode": "tutor|quiz|revision|assessment|assignment|exam-prep",
   "difficulty": "${local.difficulty || difficulty}",
   "usedSource": false,
-  "askClarification": false
-}`,
+  "askClarification": false,
+  "calendarSuggestion": null
+}
+
+Section rules:
+- Prioritise the current section, and still answer other supported requests.
+- On lesson plans, assessments, and paper marking, use only the supplied notes, uploaded files, and this user's saved materials. If the source is missing, ask for it. Do not invent objectives, questions, marks, or facts.
+- On the calendar, help with events, deadlines, and schedules. Never say an event was created. If the user wants a new event and gave a title and date, set calendarSuggestion to {"title","date","startTime","endTime","type"} and ask them to confirm. Otherwise set calendarSuggestion to null.
+- Use dates as YYYY-MM-DD. Do not use another person's materials.`,
       history,
     );
 
@@ -130,6 +143,9 @@ Return JSON:
       mode: data.mode || local.mode,
       difficulty: data.difficulty || local.difficulty,
       usedSource: Boolean(data.usedSource || local.usedSource),
+      calendarSuggestion: data.calendarSuggestion && data.calendarSuggestion.title && data.calendarSuggestion.date
+        ? data.calendarSuggestion
+        : null,
       provider: provider || 'openai',
     };
   } catch (error) {
@@ -139,13 +155,20 @@ Return JSON:
 }
 
 function conversationSystem(profile, local) {
-  return `You are PlanWise AI, a real conversational tutor and teaching assistant for ${profile.name || 'the user'} (${profile.role || 'learner'}).
+  const section = local.session?.activeSection || 'general';
+  const hint = local.session?.sectionHint || 'General PlanWise help.';
+  return `You are PlanWise AI, a real conversational tutor and teaching assistant for ${profile.name || 'the user'} (${profile.role || 'educator'}).
 Speak naturally in paragraphs. Use short headings, bullets, numbered lists, or a tiny table only when they help.
 Ask one follow-up question when you still need a subject, marks, question types, or a file.
 Keep the same subject, quiz, assignment, and uploaded file unless the user changes them.
-Never invent scores, files, or previous chats. If you do not know, ask.
+Never invent scores, files, previous chats, lesson facts, questions, or marks. If the source material is missing, ask for it.
 Do not dump rigid "Topic:/Definition:/Questions:" blocks.
 If the planner already started a live quiz, do not replace the quiz question; you may add a short natural lead-in.
+Current section: ${section}. ${hint}
+Prioritise that section, and still answer other supported PlanWise requests.
+On the calendar, never say an event was saved. If the user wants a new event and has given a title and a date, end the reply with one line exactly:
+CALENDAR_SUGGESTION: {"title":"Event title","date":"YYYY-MM-DD","startTime":"09:00","endTime":"10:00","type":"lesson"}
+Ask them to confirm in the same reply. Do not include that line for any other request.
 Current planner hint: kind=${local.kind}, mode=${local.mode}, subject=${local.session?.subject || 'none'}.`;
 }
 
@@ -160,6 +183,9 @@ Source excerpt:
 ${extras.materialText || 'NO SOURCE MATERIAL'}
 Last assessment: ${extras.lastAssessment || 'none'}
 Last quiz: ${extras.lastQuiz || 'none'}
+This user's saved files: ${(local.session?.ownedDocumentTitles || []).join(', ') || 'none'}
+This user's lesson plans: ${(local.session?.ownedPlanTitles || []).join(', ') || 'none'}
+Calendar events already saved: ${JSON.stringify(local.session?.calendarEvents || []).slice(0, 4000)}
 
 Planner draft reply (use as factual backing, rewrite naturally if this is a chat turn):
 ${local.reply}`;

@@ -32,7 +32,14 @@ export function markRead(userId, id) {
 
 export function markAllRead(userId) {
   return prisma.notification.updateMany({
-    where: { userId, isRead: false },
+    where: { userId, isRead: false, NOT: { type: 'role-confirmation' } },
+    data: { isRead: true },
+  });
+}
+
+export function markReadByType(userId, type) {
+  return prisma.notification.updateMany({
+    where: { userId, type, isRead: false },
     data: { isRead: true },
   });
 }

@@ -822,7 +822,7 @@
   min-height: 100vh;
   height: 100vh;
   max-height: 100vh;
-  overflow: hidden;
+  overflow: auto;
   align-self: stretch;
 }
 
@@ -867,9 +867,9 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
   padding: 0 4px;
 }
 
@@ -912,14 +912,18 @@
   color: #1a1712;
 }
 
+.dlp-shell .sidebar-footer > .secondary-button {
+  display: none;
+}
+
 /* Exact footer photo from the sidebar reference image */
-.dlp-shell .sidebar-footer {
+.dlp-shell .sidebar-inspiration {
   position: relative;
-  margin-top: auto;
+  margin-top: 10px;
   padding: 0;
   border-radius: 18px;
-  min-height: 220px;
-  height: 240px;
+  min-height: 148px;
+  height: 148px;
   display: block;
   overflow: hidden;
   flex-shrink: 0;
@@ -930,7 +934,7 @@
 }
 
 /* Slogan is already in the reference crop — avoid duplicate text */
-.dlp-shell .sidebar-footer em {
+.dlp-shell .sidebar-inspiration em {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -942,7 +946,7 @@
   border: 0;
 }
 
-.dlp-shell .sidebar-footer em::after {
+.dlp-shell .sidebar-inspiration em::after {
   content: none;
 }
 
@@ -959,10 +963,10 @@
 
 .dlp-shell .glass-topbar.compact-topbar {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
+  gap: 16px;
   background: rgba(255, 252, 248, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.8);
   box-shadow: var(--ws-shadow);
@@ -972,10 +976,11 @@
 }
 
 .dlp-shell .glass-search {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(480px, 58%);
+  position: relative;
+  left: auto;
+  transform: none;
+  justify-self: center;
+  width: min(520px, 100%);
   max-width: 520px;
   background: #fff;
   border-radius: 999px;
@@ -991,8 +996,8 @@
 
 .dlp-shell .glass-top-actions {
   position: relative;
-  z-index: 2;
-  margin-left: auto;
+  z-index: 1;
+  margin-left: 0;
   flex-shrink: 0;
 }
 
@@ -1159,6 +1164,50 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.dlp-shell.dark-mode .glass-topbar.compact-topbar {
+  background: #17382f;
+  border-color: rgba(230, 206, 155, 0.28);
+  color: #fff6ea;
+}
+
+.dlp-shell.dark-mode .glass-search {
+  background: #102b25;
+  border-color: rgba(230, 206, 155, 0.4);
+  color: #fff6ea;
+}
+
+.dlp-shell.dark-mode .glass-search svg,
+.dlp-shell.dark-mode .glass-icon-btn,
+.dlp-shell.dark-mode .glass-icon-btn svg {
+  color: #fff6ea;
+  stroke: currentColor;
+}
+
+.dlp-shell.dark-mode .glass-icon-btn {
+  background: rgba(255, 246, 234, 0.1);
+  border-color: rgba(230, 206, 155, 0.35);
+}
+
+.dlp-shell.dark-mode .glass-search input,
+.dlp-shell.dark-mode .glass-search input::placeholder {
+  color: #fff6ea;
+}
+
+.dlp-shell.dark-mode .glass-search input::placeholder {
+  color: #c9b8a4;
+}
+
+.dlp-shell.dark-mode .mini-profile {
+  background: #102b25;
+  border-color: rgba(230, 206, 155, 0.35);
+  color: #fff6ea;
+}
+
+.dlp-shell.dark-mode .profile-chip-copy strong,
+.dlp-shell.dark-mode .profile-chip-copy small {
+  color: #fff6ea;
 }
 
 .dlp-shell .glass-workspace.main-panel {

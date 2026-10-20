@@ -10,7 +10,7 @@ import {
 import { ACCEPT_ATTR, ACCEPTED_EXTENSIONS, extractLocalDocument, fileExtension, fileToBase64 } from '../lib/documentExtractor.js';
 import { isReadableEducationalText } from '../../shared/learningEngine.js';
 import { api, markingApi } from '../services/api.js';
-import SectionAiPanel from './SectionAiPanel.jsx';
+import Notice from './Notice.jsx';
 const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/jpg';
 
 async function extractTextFromFile(file, onProgress) {
@@ -201,7 +201,7 @@ export default function PaperMarkingPage({ user, history = [], onSaveResult }) {
               <label className="field"><span>Subject</span><input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="e.g. Mathematics" /></label>
               <label className="field"><span>Student / paper ID</span><input value={studentLabel} onChange={(event) => setStudentLabel(event.target.value)} placeholder="e.g. Form 3A — Chisomo Banda" /></label>
             </div>
-            {error && <div className="error-box">{error}</div>}
+            {error ? <Notice message={error} /> : null}
             <button type="button" className="primary-button" onClick={runMarking} disabled={Boolean(busy) || !markingKey || !studentPaper}>
               {busy === 'mark' ? <LoaderCircle size={16} className="fa-spin" /> : <ClipboardCheck size={16} />}
               Mark paper with AI
@@ -296,19 +296,6 @@ export default function PaperMarkingPage({ user, history = [], onSaveResult }) {
             )}
           </div>
         </div>
-
-        <SectionAiPanel
-          user={user}
-          title="Marking AI"
-          context="paper-marking"
-          subtitle="Ask about the marking key, disputed answers, or feedback wording."
-          starters={[
-            'How do I upload a marking key?',
-            'Explain how partial marks work.',
-            'Help me write fair feedback.',
-          ]}
-          systemHint="You are helping a lecturer/teacher use AI paper marking. Guide them through marking key upload, student paper upload/scan, reviewing AI marks, and manual corrections."
-        />
       </div>
     </section>
   );

@@ -37,7 +37,7 @@ test('a textless OLE document is rejected', async () => {
   assert.equal(isOleCompound(bytes), true);
   const parsed = await asUpload('empty.doc', bytes);
   assert.equal(parsed.ok, false);
-  assert.match(parsed.error, /could not process|could not extract enough readable text/i);
+  assert.match(parsed.error, /could not read/i);
 });
 
 test('a corrupted .doc and a misnamed .docx are rejected', async () => {
@@ -51,7 +51,7 @@ test('a corrupted .doc and a misnamed .docx are rejected', async () => {
   damaged.fill(0x11, 512);
   const damagedResult = await asUpload('damaged.doc', damaged);
   assert.equal(damagedResult.ok, false);
-  assert.match(damagedResult.error, /could not process|not a Word 97|could not extract/i);
+  assert.match(damagedResult.error, /could not read|not a Word 97|could not extract/i);
 
   const zip = new JSZip();
   zip.file('word/document.xml', '<w:document><w:body><w:p><w:r><w:t>This is docx text and should not be read as a legacy doc.</w:t></w:r></w:p></w:body></w:document>');
@@ -87,4 +87,59 @@ test('txt, docx, and pdf extraction still works', async () => {
   const parsedPdf = await asUpload('biology.pdf', pdf);
   assert.equal(parsedPdf.ok, true, parsedPdf.error);
   assert.match(parsedPdf.text, /Biology of Cells/);
+  assert.match(parsedPdf.text, /Page 1/);
+});
+
+test('pdf failures stay short and specific', async () => {
+  process.env.PLANWISE_OCR = '0';
+  const blank = await new Promise((resolve) => {
+    const doc = new PDFDocument();
+    const chunks = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.end();
+  });
+  const empty = await asUpload('blank.pdf', blank);
+  assert.equal(empty.ok, false);
+  assert.match(empty.error, /could not read/i);
+  assert.ok(empty.error.length < 80);
+  assert.ok(empty.detail);
+
+  const corrupt = await asUpload('broken.pdf', Buffer.from('%PDF-1.4 this is not a real pdf'));
+  assert.equal(corrupt.ok, false);
+  assert.match(corrupt.error, /could not read/i);
+  assert.match(corrupt.detail, /damaged|password|could not/i);
+
+  const locked = await new Promise((resolve) => {
+    const doc = new PDFDocument({ userPassword: 'secret', ownerPassword: 'secret' });
+    const chunks = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.text('Hidden classroom notes that should not be readable without the password.');
+    doc.end();
+  });
+  const protectedPdf = await asUpload('locked.pdf', locked);
+  assert.equal(protectedPdf.ok, false);
+  assert.match(protectedPdf.error, /could not read/i);
+  assert.match(protectedPdf.detail, /password/i);
+  delete process.env.PLANWISE_OCR;
+});
+
+test('a mixed pdf keeps the readable page and names the blank page', async () => {
+  process.env.PLANWISE_OCR = '0';
+  const pdf = await new Promise((resolve) => {
+    const doc = new PDFDocument();
+    const chunks = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.text('Course name: Genetics. This page explains dominant and recessive traits, Punnett squares, and how a teacher introduces inheritance to secondary students.');
+    doc.addPage();
+    doc.end();
+  });
+  const parsed = await asUpload('mixed.pdf', pdf);
+  assert.equal(parsed.ok, true, parsed.error);
+  assert.match(parsed.text, /Genetics/);
+  assert.match(parsed.text, /Page 1/);
+  assert.match(parsed.warning || '', /Pages 2/);
+  delete process.env.PLANWISE_OCR;
 });

@@ -53,6 +53,8 @@ api.interceptors.response.use(
       || 'Request failed.';
     const err = new Error(message);
     err.status = error.response?.status;
+    err.detail = error.response?.data?.detail
+      || (typeof error.response?.data?.details === 'string' ? error.response.data.details : '');
     err.details = error.response?.data?.details;
     err.response = error.response;
     throw err;
@@ -80,17 +82,42 @@ export const authApi = {
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }).then((r) => r.data),
   resetPassword: (payload) => api.post('/auth/reset-password', payload).then((r) => r.data),
   changePassword: (payload) => api.post('/auth/change-password', payload).then((r) => r.data),
+  confirmRole: () => api.post('/auth/confirm-role', {}).then((r) => r.data),
   createTestAccount: (payload) => api.post('/auth/create-account', payload).then((r) => r.data),
 };
 
 export const adminApi = {
   list: () => api.get('/admin/users').then((r) => r.data.users || []),
   create: (payload) => api.post('/admin/users', payload).then((r) => r.data),
-  approve: (id) => api.post(`/admin/users/${id}/approve`).then((r) => r.data),
+  approve: (id, payload) => api.post(`/admin/users/${id}/approve`, payload || {}).then((r) => r.data),
   reject: (id) => api.post(`/admin/users/${id}/reject`).then((r) => r.data),
   suspend: (id) => api.post(`/admin/users/${id}/suspend`).then((r) => r.data),
   deactivate: (id) => api.post(`/admin/users/${id}/deactivate`).then((r) => r.data),
   restore: (id) => api.post(`/admin/users/${id}/restore`).then((r) => r.data),
+  overview: () => api.get('/admin/overview').then((r) => r.data),
+  directory: (params) => api.get('/admin/directory', { params }).then((r) => r.data),
+  user: (id) => api.get(`/admin/directory/${id}`).then((r) => r.data.user),
+  activity: (params) => api.get('/admin/activity', { params }).then((r) => r.data),
+  lessonPlans: (params) => api.get('/admin/lesson-plans', { params }).then((r) => r.data),
+  assessments: (params) => api.get('/admin/assessments', { params }).then((r) => r.data),
+  attendance: (params) => api.get('/admin/attendance', { params }).then((r) => r.data),
+  aiUsage: (params) => api.get('/admin/ai-usage', { params }).then((r) => r.data),
+  analytics: (params) => api.get('/admin/analytics', { params }).then((r) => r.data),
+  exportCsv: async (kind, params = {}) => {
+    const token = getToken();
+    const query = new URLSearchParams(params).toString();
+    const response = await fetch(`${API_BASE}/admin/export/${kind}?${query}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Could not export this report.');
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `planwise-${kind}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  },
 };
 
 export const dashboardApi = {
@@ -205,9 +232,11 @@ export const settingsApi = {
 export const resourceApi = {
   list: () => api.get('/resources').then((r) => r.data.resources || []),
   get: (id) => api.get(`/resources/${id}`).then((r) => r.data.resource),
-  upload: (file) => {
+  upload: (file, details = {}) => {
     const form = new FormData();
     form.append('file', file);
+    if (details.courseName) form.append('courseName', details.courseName);
+    if (details.courseCode) form.append('courseCode', details.courseCode);
     return api.post('/resources/upload', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then((r) => r.data.resource);

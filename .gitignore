@@ -7,3 +7,4 @@ dist/
 !backend/.env.example
 backend/uploads/*
 !backend/uploads/.gitkeep
+*.traineddata

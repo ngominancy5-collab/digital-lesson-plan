@@ -44,7 +44,9 @@ export async function uploadDocument(userId, file) {
     });
 
     if (!parsed.ok) {
-      return documentRepository.update(created.id, { status: 'failed', errorMessage: parsed.error || 'Could not extract text.' });
+      const failed = await documentRepository.update(created.id, { status: 'failed', errorMessage: parsed.error || 'Could not read this file.' });
+      failed.detail = parsed.detail || '';
+      return failed;
     }
 
     return documentRepository.update(created.id, {

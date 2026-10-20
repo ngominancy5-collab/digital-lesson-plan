@@ -1,10 +1,12 @@
 import crypto from 'node:crypto';
+import prisma from '../config/database.js';
 import { hashPassword } from '../utils/password.js';
 import { mapUser, parseRole } from '../utils/mappers.js';
 import { AppError } from '../utils/errors.js';
 import { assertInstitutionForRole } from './institutionService.js';
-import { trySendMail } from './emailService.js';
+import { emailDeliveryConfigured, loginTemplateName, sendNotification } from './nexusService.js';
 import * as userRepository from '../repositories/userRepository.js';
+import { recordActivity } from './activityService.js';
 
 function temporaryPassword() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
@@ -18,6 +20,10 @@ function temporaryPassword() {
 
 async function unknownPasswordHash() {
   return hashPassword(crypto.randomBytes(32).toString('hex'));
+}
+
+function captureOnly() {
+  return process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() === 'true';
 }
 
 export async function createAccount(input) {
@@ -47,6 +53,7 @@ export async function createAccount(input) {
     role,
     accountStatus: 'pending',
     mustChangePassword: false,
+    roleConfirmed: role === 'admin',
     profile: {
       create: {
         institution,
@@ -59,6 +66,14 @@ export async function createAccount(input) {
     },
   });
 
+  await recordActivity({
+    type: 'user.registered',
+    userId: user.id,
+    actorRole: user.role,
+    summary: 'Administrator created an account',
+    targetType: 'user',
+    targetId: user.id,
+  });
   return mapUser(user);
 }
 
@@ -67,7 +82,16 @@ export async function listAccounts() {
   return users.map(mapUser);
 }
 
-export async function approveAccount(userId) {
+function explicitTeachingRole(input) {
+  const value = String(input || '').trim().toLowerCase();
+  if (value === 'teacher') return 'teacher';
+  if (value === 'lecturer') return 'lecturer';
+  return '';
+}
+
+export async function approveAccount(userId, input = {}, actorId) {
+  if (!actorId) throw new AppError('Administrator access is required.', 403);
+  if (actorId === userId) throw new AppError('You cannot approve your own account.', 403);
   const user = await userRepository.findByIdWithProfile(userId);
   if (!user) throw new AppError('Account not found.', 404);
   if (user.accountStatus === 'approved' && user.mustChangePassword) {
@@ -76,48 +100,116 @@ export async function approveAccount(userId) {
   if (user.accountStatus === 'approved') {
     throw new AppError('This account is already approved.');
   }
+  if (!emailDeliveryConfigured() && !captureOnly()) {
+    throw new AppError('Login email is not available because email delivery is not configured.', 503);
+  }
 
+  const requested = explicitTeachingRole(input.role);
+  if (user.role === 'admin') {
+    if (requested) throw new AppError('An administrator account cannot be assigned Teacher or Lecturer here.', 400);
+  } else if (!requested) {
+    throw new AppError('Select Teacher or Lecturer before approving this account.', 400);
+  }
+
+  const assignedRole = user.role === 'admin' ? 'admin' : requested;
+  const roleLabel = assignedRole === 'teacher' ? 'Teacher' : assignedRole === 'lecturer' ? 'Lecturer' : 'Administrator';
   const temporary = temporaryPassword();
-  const approved = await userRepository.updateWithProfile(user.id, {
-    passwordHash: await hashPassword(temporary),
-    accountStatus: 'approved',
-    emailVerified: true,
-    mustChangePassword: true,
-  });
+  const nameTaken = await userRepository.findByUsernameWithProfile(user.fullName);
+  const username = user.username || (!nameTaken || nameTaken.id === user.id ? user.fullName : user.email);
+  const passwordHash = await hashPassword(temporary);
+  const approved = await prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id: user.id },
+      data: {
+        username,
+        passwordHash,
+        role: assignedRole,
+        accountStatus: 'approved',
+        emailVerified: true,
+        mustChangePassword: true,
+        roleConfirmed: assignedRole === 'admin',
+        approvedAt: new Date(),
+        approvedById: actorId,
+      },
+      include: { profile: true },
+    });
+    if (assignedRole !== 'admin') {
+      await tx.notification.create({
+        data: {
+          userId: updated.id,
+          title: 'Please confirm your role',
+          type: 'role-confirmation',
+          message: `Your account has been reviewed by the administrator. You have been assigned the role of ${roleLabel}. Please confirm that this role is correct to continue using PlanWise AI.`,
+        },
+      });
+    }
+    return updated;
+  }, { maxWait: 15000, timeout: 30000 });
 
-  const delivery = await trySendMail({
-    to: approved.email,
-    subject: 'Your PlanWise AI account is approved',
-    text: `Hi ${approved.fullName || 'there'},\n\nYour PlanWise AI account has been approved.\n\nEmail: ${approved.email}\nTemporary password: ${temporary}\n\nSign in and you will be asked to choose a new password.\n\n— PlanWise AI`,
-    html: `<div style="font-family:Segoe UI,Arial,sans-serif;color:#1f2c26;line-height:1.5">
-  <h2 style="color:#1a3026">Your PlanWise AI account is approved</h2>
-  <p>Hi ${approved.fullName || 'there'},</p>
-  <p>Your account has been approved. Sign in with:</p>
-  <p><strong>Email:</strong> ${approved.email}<br><strong>Temporary password:</strong> ${temporary}</p>
-  <p style="color:#6a746c;font-size:13px">You will be asked to choose a new password after signing in.</p>
-</div>`,
-  });
+  try {
+    await sendNotification({
+      template: loginTemplateName(),
+      to: approved.email,
+      data: {
+        user_name: username,
+        email: approved.email,
+        password: temporary,
+      },
+    });
+  } catch (error) {
+    await prisma.notification.deleteMany({ where: { userId: user.id, type: 'role-confirmation', isRead: false } }).catch(() => {});
+    await userRepository.updateWithProfile(user.id, {
+      username: user.username,
+      passwordHash: await unknownPasswordHash(),
+      role: user.role,
+      accountStatus: user.accountStatus,
+      emailVerified: user.emailVerified,
+      mustChangePassword: user.mustChangePassword,
+      roleConfirmed: user.roleConfirmed,
+      approvedAt: null,
+      approvedById: null,
+    }).catch(() => {});
+    console.error('Nexus login email failed.', error.status || error.code || 'failed');
+    throw new AppError('The account was not approved because the login email was not accepted.', 502);
+  }
 
-  return { user: mapUser(approved), temporaryPassword: temporary, emailed: delivery.sent };
+  await recordActivity({
+    userId: approved.id,
+    actorRole: assignedRole,
+    type: 'admin.approve',
+    summary: assignedRole === 'admin' ? 'Account approved and login email sent' : `Assigned ${roleLabel} and sent login email`,
+    targetType: 'user',
+    targetId: approved.id,
+    meta: { approvedById: actorId },
+  });
+  return mapUser(approved);
 }
 
-async function setStatus(userId, accountStatus) {
+async function setStatus(userId, accountStatus, type) {
   const user = await userRepository.findByIdWithProfile(userId);
   if (!user) throw new AppError('Account not found.', 404);
   const updated = await userRepository.updateWithProfile(userId, { accountStatus });
+  await recordActivity({
+    userId,
+    actorRole: user.role,
+    type,
+    summary: `Account marked ${accountStatus}`,
+    targetType: 'user',
+    targetId: userId,
+  });
   return mapUser(updated);
 }
 
 export function rejectAccount(userId) {
-  return setStatus(userId, 'rejected');
+  return setStatus(userId, 'rejected', 'admin.reject');
 }
 
 export function suspendAccount(userId) {
-  return setStatus(userId, 'suspended');
+  return setStatus(userId, 'suspended', 'admin.suspend');
 }
 
 export function deactivateAccount(userId) {
-  return setStatus(userId, 'inactive');
+  return setStatus(userId, 'inactive', 'admin.deactivate');
 }
 
 export async function restoreAccount(userId) {
@@ -127,6 +219,14 @@ export async function restoreAccount(userId) {
     throw new AppError('Only a suspended or inactive account can be restored.');
   }
   const updated = await userRepository.updateWithProfile(userId, { accountStatus: 'approved', emailVerified: true });
+  await recordActivity({
+    userId,
+    actorRole: user.role,
+    type: 'admin.restore',
+    summary: 'Account restored',
+    targetType: 'user',
+    targetId: userId,
+  });
   return mapUser(updated);
 }
 

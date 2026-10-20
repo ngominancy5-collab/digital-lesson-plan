@@ -2,6 +2,7 @@ import { AppError } from '../utils/errors.js';
 import { mapAssessment } from '../utils/mappers.js';
 import { completeJson } from './ai/aiClient.js';
 import * as assessmentRepository from '../repositories/assessmentRepository.js';
+import { recordActivity } from './activityService.js';
 import * as documentRepository from '../repositories/documentRepository.js';
 import { notify } from './notificationService.js';
 
@@ -29,6 +30,14 @@ export async function createAssessment(userId, body) {
     status: body.status || 'draft',
     questions: body.questions || [],
     meta: body.meta || {},
+  });
+  await recordActivity({
+    userId,
+    type: row.meta?.generated ? 'ai.assessment' : 'assessment.created',
+    summary: row.meta?.generated ? 'AI assessment saved' : 'Assessment saved',
+    targetType: 'assessment',
+    targetId: row.id,
+    meta: { title: row.title },
   });
   return mapAssessment(row);
 }
@@ -81,7 +90,7 @@ ${String(materialText).slice(0, 12000)}
 Question types allowed: ${(body.questionTypes || ['multiple-choice', 'true-false', 'short-answer']).join(', ')}
 Marks per question: ${body.marksPerQuestion || 2}
 Total marks target: ${body.totalMarks || count * 2}
-Time allowed: ${body.timeAllowed || '40 minutes'}
+Time allowed: ${body.timeAllowed || 'Not specified. Leave timeAllowed empty.'}
 Topics include: ${body.topicsInclude || 'any'}
 Topics exclude: ${body.topicsExclude || 'none'}
 

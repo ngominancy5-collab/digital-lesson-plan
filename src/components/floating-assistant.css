@@ -391,6 +391,24 @@
   display: none;
 }
 
+.fa-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 12px 8px;
+}
+
+.fa-drawer .pw-notice,
+.fa-panel .pw-notice {
+  max-width: 100%;
+}
+
+.fa-panel .pw-notice {
+  max-width: 100%;
+  margin-left: 12px;
+  margin-right: 12px;
+}
+
 .fa-file-chip {
   display: flex;
   align-items: center;
@@ -403,11 +421,20 @@
   font-size: 0.74rem;
 }
 
+.fa-file-list .fa-file-chip {
+  margin: 0;
+}
+
 .fa-file-chip strong {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fa-file-chip span {
+  color: #6a746c;
   white-space: nowrap;
 }
 

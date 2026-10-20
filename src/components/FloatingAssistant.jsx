@@ -8,7 +8,8 @@ import {
   X,
 } from 'lucide-react';
 import { ACCEPT_ATTR, ACCEPTED_EXTENSIONS, extractLocalDocument, fileExtension, fileToBase64 } from '../lib/documentExtractor';
-import { api, streamAiChat } from '../services/api.js';
+import { api, calendarApi, streamAiChat } from '../services/api.js';
+import Notice from './Notice.jsx';
 import './floating-assistant.css';
 
 const HELP_STARTERS = [
@@ -83,6 +84,36 @@ function nowTime() {
   return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+const FOCUS_TITLES = {
+  plans: 'Lesson Plan Assistant',
+  'create-plan': 'Lesson Plan Assistant',
+  calendar: 'Calendar Assistant',
+  assessments: 'Assessment Assistant',
+  'paper-marking': 'Paper Marking Assistant',
+  courses: 'Courses Assistant',
+  'course-detail': 'Courses Assistant',
+  'upload-course': 'Courses Assistant',
+  resources: 'Courses Assistant',
+};
+
+function focusTitle(section) {
+  return FOCUS_TITLES[section] || 'PlanWise Assistant';
+}
+
+function takeCalendarSuggestion(text) {
+  const source = String(text || '');
+  const match = source.match(/CALENDAR_SUGGESTION:\s*(\{[\s\S]*?\})/);
+  if (!match) return { text: source.trim(), suggestion: null };
+  let suggestion = null;
+  try {
+    suggestion = JSON.parse(match[1]);
+  } catch {
+    suggestion = null;
+  }
+  if (!suggestion?.title || !suggestion?.date) suggestion = null;
+  return { text: source.replace(match[0], '').trim(), suggestion };
+}
+
 export default function FloatingAssistant({
   isAuthenticated = false,
   user = null,
@@ -94,6 +125,8 @@ export default function FloatingAssistant({
   initialPrompt = '',
   material = null,
   onMaterialChange,
+  calendarEvents = [],
+  onCalendarCreated,
   corner = 'right',
 }) {
   const mode = isAuthenticated ? 'interactive' : 'help';
@@ -112,6 +145,7 @@ export default function FloatingAssistant({
   const [uploading, setUploading] = useState(false);
   const listRef = useRef(null);
   const fileRef = useRef(null);
+  const fileMemory = useRef(new Map());
   const abortRef = useRef(null);
   const handledPrompt = useRef('');
 
@@ -148,12 +182,14 @@ export default function FloatingAssistant({
         },
       ]);
     } else {
-      const first = user?.name?.split(' ')[0] || '';
+      const name = String(user?.name || '').trim();
       setMessages([
         {
           id: 'welcome-ai',
           role: 'assistant',
-          text: `Hello${first ? ` ${first}` : ''}! 👋 I'm your AI teaching assistant. I can help you navigate the system, create lesson plans, manage your calendar, build assessments, mark papers and more.`,
+          text: name
+            ? `Hello, ${name}! 👋 How can I help you today?`
+            : 'Hello! 👋 How can I help you today?',
           time: nowTime(),
           showQuick: true,
         },
@@ -184,7 +220,7 @@ export default function FloatingAssistant({
       { keys: ['assistant', 'talk to ai', 'full ai'], section: 'assistant', reply: 'Opening the full AI Assistant.' },
       { keys: ['setting', 'profile'], section: 'settings', reply: 'Opening Settings.' },
       { keys: ['dashboard', 'home'], section: 'dashboard', reply: 'Taking you to the dashboard.' },
-      { keys: ['clock in', 'attendance', 'clock out'], section: 'dashboard', reply: 'Attendance controls are on the dashboard and left sidebar. Opening the dashboard now.' },
+      { keys: ['clock in', 'attendance', 'clock out'], section: 'dashboard', reply: 'Attendance controls are on the dashboard. Opening the dashboard now.' },
     ];
     const hit = routes.find((route) => route.keys.some((key) => text.includes(key)));
     if (!hit) return null;
@@ -219,11 +255,13 @@ export default function FloatingAssistant({
       .map((item) => ({ role: item.role, content: item.text }));
 
     const contextHints = {
-      calendar: 'Focus on scheduling, lessons this week, and calendar organisation.',
-      assessments: 'Focus on generating questions, MCQs, difficulty, and marking guides.',
-      plans: 'Focus on lesson planning, objectives, activities, and editing plans.',
-      'paper-marking': 'Focus on marking keys, student papers, OCR, marks review, and feedback.',
-      dashboard: 'Help the educator decide what to do next across the workspace.',
+      calendar: 'Calendar Assistant. Prioritise events, schedules, deadlines, and timetables. Use the saved events and any uploaded schedule. Never claim an event was created.',
+      assessments: 'Assessment Assistant. Prioritise assessment creation and questions based on the supplied teaching materials. Do not invent questions when no source material is available.',
+      plans: 'Lesson Plan Assistant. Prioritise generating, summarising, editing, and explaining lesson plans from the notes and documents the user supplied.',
+      'create-plan': 'Lesson Plan Assistant. Prioritise generating, summarising, editing, and explaining lesson plans from the notes and documents the user supplied.',
+      'paper-marking': 'Paper Marking Assistant. Prioritise marking, marking schemes, and comparing student answers with the supplied criteria. Do not guess marks without those materials.',
+      courses: 'Courses Assistant. Help manage subjects and the materials saved for each subject.',
+      dashboard: 'PlanWise Assistant. Help the educator decide what to do next across the workspace.',
     };
 
     const payload = {
@@ -241,6 +279,13 @@ export default function FloatingAssistant({
         activeSection,
         sectionHint: contextHints[activeSection] || `User is currently in ${contextLabel}.`,
         materialName: material?.status === 'ready' ? material.name : '',
+        calendarEvents: (calendarEvents || []).slice(0, 30).map((event) => ({
+          title: event.title,
+          date: event.date,
+          startTime: event.startTime,
+          endTime: event.endTime,
+          type: event.type,
+        })),
       },
       difficulty: 'Intermediate',
     };
@@ -286,12 +331,14 @@ export default function FloatingAssistant({
       }
 
       if (finalResult?.conversationId) setConversationId(finalResult.conversationId);
+      const parsed = takeCalendarSuggestion(finalResult?.reply || '');
       setMessages((current) => current.map((item) => (
         item.id === botId
           ? {
             ...item,
             streaming: false,
-            text: finalResult?.reply || item.text || 'I could not complete that reply. Try again, or open the full AI Assistant.',
+            text: parsed.text || item.text.replace(/CALENDAR_SUGGESTION:[\s\S]*$/, '').trim() || 'I could not complete that reply. Try again.',
+            calendarSuggestion: parsed.suggestion,
           }
           : item
       )));
@@ -334,69 +381,134 @@ export default function FloatingAssistant({
     ]);
   }
 
-  async function processFile(file) {
-    if (!file || !isAuthenticated || uploading || busy) return;
-    const ext = fileExtension(file.name);
-    setUploading(true);
+  function materialFiles(current = material) {
+    if (!current) return [];
+    if (Array.isArray(current.files) && current.files.length) return current.files;
+    return [current];
+  }
+
+  function publishFiles(files) {
+    const ready = files.filter((file) => file.status === 'ready' && file.text);
+    const processing = files.some((file) => file.status === 'processing');
+    const failed = files.find((file) => file.status === 'error');
     onMaterialChange?.({
-      id: `file-${Date.now()}`,
-      name: file.name,
-      type: ext.replace('.', '').toUpperCase() || 'FILE',
-      size: file.size,
-      status: 'processing',
-      progress: 10,
-      text: '',
-      error: '',
+      id: 'batch',
+      name: files.map((file) => file.name).join(', '),
+      status: processing ? 'processing' : ready.length ? 'ready' : 'error',
+      text: ready.map((file) => `File: ${file.name}\n${file.text}`).join('\n\n'),
+      error: failed?.error || '',
+      files,
     });
-    try {
-      if (!ACCEPTED_EXTENSIONS.includes(ext)) {
-        throw new Error('Please upload a PDF, Word, PowerPoint, or TXT file.');
-      }
-      let text = await extractLocalDocument(file);
-      if (!String(text || '').trim()) {
-        const contentBase64 = await fileToBase64(file);
-        const data = await api.post('/ai/extract', {
-          fileName: file.name,
-          mimeType: file.type,
-          contentBase64,
-        }).then((response) => response.data);
-        text = data.text;
-      }
-      if (!String(text || '').trim()) throw new Error('No readable text was found in this file.');
-      onMaterialChange?.({
-        id: `file-${Date.now()}`,
-        name: file.name,
-        type: ext.replace('.', '').toUpperCase() || 'FILE',
-        size: file.size,
-        status: 'ready',
-        progress: 100,
-        text,
-        error: '',
-        wordCount: String(text).trim().split(/\s+/).filter(Boolean).length,
-      });
-      setMessages((current) => [
-        ...current,
-        {
-          id: `bot-file-${Date.now()}`,
-          role: 'assistant',
-          text: `I've attached “${file.name}” to this chat. Ask me to summarise it, create a lesson plan, generate questions, or explain any topic from it.`,
-          time: nowTime(),
-        },
-      ]);
-    } catch (error) {
+  }
+
+  function removeMaterialFile(id) {
+    const files = materialFiles().filter((file) => file.id !== id);
+    if (!files.length) {
       onMaterialChange?.(null);
-      setMessages((current) => [
-        ...current,
-        {
-          id: `bot-file-err-${Date.now()}`,
-          role: 'assistant',
-          text: error.message || 'I could not process that file.',
-          time: nowTime(),
-        },
-      ]);
+      return;
+    }
+    publishFiles(files);
+  }
+
+  async function processFiles(fileList) {
+    const incoming = [...(fileList || [])];
+    if (!incoming.length || !isAuthenticated || uploading || busy) return;
+    setUploading(true);
+    let files = materialFiles().filter((item) => item.status !== 'error');
+    try {
+      for (const file of incoming) {
+        files = files.filter((item) => item.name !== file.name);
+        const ext = fileExtension(file.name);
+        const entry = {
+          id: `file-${Date.now()}-${file.name}`,
+          name: file.name,
+          type: ext.replace('.', '').toUpperCase() || 'FILE',
+          size: file.size,
+          status: 'processing',
+          stage: 'Extracting text',
+          text: '',
+          error: '',
+          detail: '',
+        };
+        fileMemory.current.set(entry.id, file);
+        files = [...files, entry];
+        publishFiles(files);
+        const slow = setTimeout(() => {
+          files = files.map((item) => (item.id === entry.id && item.status === 'processing' ? { ...item, stage: 'Reading scanned pages' } : item));
+          publishFiles(files);
+        }, 2500);
+        try {
+          if (file.size > 15 * 1024 * 1024) throw new Error('That file is larger than 15 MB.');
+          if (!ACCEPTED_EXTENSIONS.includes(ext)) throw new Error('Use a PDF, Word, PowerPoint, or TXT file.');
+          let text = await extractLocalDocument(file);
+          if (!String(text || '').trim()) {
+            const contentBase64 = await fileToBase64(file);
+            const data = await api.post('/ai/extract', {
+              fileName: file.name,
+              mimeType: file.type,
+              contentBase64,
+            }).then((response) => response.data);
+            text = data.text;
+          }
+          if (!String(text || '').trim()) throw new Error(`Could not read “${file.name}”.`);
+          files = files.map((item) => (item.id === entry.id ? { ...item, status: 'ready', stage: 'Ready', text, error: '', detail: '' } : item));
+        } catch (error) {
+          files = files.map((item) => (item.id === entry.id ? {
+            ...item,
+            status: 'error',
+            stage: '',
+            error: error.message || `Could not read “${file.name}”.`,
+            detail: error.detail || '',
+          } : item));
+        } finally {
+          clearTimeout(slow);
+        }
+        publishFiles(files);
+      }
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
+  async function retryFile(id) {
+    const file = fileMemory.current.get(id);
+    if (!file || uploading || busy) return;
+    const remaining = materialFiles().filter((item) => item.id !== id);
+    if (remaining.length) publishFiles(remaining);
+    else onMaterialChange?.(null);
+    await processFiles([file]);
+  }
+
+  async function confirmCalendarEvent(item) {
+    const suggestion = item.calendarSuggestion;
+    if (!suggestion?.title || !suggestion?.date) return;
+    setBusy(true);
+    try {
+      const created = await calendarApi.create({
+        title: suggestion.title,
+        date: suggestion.date,
+        startTime: suggestion.startTime || '09:00',
+        endTime: suggestion.endTime || '10:00',
+        type: suggestion.type || 'event',
+        description: suggestion.description || '',
+        status: 'confirmed',
+        source: 'assistant',
+      });
+      onCalendarCreated?.(created);
+      setMessages((current) => current.map((entry) => (
+        entry.id === item.id
+          ? { ...entry, calendarSuggestion: null, text: `${entry.text}\n\n${created.title} was added to the calendar.` }
+          : entry
+      )));
+    } catch (error) {
+      setMessages((current) => current.map((entry) => (
+        entry.id === item.id
+          ? { ...entry, text: `${entry.text}\n\nThe event was not added. ${error.message || 'Please try again from the calendar.'}` }
+          : entry
+      )));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -449,7 +561,7 @@ export default function FloatingAssistant({
           <header className="fa-header">
             <div className="fa-header-copy">
               <strong>
-                <Sparkles size={15} /> {mode === 'help' ? 'How PlanWise works' : 'AI Assistant'}
+                <Sparkles size={15} /> {mode === 'help' ? 'How PlanWise works' : focusTitle(activeSection)}
               </strong>
               {mode === 'interactive' ? (
                 <span className="fa-online"><i /> Online</span>
@@ -482,6 +594,13 @@ export default function FloatingAssistant({
                     </button>
                   </div>
                 )}
+                {item.calendarSuggestion && (
+                  <div className="fa-cta-row">
+                    <button type="button" className="fa-cta primary" disabled={busy} onClick={() => confirmCalendarEvent(item)}>
+                      Add this event
+                    </button>
+                  </div>
+                )}
                 {item.navTarget && (
                   <div className="fa-cta-row">
                     <button type="button" className="fa-cta primary" onClick={() => { onNavigate?.(item.navTarget); setOpen(false); }}>
@@ -511,15 +630,28 @@ export default function FloatingAssistant({
             </>
           )}
 
-          {mode === 'interactive' && material?.status === 'ready' && (
-            <div className="fa-file-chip">
-              <Paperclip size={13} />
-              <strong>{material.name}</strong>
-              <button type="button" aria-label="Remove file" onClick={() => onMaterialChange?.(null)}>
-                <X size={13} />
-              </button>
+          {mode === 'interactive' && materialFiles().length > 0 && (
+            <div className="fa-file-list">
+              {materialFiles().map((file) => (
+                <div className="fa-file-chip" key={file.id || file.name}>
+                  <Paperclip size={13} />
+                  <strong>{file.name}</strong>
+                  <span>{file.status === 'processing' ? (file.stage || 'Extracting text') : file.status === 'ready' ? 'Ready' : 'Needs attention'}</span>
+                  <button type="button" aria-label={`Remove ${file.name}`} onClick={() => removeMaterialFile(file.id)}>
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
+          {mode === 'interactive' && materialFiles().filter((file) => file.status === 'error').map((file) => (
+            <Notice
+              key={`notice-${file.id}`}
+              message={file.error || `Could not read ${file.name}.`}
+              detail={file.detail}
+              onRetry={() => retryFile(file.id)}
+            />
+          ))}
 
           <form className="fa-composer" onSubmit={handleSend}>
             {mode === 'interactive' && (
@@ -528,8 +660,9 @@ export default function FloatingAssistant({
                   ref={fileRef}
                   className="fa-attach-input"
                   type="file"
+                  multiple
                   accept={ACCEPT_ATTR}
-                  onChange={(event) => processFile(event.target.files?.[0])}
+                  onChange={(event) => processFiles(event.target.files)}
                 />
                 <button
                   type="button"

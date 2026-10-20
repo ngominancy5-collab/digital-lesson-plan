@@ -19,6 +19,7 @@ router.post('/login', authLimiter, authController.login);
 router.post('/forgot-password', authLimiter, authController.forgotPassword);
 router.post('/reset-password', authLimiter, authController.resetPassword);
 router.post('/change-password', requireAuth, authController.changePassword);
+router.post('/confirm-role', requireAuth, authController.confirmRole);
 router.get('/me', requireAuth, authController.me);
 router.put('/me', requireAuth, authController.updateMe);
 

@@ -13,6 +13,7 @@ enum UserRole {
   admin
   student
   coordinator
+  unassigned
 }
 
 enum DocumentStatus {
@@ -47,7 +48,11 @@ model User {
   role                UserRole      @default(lecturer)
   accountStatus       AccountStatus @default(approved)
   mustChangePassword  Boolean       @default(false)
+  roleConfirmed       Boolean       @default(true)
+  approvedAt          DateTime?
+  approvedById        String?
   profileImage        String?
+  lastLoginAt         DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -64,8 +69,29 @@ model User {
   markedPapers            MarkedPaper[]
   notifications           Notification[]
   notificationPreference  NotificationPreference?
+  activities              ActivityLog[]
 
   @@index([email])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  actorRole  String   @default("")
+  type       String
+  summary    String
+  targetType String   @default("")
+  targetId   String   @default("")
+  outcome    String   @default("success")
+  meta       Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([type])
+  @@index([userId])
+  @@index([outcome])
 }
 
 model UserProfile {

@@ -33,25 +33,28 @@ export async function getResource(userId, id) {
   return mapResource(doc, { includeText: true });
 }
 
-export async function uploadResource(userId, file) {
+export async function uploadResource(userId, file, overrides = {}) {
   const doc = await uploadDocument(userId, file);
   if (doc.status !== 'ready' || !String(doc.extractedText || '').trim()) {
-    throw new AppError(doc.errorMessage || 'The file was uploaded, but no readable text could be extracted.', 422);
+    throw new AppError(doc.errorMessage || 'The file was uploaded, but no readable text could be extracted.', 422, doc.detail || null);
   }
   const outline = analyzeCourseOutline(doc.extractedText);
   const saved = await documentRepository.update(doc.id, {
-    courseName: outline.courseName,
-    courseCode: outline.courseCode,
+    courseName: String(overrides.courseName || '').trim() || outline.courseName,
+    courseCode: String(overrides.courseCode || '').trim() || outline.courseCode,
     description: outline.description,
     topics: outline.topics,
     objectives: outline.objectives,
   });
+  const mapped = mapResource(saved, { includeText: true });
+  const note = String(saved.extractedText || '').match(/\nNote: ([^\n]+)\s*$/);
+  if (note) mapped.extractionNote = note[1];
   await notify(userId, {
     title: 'Resource saved',
     message: `${saved.courseName || saved.originalName} is in your library.`,
     type: 'resource',
   });
-  return mapResource(saved, { includeText: true });
+  return mapped;
 }
 
 export async function removeResource(userId, id) {

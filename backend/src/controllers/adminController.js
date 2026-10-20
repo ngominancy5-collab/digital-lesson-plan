@@ -12,15 +12,8 @@ export const create = asyncHandler(async (req, res) => {
 });
 
 export const approve = asyncHandler(async (req, res) => {
-  const { user, temporaryPassword, emailed } = await adminService.approveAccount(req.params.id);
-  res.json({
-    message: emailed
-      ? 'Account approved. A temporary password was emailed to the user.'
-      : 'Account approved. Share the temporary password with the user.',
-    user,
-    temporaryPassword,
-    emailed,
-  });
+  const user = await adminService.approveAccount(req.params.id, req.body || {}, req.userId);
+  res.json({ message: 'Account approved. Login credentials were queued by email.', user });
 });
 
 export const reject = asyncHandler(async (req, res) => {

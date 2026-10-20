@@ -2,16 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 process.env.NODE_ENV = 'test';
+process.env.NEXUS_CAPTURE = 'true';
+process.env.NEXUS_API_KEY = 'test-key';
+process.env.NEXUS_BASE_URL = 'https://nexuszm.com/api/v1';
 
 const { forgotPassword, resetPassword, registerUser, loginUser } = await import('../src/services/authService.js');
+const { takeCapturedNotifications } = await import('../src/services/nexusService.js');
 const prisma = (await import('../src/config/database.js')).default;
 
 const email = `planwise.reset.${Date.now()}@example.com`;
 const originalPassword = 'Planwise1!';
-
-function tokenFrom(link) {
-  return link.match(/token=([a-f0-9]+)/)?.[1] || '';
-}
 
 test.after(async () => {
   await prisma.user.deleteMany({ where: { email } }).catch(() => {});
@@ -23,9 +23,11 @@ test('password reset flow', async (t) => {
     await assert.rejects(() => forgotPassword('not-an-email'), (error) => error.status === 400);
     const hidden = await forgotPassword('nobody.planwise@example.com');
     assert.equal(hidden.resetLink, undefined);
+    assert.match(hidden.message, /If an account exists/i);
   });
 
-  await t.test('a reset link is returned and the token works only once', async () => {
+  await t.test('a configured sender emails one temporary password', async () => {
+    takeCapturedNotifications();
     await registerUser({
       fullName: 'Reset Check',
       email,
@@ -36,31 +38,30 @@ test('password reset flow', async (t) => {
     });
 
     const sent = await forgotPassword(email);
-    assert.match(sent.resetLink, /http:\/\/localhost:5180\/reset-password\?token=/);
-    const token = tokenFrom(sent.resetLink);
-    assert.ok(token);
-
-    await resetPassword({ token, password: 'Planwise2!' });
+    assert.match(sent.message, /If an account exists/);
+    assert.match(sent.message, /temporary password/i);
+    const [notice] = takeCapturedNotifications();
+    assert.equal(notice.template, 'Planwise Ai Login credentials');
+    assert.match(notice.data.password, /^Pw.+9a$/);
     await assert.rejects(
       () => loginUser({ email, password: originalPassword }),
       (error) => error.status === 401,
     );
-    const session = await loginUser({ email, password: 'Planwise2!' });
+    const session = await loginUser({ email, password: notice.data.password });
     assert.equal(session.user.email, email);
-
-    await assert.rejects(
-      () => resetPassword({ token, password: 'Planwise3!' }),
-      (error) => error.status === 400 && /already been used/i.test(error.message),
-    );
+    assert.equal(session.user.mustChangePassword, true);
   });
 
   await t.test('expired and unknown tokens are rejected', async () => {
-    const { resetLink } = await forgotPassword(email);
-    const token = tokenFrom(resetLink);
-    const { hashToken } = await import('../src/utils/tokens.js');
-    await prisma.passwordResetToken.updateMany({
-      where: { tokenHash: hashToken(token) },
-      data: { expiresAt: new Date(Date.now() - 60_000), usedAt: null },
+    const user = await prisma.user.findUnique({ where: { email } });
+    const { createResetToken, hashToken } = await import('../src/utils/tokens.js');
+    const { token } = createResetToken();
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashToken(token),
+        expiresAt: new Date(Date.now() - 60_000),
+      },
     });
     await assert.rejects(
       () => resetPassword({ token, password: 'Planwise4!' }),

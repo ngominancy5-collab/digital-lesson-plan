@@ -4,11 +4,11 @@ import { createRequire } from 'node:module';
 import { isReadableEducationalText, readableWordCount } from '../../../shared/learningEngine.js';
 
 const require = createRequire(import.meta.url);
-let pdfParse = null;
+let PDFParse = null;
 try {
-  pdfParse = require('pdf-parse');
+  PDFParse = require('pdf-parse').PDFParse;
 } catch {
-  pdfParse = null;
+  PDFParse = null;
 }
 
 const TEXT_EXTENSIONS = ['.txt', '.md', '.csv', '.html', '.htm', '.rtf'];
@@ -107,25 +107,100 @@ function extractPdfText(buffer) {
   return [...literals, ...hexStrings].join(' ').replace(/[ \t]{2,}/g, ' ').replace(/\s+\n/g, '\n').trim();
 }
 
-function printableText(value) {
+function normalizePdfText(value) {
   return String(value || '')
-    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, ' ')
-    .replace(/[^\S\n]{2,}/g, ' ')
+    .replace(/\u0000/g, '')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/[ \t]*\n[ \t]*/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
-async function extractPdf(buffer) {
-  if (pdfParse) {
-    try {
-      const parsed = await pdfParse(buffer);
-      const text = printableText(parsed?.text || '');
-      if (isReadableEducationalText(text)) return text;
-    } catch {
-      // Fall through to the lightweight extractor.
-    }
+function pdfFailure(error) {
+  const message = String(error?.message || error?.name || '');
+  if (/password/i.test(message) || error?.name === 'PasswordException') {
+    const failure = new Error('This PDF is password-protected.');
+    failure.code = 'password';
+    throw failure;
   }
-  return printableText(extractPdfText(buffer));
+  const failure = new Error('This PDF could not be read. The file may be damaged.');
+  failure.code = 'corrupt';
+  throw failure;
+}
+
+async function ocrWeakPages(parser, pageNumbers) {
+  if (!pageNumbers.length || process.env.PLANWISE_OCR === '0') return {};
+  let createWorker;
+  try {
+    ({ createWorker } = await import('tesseract.js'));
+  } catch {
+    return {};
+  }
+  let shots;
+  try {
+    shots = await parser.getScreenshot({
+      partial: pageNumbers.slice(0, 8),
+      imageBuffer: true,
+      scale: 1.5,
+    });
+  } catch {
+    return {};
+  }
+  const worker = await createWorker('eng');
+  const found = {};
+  try {
+    for (const page of shots.pages || []) {
+      if (!page?.data) continue;
+      const result = await worker.recognize(Buffer.from(page.data));
+      const text = normalizePdfText(result?.data?.text || '');
+      if (text) found[page.pageNumber || page.num] = text;
+    }
+  } finally {
+    await worker.terminate();
+  }
+  return found;
+}
+
+async function extractPdf(buffer) {
+  if (!PDFParse) pdfFailure(new Error('PDF parser is unavailable.'));
+  let parser = null;
+  try {
+    parser = new PDFParse({ data: new Uint8Array(buffer) });
+    const pageLimit = 40;
+    const result = await parser.getText({ first: pageLimit });
+    const pages = (result.pages || []).map((page) => ({
+      num: page.num,
+      text: normalizePdfText(page.text),
+    }));
+    const weak = pages.filter((page) => readableWordCount(page.text) < 8).map((page) => page.num);
+    const ocr = weak.length ? await ocrWeakPages(parser, weak) : {};
+    pages.forEach((page) => {
+      if (ocr[page.num]) page.text = [page.text, ocr[page.num]].filter(Boolean).join('\n');
+    });
+    const unreadPages = pages.filter((page) => readableWordCount(page.text) < 8).map((page) => page.num);
+    const combined = pages
+      .filter((page) => page.text)
+      .map((page) => `--- Page ${page.num} ---\n${page.text}`)
+      .join('\n\n')
+      || normalizePdfText(result.text);
+    return {
+      text: combined,
+      unreadPages,
+      pageCount: result.total || pages.length,
+      truncated: (result.total || pages.length) > pageLimit,
+      usedOcr: Object.keys(ocr).length > 0,
+    };
+  } catch (error) {
+    if (error?.code === 'password' || error?.code === 'corrupt') throw error;
+    const fallback = normalizePdfText(extractPdfText(buffer));
+    if (isReadableEducationalText(fallback)) {
+      return { text: fallback, unreadPages: [], pageCount: 0, usedOcr: false };
+    }
+    pdfFailure(error);
+  } finally {
+    await parser?.destroy?.().catch(() => {});
+  }
+  return { text: '', unreadPages: [], pageCount: 0, usedOcr: false };
 }
 
 async function extractZipDocument(buffer, ext) {
@@ -180,12 +255,14 @@ export function isZipDocument(buffer) {
 async function extractLegacyDoc(buffer, name) {
   if (isZipDocument(buffer)) {
     return {
-      error: `“${name}” is a newer Word file saved with a .doc name. Upload it as .docx, or save a real Word 97–2003 document.`,
+      error: `“${name}” is a newer Word file.`,
+      detail: 'Upload it as DOCX.',
     };
   }
   if (!isOleCompound(buffer)) {
     return {
-      error: `“${name}” is not a Word 97–2003 document. Upload a real .doc file, or save it as .docx.`,
+      error: `“${name}” is not a Word 97–2003 document.`,
+      detail: 'Upload a real DOC file, or save it as DOCX.',
     };
   }
   const imported = await import('word-extractor');
@@ -208,7 +285,8 @@ export async function parseUploadedDocument({ fileName, mimeType, contentBase64,
     return {
       ok: false,
       fileName: name,
-      error: `“${name}” is not a supported learning file. Upload PDF, Word, PowerPoint, OpenDocument, TXT, MD, HTML, CSV, or RTF.`,
+      error: `“${name}” is not supported.`,
+      detail: 'Upload a PDF, Word, PowerPoint, TXT, or similar text file.',
     };
   }
 
@@ -216,26 +294,35 @@ export async function parseUploadedDocument({ fileName, mimeType, contentBase64,
   try {
     buffer = Buffer.from(contentBase64, 'base64');
   } catch {
-    return { ok: false, fileName: name, error: `The file “${name}” could not be read from the upload.` };
+    return { ok: false, fileName: name, error: `Could not read “${name}”.`, detail: 'The upload did not contain a readable file.' };
   }
 
   if (!buffer.length) {
-    return { ok: false, fileName: name, error: `“${name}” was empty, so it could not be analysed.` };
+    return { ok: false, fileName: name, error: `“${name}” is empty.`, detail: 'Choose a file that contains text.' };
   }
 
   const maxBytes = Number(process.env.MAX_UPLOAD_BYTES || 15 * 1024 * 1024);
   if (buffer.length > maxBytes) {
-    return { ok: false, fileName: name, error: `“${name}” is larger than the upload limit.` };
+    return { ok: false, fileName: name, error: `“${name}” is too large.`, detail: 'The limit is 15 MB.' };
   }
 
   try {
     let text = '';
-    if (ext === '.pdf') text = await extractPdf(buffer);
-    else if (ZIP_EXTENSIONS.includes(ext)) text = await extractZipDocument(buffer, ext);
+    let warning = '';
+    if (ext === '.pdf') {
+      const pdf = await extractPdf(buffer);
+      text = pdf.text;
+      if (pdf.unreadPages?.length) {
+        warning = `Pages ${pdf.unreadPages.join(', ')} had no readable text.`;
+      }
+      if (pdf.truncated) {
+        warning = [warning, 'Only the first 40 pages were read.'].filter(Boolean).join(' ');
+      }
+    } else if (ZIP_EXTENSIONS.includes(ext)) text = await extractZipDocument(buffer, ext);
     else if (TEXT_EXTENSIONS.includes(ext)) text = extractPlainText(buffer, ext);
     else if (ext === '.doc') {
       const legacy = await extractLegacyDoc(buffer, name);
-      if (legacy.error) return { ok: false, fileName: name, fileType: 'DOC', error: legacy.error };
+      if (legacy.error) return { ok: false, fileName: name, fileType: 'DOC', error: legacy.error, detail: legacy.detail || '' };
       text = legacy.text;
     } else if (ext === '.ppt') {
       const recovered = buffer.toString('utf8').replace(/[^\x09\x0A\x0D\x20-\x7E]/g, ' ').replace(/\s{2,}/g, ' ').trim();
@@ -243,19 +330,21 @@ export async function parseUploadedDocument({ fileName, mimeType, contentBase64,
         return {
           ok: false,
           fileName: name,
-          error: `“${name}” looks like an older binary Office file. I could not extract selectable text. Please save it as .docx, .pptx, or PDF and upload again.`,
+          error: `Could not read “${name}”.`,
+          detail: 'Save this older PowerPoint file as PPTX or PDF, then upload it again.',
         };
       }
       text = recovered;
     }
 
     const cleaned = String(text || '').replace(/\u0000/g, ' ').trim();
-    if (!isReadableEducationalText(cleaned) || readableWordCount(cleaned) < 16) {
+    if (readableWordCount(cleaned) < 8) {
       return {
         ok: false,
         fileName: name,
         fileType: ext.replace('.', '').toUpperCase(),
-        error: `I opened “${name}” but could not extract enough readable text. This often happens with scanned PDFs, image-only slides, or encoded fonts. Please upload a Word, PowerPoint, TXT, or text-based PDF file.`,
+        error: `Could not read “${name}”.`,
+        detail: warning || 'No readable text was found in this file.',
       };
     }
 
@@ -265,13 +354,22 @@ export async function parseUploadedDocument({ fileName, mimeType, contentBase64,
       fileType: ext.replace('.', '').toUpperCase(),
       mimeType: mimeType || '',
       wordCount: readableWordCount(cleaned),
-      text: cleaned,
+      text: warning ? `${cleaned}\n\nNote: ${warning}` : cleaned,
+      ...(warning ? { warning } : {}),
     };
   } catch (error) {
+    const raw = String(error?.message || '');
+    const safe = /node_modules|\\|[A-Za-z]:\\|\/users\//i.test(raw)
+      ? 'The file could not be processed.'
+      : (raw || 'The file could not be processed.');
+    const detail = error.code === 'password'
+      ? 'Remove the password and upload the PDF again.'
+      : safe;
     return {
       ok: false,
       fileName: name,
-      error: `I could not process “${name}”: ${error.message || 'unsupported or unreadable file'}. I did not analyse this file.`,
+      error: `Could not read “${name}”.`,
+      detail,
     };
   }
 }

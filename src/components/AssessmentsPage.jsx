@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Check, ClipboardCheck, Plus, Trash2, Wand2 } from 'lucide-react';
+import { Check, ClipboardCheck, Plus, Trash2 } from 'lucide-react';
 import { DIFFICULTY_LEVELS, QUESTION_TYPES, suggestCalendarFromAssessment } from '../../shared/learningEngine.js';
-import SectionAiPanel from './SectionAiPanel.jsx';
+import Notice from './Notice.jsx';
 
 function asQuiz(quiz) {
   return {
@@ -22,13 +22,14 @@ function asQuiz(quiz) {
   };
 }
 
-export default function AssessmentsPage({ assessments, quizzes = [], resources = [], difficulty, onGenerate, onSave, onDelete, onSchedule, onOpenAssistant, user }) {
+export default function AssessmentsPage({ assessments, quizzes = [], resources = [], courses = [], difficulty, onGenerate, onSave, onDelete, onSchedule }) {
   const library = [
     ...assessments.map((item) => ({ ...item, recordKind: 'assessment' })),
     ...quizzes.map(asQuiz),
   ];
   const [selectedId, setSelectedId] = useState(library[0]?.id || '');
   const [resourceId, setResourceId] = useState(resources[0]?.id || '');
+  const [subjectName, setSubjectName] = useState('');
   const [busy, setBusy] = useState(false);
   const [generator, setGenerator] = useState({
     count: 10,
@@ -36,7 +37,6 @@ export default function AssessmentsPage({ assessments, quizzes = [], resources =
     questionTypes: ['multiple-choice', 'true-false', 'short-answer'],
     marksPerQuestion: 2,
     totalMarks: 20,
-    timeAllowed: '40 minutes',
     topicsInclude: '',
     topicsExclude: '',
     kind: 'quiz',
@@ -88,17 +88,27 @@ export default function AssessmentsPage({ assessments, quizzes = [], resources =
           <h1>AI-generated assessments</h1>
           <p>Create quizzes and tests from uploaded course materials, then edit every question before publishing.</p>
         </div>
-        <button className="secondary-button" onClick={onOpenAssistant}><Wand2 size={15} /> Open AI Assistant</button>
       </div>
 
       <div className="assessments-with-ai">
       <div className="assessments-layout">
         <form className="panel-card assessment-builder" onSubmit={generate}>
           <div className="panel-head"><h3>Generate from uploaded material</h3></div>
+          <label className="field"><span>Subject</span>
+            <select value={subjectName} onChange={(event) => { setSubjectName(event.target.value); setResourceId(''); }}>
+              <option value="">All subjects</option>
+              {[...new Set([
+                ...courses.map((course) => course.name),
+                ...resources.map((item) => item.courseName),
+              ].filter(Boolean))].map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
           <label className="field"><span>Saved resource</span>
             <select value={resourceId} onChange={(event) => setResourceId(event.target.value)}>
               <option value="">Choose a resource</option>
-              {resources.map((item) => <option key={item.id} value={item.id}>{item.courseName || item.fileName}</option>)}
+              {resources
+                .filter((item) => !subjectName || !item.courseName || item.courseName === subjectName)
+                .map((item) => <option key={item.id} value={item.id}>{item.courseName ? `${item.courseName} · ` : ''}{item.fileName}</option>)}
             </select>
           </label>
           <div className="grid-2">
@@ -118,7 +128,6 @@ export default function AssessmentsPage({ assessments, quizzes = [], resources =
             <label className="field"><span>Number of questions</span><input type="number" min="1" max="40" value={generator.count} onChange={(event) => setGenerator({ ...generator, count: Number(event.target.value) })} /></label>
             <label className="field"><span>Marks per question</span><input type="number" min="1" value={generator.marksPerQuestion} onChange={(event) => setGenerator({ ...generator, marksPerQuestion: Number(event.target.value) })} /></label>
             <label className="field"><span>Total marks</span><input type="number" min="1" value={generator.totalMarks} onChange={(event) => setGenerator({ ...generator, totalMarks: Number(event.target.value) })} /></label>
-            <label className="field"><span>Time allowed</span><input value={generator.timeAllowed} onChange={(event) => setGenerator({ ...generator, timeAllowed: event.target.value })} /></label>
             <label className="field"><span>Topics to include</span><input value={generator.topicsInclude} placeholder="Optional" onChange={(event) => setGenerator({ ...generator, topicsInclude: event.target.value })} /></label>
             <label className="field"><span>Topics to exclude</span><input value={generator.topicsExclude} placeholder="Optional" onChange={(event) => setGenerator({ ...generator, topicsExclude: event.target.value })} /></label>
           </div>
@@ -127,7 +136,7 @@ export default function AssessmentsPage({ assessments, quizzes = [], resources =
               <button type="button" key={type.id} className={`choice-btn ${generator.questionTypes.includes(type.id) ? 'active' : ''}`} onClick={() => toggleType(type.id)}>{type.label}</button>
             ))}
           </div>
-          {error ? <div className="error-box">{error}</div> : null}
+          {error ? <Notice message={error} /> : null}
           <button className="primary-button" type="submit" disabled={busy}><Plus size={15} /> {busy ? 'Generating...' : 'Generate with AI'}</button>
         </form>
 
@@ -141,19 +150,6 @@ export default function AssessmentsPage({ assessments, quizzes = [], resources =
           )) : <p className="muted-text">No assessments yet.</p>}
         </div>
       </div>
-
-      <SectionAiPanel
-        user={user}
-        title="Assessment AI"
-        context="assessments"
-        subtitle="Generate questions, adjust difficulty, or improve marking guides."
-        starters={[
-          'Generate multiple-choice ideas',
-          'Create structured questions',
-          'Improve this assessment',
-        ]}
-        systemHint="You help teachers create and improve assessments, quizzes, MCQs, structured questions, difficulty, and marking guides."
-      />
       </div>
 
       {selected && (

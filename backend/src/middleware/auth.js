@@ -3,6 +3,21 @@ import { AppError } from '../utils/errors.js';
 import { assertApprovedAccount } from '../services/authService.js';
 import * as userRepository from '../repositories/userRepository.js';
 
+export function passwordChangeBlocks(user, url) {
+  if (!user?.mustChangePassword) return false;
+  const path = String(url || '').split('?')[0];
+  return !(path.endsWith('/auth/me') || path.endsWith('/auth/change-password'));
+}
+
+export function roleConfirmationBlocks(user, url) {
+  if (!user || user.role === 'admin' || user.roleConfirmed !== false) return false;
+  if (!['teacher', 'lecturer'].includes(user.role)) return false;
+  const path = String(url || '').split('?')[0];
+  if (path.endsWith('/auth/me') || path.endsWith('/auth/change-password') || path.endsWith('/auth/confirm-role')) return false;
+  if (path.includes('/notifications')) return false;
+  return true;
+}
+
 export async function requireAuth(req, _res, next) {
   try {
     const header = req.headers.authorization || '';
@@ -19,10 +34,11 @@ export async function requireAuth(req, _res, next) {
     const user = await userRepository.findByIdWithProfile(payload.sub);
     if (!user) throw new AppError('Account not found.', 401);
     assertApprovedAccount(user);
-    const path = String(req.originalUrl || '').split('?')[0];
-    const passwordChangeAllowed = path.endsWith('/auth/me') || path.endsWith('/auth/change-password');
-    if (user.mustChangePassword && !passwordChangeAllowed) {
-      throw new AppError('Change your password before continuing.', 403);
+    if (passwordChangeBlocks(user, req.originalUrl)) {
+      throw new AppError('Choose a new password before using the rest of PlanWise.', 403);
+    }
+    if (roleConfirmationBlocks(user, req.originalUrl)) {
+      throw new AppError('Confirm your assigned role before using the rest of PlanWise.', 403);
     }
 
     req.user = user;

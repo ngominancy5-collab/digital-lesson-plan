@@ -39,3 +39,8 @@ export const changePassword = asyncHandler(async (req, res) => {
   const user = await authService.changePassword(req.userId, req.body || {});
   res.json({ message: 'Password updated.', user });
 });
+
+export const confirmRole = asyncHandler(async (req, res) => {
+  const user = await authService.confirmAssignedRole(req.userId);
+  res.json({ message: 'Role confirmed.', user });
+});

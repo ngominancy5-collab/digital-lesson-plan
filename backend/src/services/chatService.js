@@ -1,5 +1,6 @@
 import { AppError } from '../utils/errors.js';
 import { mapUser } from '../utils/mappers.js';
+import { recordActivity } from './activityService.js';
 import { buildAssistantSystemPrompt, generateWithGemini } from './ai/geminiService.js';
 import { runLearningTurn, runLearningTurnStream } from './ai/learningAi.js';
 import { getLlmStatus } from './ai/aiClient.js';
@@ -65,7 +66,11 @@ export async function chat(userId, body, user) {
       materialText: body.materialText || '',
       materialName: body.materialName || '',
       difficulty: body.difficulty || 'Intermediate',
-      session: body.session || {},
+      session: {
+        ...(body.session || {}),
+        ownedDocumentTitles: documents.map((item) => item.title || item.originalName || item.fileName).filter(Boolean).slice(0, 20),
+        ownedPlanTitles: lessonPlans.map((item) => item.title || item.courseName).filter(Boolean).slice(0, 20),
+      },
       profile: body.profile || mapUser(user) || {},
       spec: body.spec || {},
       progress: body.progress || {},
@@ -95,6 +100,13 @@ export async function chat(userId, body, user) {
     result.session?.subject || body.materialName || message,
   );
 
+  await recordActivity({
+    userId,
+    type: 'ai.assistant',
+    summary: 'AI assistant reply saved',
+    targetType: 'conversation',
+    targetId: saved.id,
+  });
   return {
     ...result,
     conversationId: saved.id,
@@ -127,6 +139,10 @@ export async function chatStream(userId, body, user, res) {
     role: row.sender === 'assistant' ? 'assistant' : 'user',
     content: row.message,
   }));
+  const [lessonPlans, documents] = await Promise.all([
+    lessonPlanRepository.titlesForUser(userId),
+    documentRepository.titlesForUser(userId),
+  ]);
 
   let finalResult = null;
   try {
@@ -136,7 +152,11 @@ export async function chatStream(userId, body, user, res) {
       materialText: body.materialText || '',
       materialName: body.materialName || '',
       difficulty: body.difficulty || 'Intermediate',
-      session: body.session || {},
+      session: {
+        ...(body.session || {}),
+        ownedDocumentTitles: documents.map((item) => item.title || item.originalName || item.fileName).filter(Boolean).slice(0, 20),
+        ownedPlanTitles: lessonPlans.map((item) => item.title || item.courseName).filter(Boolean).slice(0, 20),
+      },
       profile: body.profile || mapUser(user) || {},
       spec: body.spec || {},
       progress: body.progress || {},

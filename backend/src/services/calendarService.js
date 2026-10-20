@@ -1,6 +1,7 @@
 import { AppError } from '../utils/errors.js';
 import { mapCalendarEvent } from '../utils/mappers.js';
 import * as calendarRepository from '../repositories/calendarRepository.js';
+import { recordActivity } from './activityService.js';
 
 function combineDateTime(date, time, fallbackHour = 9) {
   const day = String(date || '').slice(0, 10);
@@ -42,6 +43,14 @@ export async function createEvent(userId, body) {
     source: body.source || 'manual',
     lessonPlanId: body.lessonPlanId || null,
   });
+  await recordActivity({
+    userId,
+    type: 'calendar.created',
+    summary: 'Calendar event created',
+    targetType: 'calendar',
+    targetId: event.id,
+    meta: { title: event.title },
+  });
   return mapCalendarEvent(event);
 }
 
@@ -71,6 +80,14 @@ export async function updateEvent(userId, id, body) {
     status: body.status ?? existing.status,
     source: body.source ?? existing.source,
     lessonPlanId: body.lessonPlanId !== undefined ? body.lessonPlanId : existing.lessonPlanId,
+  });
+  await recordActivity({
+    userId,
+    type: 'calendar.updated',
+    summary: 'Calendar event updated',
+    targetType: 'calendar',
+    targetId: event.id,
+    meta: { title: event.title },
   });
   return mapCalendarEvent(event);
 }

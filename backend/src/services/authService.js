@@ -3,24 +3,13 @@ import { hashPassword, verifyPassword } from '../utils/password.js';
 import { signAccessToken, createResetToken, hashToken } from '../utils/tokens.js';
 import { mapUser, parseRole } from '../utils/mappers.js';
 import { AppError } from '../utils/errors.js';
-import { env } from '../config/env.js';
+import { env, unapprovedTestAccountsAllowed } from '../config/env.js';
+import { emailDeliveryConfigured, getNotificationStatus, loginTemplateName, passwordChangedTemplateData, passwordChangedTemplateName, sendNotification } from './nexusService.js';
 import { assertInstitutionForRole } from './institutionService.js';
-import { trySendMail } from './emailService.js';
 import * as userRepository from '../repositories/userRepository.js';
 import * as passwordResetRepository from '../repositories/passwordResetRepository.js';
-
-function emailShell(heading, bodyText, link) {
-  const text = `Hi ${bodyText.name || 'there'},\n\n${bodyText.intro}\n\n${link}\n\n${bodyText.outro}\n\n— PlanWise AI`;
-  const html = `<div style="font-family:Segoe UI,Arial,sans-serif;color:#1f2c26;line-height:1.5">
-  <h2 style="color:#1a3026">${heading}</h2>
-  <p>Hi ${bodyText.name || 'there'},</p>
-  <p>${bodyText.intro}</p>
-  <p><a href="${link}" style="display:inline-block;padding:12px 20px;background:#1a3026;color:#fff;border-radius:10px;text-decoration:none">${bodyText.action}</a></p>
-  <p style="color:#6a746c;font-size:13px">${bodyText.outro}</p>
-  <p style="color:#6a746c;font-size:13px">If the button does not work, copy this link:<br>${link}</p>
-</div>`;
-  return { text, html };
-}
+import * as notificationRepository from '../repositories/notificationRepository.js';
+import { maskIdentifier, recordActivity } from './activityService.js';
 
 function publicAuthPayload(user) {
   const token = signAccessToken(user);
@@ -58,6 +47,11 @@ export async function registerUser(input) {
   const existing = await userRepository.findByEmail(email);
   if (existing) throw new AppError('An account with this email already exists.', 409);
 
+  const skipNexus = process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() !== 'true';
+  if (!skipNexus && !emailDeliveryConfigured() && process.env.NODE_ENV !== 'test') {
+    throw new AppError('Login email is not available because email delivery is not configured.', 503);
+  }
+
   const passwordHash = await hashPassword(password);
   const user = await userRepository.createWithProfile({
     fullName,
@@ -84,6 +78,33 @@ export async function registerUser(input) {
     },
   });
 
+  if (!skipNexus) {
+    const { token } = createResetToken();
+    const tokenHash = hashToken(token);
+    await passwordResetRepository.invalidateOpen(user.id);
+    await passwordResetRepository.create({
+      userId: user.id,
+      tokenHash,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    const setupLink = `${env.clientUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
+    try {
+      const delivery = await sendNotification({
+        template: loginTemplateName(),
+        to: user.email,
+        data: {
+          user_name: user.fullName,
+          password: setupLink,
+        },
+      });
+      console.info('Nexus login email queued.', delivery.status || 'queued');
+    } catch (error) {
+      await userRepository.remove(user.id).catch(() => {});
+      console.error('Nexus login email failed.', error.status || error.code || 'failed');
+      throw new AppError('The account was not kept because the login email was not accepted. Try again.', 502);
+    }
+  }
+
   return publicAuthPayload(user);
 }
 
@@ -95,28 +116,84 @@ export async function loginUser({ email, username, identifier, password }) {
     ? await userRepository.findByEmailWithProfile(raw)
     : await userRepository.findByUsernameWithProfile(raw);
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    await recordActivity({
+      type: 'auth.login_failed',
+      summary: 'Failed sign-in attempt',
+      outcome: 'failed',
+      meta: { identifier: maskIdentifier(raw) },
+    });
     throw new AppError('Incorrect username or password.', 401);
   }
-  if (!user.emailVerified || user.accountStatus === 'pending') {
-    throw new AppError('This account is not active yet. Use the setup link you were given to choose a password, or ask an administrator to approve it.', 403);
+  if (!user.emailVerified && user.accountStatus !== 'pending') {
+    throw new AppError('This account is not active yet. Open the setup link in your email and choose a password.', 403);
   }
   assertApprovedAccount(user);
+  await userRepository.updateWithProfile(user.id, { lastLoginAt: new Date() }).catch(() => {});
+  await recordActivity({
+    userId: user.id,
+    actorRole: user.role,
+    type: 'auth.login',
+    summary: 'Signed in',
+  });
 
   return publicAuthPayload(user);
 }
 
-export async function changePassword(userId, { currentPassword, password }) {
-  if (!currentPassword || !password) throw new AppError('Current password and new password are required.');
-  if (String(password).length < 8) throw new AppError('Password must be at least 8 characters.');
-  if (!/\d/.test(password) || !/[A-Z]/.test(password) || !/[a-z]/.test(password)) {
-    throw new AppError('Password must include an uppercase letter, a lowercase letter, and a number.');
+async function emailPasswordChanged(user) {
+  const name = String(user.fullName || '').trim() || 'there';
+  const data = passwordChangedTemplateData(name);
+  try {
+    const delivery = await sendNotification({
+      template: passwordChangedTemplateName(),
+      to: user.email,
+      data,
+    });
+    const looked = await readProviderStatus(delivery).catch((error) => ({
+      providerStatus: 'unknown',
+      detail: error.code || 'status unavailable',
+    }));
+    const failed = /^failed$/i.test(looked.providerStatus);
+    if (failed) {
+      console.error('Password-change email was not delivered.', looked.providerStatus || 'failed', looked.detail || 'no provider detail');
+    } else {
+      console.info('Password-change email accepted.', looked.providerStatus || delivery.status || 'queued');
+    }
+    await notificationRepository.create({
+      userId: user.id,
+      title: 'Password change email',
+      type: 'password-changed-email',
+      isRead: true,
+      message: failed ? 'Password-change email failed.' : 'Password-change email accepted.',
+    }).catch(() => {});
+  } catch (error) {
+    console.error('Password-change email failed.', error.code || error.status || 'failed');
+    await notificationRepository.create({
+      userId: user.id,
+      title: 'Password change email',
+      type: 'password-changed-email',
+      isRead: true,
+      message: 'Password-change email failed.',
+    }).catch(() => {});
   }
-  if (password === currentPassword) throw new AppError('Choose a password that is different from the temporary one.');
+}
 
+export async function changePassword(userId, { currentPassword, password } = {}) {
   const user = await userRepository.findByIdWithProfile(userId);
   if (!user) throw new AppError('Account not found.', 404);
-  if (!(await verifyPassword(currentPassword, user.passwordHash))) {
+  const forced = Boolean(user.mustChangePassword);
+  if (!forced) {
+    if (!currentPassword || !(await verifyPassword(currentPassword, user.passwordHash))) {
+      throw new AppError('The current password is incorrect.', 401);
+    }
+  } else if (currentPassword && !(await verifyPassword(currentPassword, user.passwordHash))) {
     throw new AppError('The current password is incorrect.', 401);
+  }
+  if (!password) throw new AppError('Choose a new password.');
+  if (String(password).length < 8 || !/\d/.test(password) || !/[A-Z]/.test(password) || !/[a-z]/.test(password)) {
+    throw new AppError('Password must be at least 8 characters and include an uppercase letter, a lowercase letter, and a number.');
+  }
+  if (await verifyPassword(password, user.passwordHash)) {
+    throw new AppError('Choose a password that is different from the temporary one.');
   }
 
   const passwordHash = await hashPassword(password);
@@ -124,7 +201,22 @@ export async function changePassword(userId, { currentPassword, password }) {
     passwordHash,
     mustChangePassword: false,
   });
+  await emailPasswordChanged(updated);
   return mapUser(updated);
+}
+
+export async function confirmAssignedRole(userId) {
+  const user = await userRepository.findByIdWithProfile(userId);
+  if (!user) throw new AppError('Account not found.', 404);
+  assertApprovedAccount(user);
+  if (user.role !== 'teacher' && user.role !== 'lecturer') {
+    throw new AppError('There is no assigned teaching role to confirm.', 403);
+  }
+  if (!user.roleConfirmed) {
+    await userRepository.updateWithProfile(userId, { roleConfirmed: true });
+    await notificationRepository.markReadByType(userId, 'role-confirmation');
+  }
+  return getMe(userId);
 }
 
 export async function getMe(userId) {
@@ -143,21 +235,19 @@ export async function updateProfile(userId, input) {
 
   const current = await userRepository.findByIdWithProfile(userId);
   if (!current) throw new AppError('Account not found.', 404);
-  const nextRole = input.role ? parseRole(input.role) : current.role;
-  if (nextRole === 'admin' && current.role !== 'admin') {
-    throw new AppError('Only an administrator can assign the administrator role.', 403);
+  if (input.role && parseRole(input.role) !== current.role) {
+    throw new AppError('Only an administrator can change your assigned role.', 403);
   }
   const nextInstitution = input.institution !== undefined
     ? String(input.institution || '').trim()
     : String(current.profile?.institution || '');
-  if (input.role || input.institution !== undefined) {
-    await assertInstitutionForRole(nextRole, nextInstitution);
+  if (input.institution !== undefined && ['teacher', 'lecturer'].includes(current.role)) {
+    await assertInstitutionForRole(current.role, nextInstitution);
   }
 
   const user = await userRepository.updateWithProfile(userId, {
     fullName,
     email,
-    role: input.role ? parseRole(input.role) : undefined,
     profileImage: input.avatar !== undefined ? input.avatar : undefined,
     profile: {
       upsert: {
@@ -184,47 +274,100 @@ export async function updateProfile(userId, input) {
   return mapUser(user);
 }
 
-function validEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !/[\r\n]/.test(email);
+function emailNotice(record) {
+  const message = String(record?.message || '');
+  const read = (key) => message.match(new RegExp(`${key}=([^;]*)`))?.[1] || '';
+  return {
+    status: read('status'),
+    providerStatus: read('provider'),
+    requestId: read('requestId'),
+    detail: read('detail'),
+  };
 }
 
-function strongPassword(password) {
-  return String(password).length >= 8 && /\d/.test(password) && /[A-Z]/.test(password) && /[a-z]/.test(password);
+function noticeMessage({ status, providerStatus, requestId, detail }) {
+  return `status=${status};provider=${providerStatus || ''};requestId=${requestId || ''};detail=${String(detail || '').replace(/[;\r\n]/g, ' ').slice(0, 180)}`;
+}
+
+function inboxVerified(providerStatus) {
+  return /^(delivered|sent|completed)$/i.test(String(providerStatus || ''));
+}
+
+function temporaryPassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = crypto.randomBytes(12);
+  let value = 'Pw';
+  for (let index = 0; index < 10; index += 1) {
+    value += alphabet[bytes[index] % alphabet.length];
+  }
+  return `${value}9a`;
 }
 
 async function unknownPasswordHash() {
   return hashPassword(crypto.randomBytes(32).toString('hex'));
 }
 
-async function issueSetupLink(user) {
-  const { token, tokenHash } = createResetToken();
-  await passwordResetRepository.invalidateOpen(user.id);
-  await passwordResetRepository.create({
-    userId: user.id,
-    tokenHash,
-    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-  });
-  return `${env.clientUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
+async function loginNameFor(fullName, email, userId) {
+  const taken = await userRepository.findByUsernameWithProfile(fullName);
+  if (!taken || taken.id === userId) return fullName;
+  return email;
 }
 
-export async function requestAccount(input) {
+async function readProviderStatus(delivery) {
+  let providerStatus = delivery.status || 'queued';
+  let detail = '';
+  if (!delivery.requestId || delivery.requestId === 'test-request') {
+    return { providerStatus, detail };
+  }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0 && /queued|processing|accepted/i.test(providerStatus)) {
+      await new Promise((resolve) => setTimeout(resolve, attempt === 1 ? 1500 : 4000));
+    }
+    try {
+      const looked = await getNotificationStatus(delivery.requestId);
+      providerStatus = looked.status || providerStatus;
+      detail = looked.errorMessage || '';
+      if (!/queued|processing/i.test(providerStatus)) break;
+    } catch (error) {
+      detail = error.message || '';
+      break;
+    }
+  }
+  return { providerStatus, detail };
+}
+
+export async function createUnapprovedTestAccount(input) {
+  if (!unapprovedTestAccountsAllowed()) {
+    throw new AppError('Administrator approval is required. Unapproved test accounts are turned off.', 403);
+  }
+
   const email = String(input.email || '').trim().toLowerCase();
   const fullName = String(input.fullName || input.name || input.username || '').trim();
   if (!fullName || !email) throw new AppError('Name and email are required.');
   if (!validEmail(email)) throw new AppError('Enter a valid email address.');
 
-  const byEmail = await userRepository.findByEmailWithProfile(email);
-  if (byEmail?.role === 'admin' || (byEmail?.emailVerified && byEmail.accountStatus === 'approved')) {
-    throw new AppError('That email address is already registered.', 409);
-  }
-  if (byEmail && ['rejected', 'suspended', 'inactive'].includes(byEmail.accountStatus)) {
-    throw new AppError('This account cannot be registered again. Contact an administrator.', 403);
+  const captureOnly = process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() === 'true';
+  if (!emailDeliveryConfigured() && !captureOnly) {
+    throw new AppError('Login email is not available because email delivery is not configured.', 503);
   }
 
-  let user = byEmail;
+  let user = await userRepository.findByEmailWithProfile(email);
+  if (user?.role === 'admin') {
+    throw new AppError('This address belongs to an administrator and cannot be used here.', 403);
+  }
   if (user) {
-    if (user.fullName !== fullName) {
-      user = await userRepository.updateWithProfile(user.id, { fullName });
+    const prior = emailNotice(await notificationRepository.latestByType(user.id, 'login-email'));
+    if (prior.status === 'accepted' || prior.status === 'delivered') {
+      const verified = prior.status === 'delivered' || inboxVerified(prior.providerStatus);
+      return {
+        emailStatus: verified ? 'delivered' : 'accepted',
+        providerStatus: prior.providerStatus || 'queued',
+        inboxVerified: verified,
+        requestId: prior.requestId,
+        message: verified
+          ? 'The email service already reported this login email as delivered. A second email was not sent.'
+          : 'The email service already accepted this login email for processing. Final inbox delivery has not been verified, and a second email was not sent.',
+      };
     }
   } else {
     user = await userRepository.createWithProfile({
@@ -232,8 +375,7 @@ export async function requestAccount(input) {
       email,
       passwordHash: await unknownPasswordHash(),
       role: 'lecturer',
-      accountStatus: 'pending',
-      emailVerified: false,
+      accountStatus: 'approved',
       mustChangePassword: false,
       profile: {
         create: {
@@ -248,49 +390,271 @@ export async function requestAccount(input) {
     });
   }
 
-  const setupLink = await issueSetupLink(user);
-  const mail = emailShell('Set up your PlanWise AI account', {
-    name: user.fullName,
-    intro: 'An account was created for you on PlanWise AI. Choose your password using the button below. The link expires in one hour.',
-    action: 'Choose my password',
-    outro: 'If you did not expect this, you can ignore this email.',
-  }, setupLink);
-  const delivery = await trySendMail({ to: user.email, subject: 'Set up your PlanWise AI account', ...mail });
-  return {
-    emailStatus: delivery.sent ? 'sent' : 'link-ready',
-    inboxVerified: false,
-    emailed: delivery.sent,
-    setupLink,
-    message: delivery.sent
-      ? 'Account created. We emailed you a setup link to choose your password — it also appears below. The account stays inactive until you set a password.'
-      : 'Account created. Open the setup link below to choose your password. The account stays inactive until you do.',
+  const { token, tokenHash } = createResetToken();
+  await passwordResetRepository.invalidateOpen(user.id);
+  const record = await passwordResetRepository.create({
+    userId: user.id,
+    tokenHash,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+  });
+  const setupLink = `${env.clientUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
+
+  try {
+    const delivery = await sendNotification({
+      template: loginTemplateName(),
+      to: user.email,
+      data: {
+        user_name: user.fullName,
+        email: user.email,
+        password: setupLink,
+      },
+    });
+    const looked = await readProviderStatus(delivery);
+    if (/^failed$/i.test(looked.providerStatus)) {
+      await passwordResetRepository.remove(record.id).catch(() => {});
+      await notificationRepository.create({
+        userId: user.id,
+        title: 'Login email',
+        type: 'login-email',
+        isRead: true,
+        message: noticeMessage({
+          status: 'failed',
+          providerStatus: looked.providerStatus,
+          requestId: delivery.requestId,
+          detail: looked.detail,
+        }),
+      });
+      console.error('Nexus login email was not delivered.', looked.providerStatus);
+      throw new AppError(looked.detail || 'The email service accepted the request, then reported that delivery failed. You can try again.', 502);
+    }
+    const verified = inboxVerified(looked.providerStatus);
+    await notificationRepository.create({
+      userId: user.id,
+      title: 'Login email',
+      type: 'login-email',
+      isRead: true,
+      message: noticeMessage({
+        status: verified ? 'delivered' : 'accepted',
+        providerStatus: looked.providerStatus,
+        requestId: delivery.requestId,
+        detail: looked.detail,
+      }),
+    });
+    console.info('Nexus login email accepted.', looked.providerStatus || 'queued');
+    return {
+      emailStatus: verified ? 'delivered' : 'accepted',
+      providerStatus: looked.providerStatus || 'queued',
+      inboxVerified: verified,
+      requestId: delivery.requestId || '',
+      message: verified
+        ? 'The email service reported the login email as delivered.'
+        : 'The email service accepted the email for processing. Final inbox delivery has not been verified.',
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    await passwordResetRepository.remove(record.id).catch(() => {});
+    await notificationRepository.create({
+      userId: user.id,
+      title: 'Login email',
+      type: 'login-email',
+      isRead: true,
+      message: noticeMessage({
+        status: 'failed',
+        providerStatus: String(error.status || error.code || 'failed'),
+        detail: error.code || 'failed',
+      }),
+    }).catch(() => {});
+    console.error('Nexus login email failed.', error.status || error.code || 'failed');
+    throw new AppError('The email service did not accept the login email. Nothing was marked as sent. You can try again.', 502);
+  }
+}
+
+function validEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !/[\r\n]/.test(email);
+}
+
+function strongPassword(password) {
+  return String(password).length >= 8 && /\d/.test(password) && /[A-Z]/.test(password) && /[a-z]/.test(password);
+}
+
+function captureOnly() {
+  return process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() === 'true';
+}
+
+function missingEmailVars() {
+  const missing = [];
+  if (!String(process.env.SMTP_HOST || '').trim()) missing.push('SMTP_HOST');
+  if (!String(process.env.SMTP_FROM || process.env.MAIL_FROM || '').trim()) missing.push('SMTP_FROM');
+  return missing;
+}
+
+function requireEmailDelivery() {
+  if (emailDeliveryConfigured() || captureOnly()) return;
+  const missing = missingEmailVars();
+  throw new AppError(
+    `Email is not available because email delivery is not configured. Set ${missing.join(' and ')} (with SMTP_USER and SMTP_PASS), or set NEXUS_API_KEY and NEXUS_BASE_URL.`,
+    503,
+  );
+}
+
+async function emailTemporaryPassword(user, username, temporary) {
+  console.info('Sending login email.', loginTemplateName(), user.email);
+  try {
+    const delivery = await sendNotification({
+      template: loginTemplateName(),
+      to: user.email,
+      data: {
+        user_name: username,
+        email: user.email,
+        password: temporary,
+      },
+    });
+    const looked = await readProviderStatus(delivery);
+    if (/^failed$/i.test(looked.providerStatus)) {
+      console.error('Login email was not delivered.', looked.providerStatus || 'failed', looked.detail || 'no provider detail');
+      throw new AppError("We couldn't send your login email. Please try again later.", 502);
+    }
+    const verified = inboxVerified(looked.providerStatus);
+    await notificationRepository.create({
+      userId: user.id,
+      title: 'Login email',
+      type: 'login-email',
+      isRead: true,
+      message: noticeMessage({
+        status: verified ? 'delivered' : 'accepted',
+        providerStatus: looked.providerStatus,
+        requestId: delivery.requestId,
+        detail: looked.detail,
+      }),
+    });
+    return {
+      emailStatus: verified ? 'delivered' : 'accepted',
+      providerStatus: looked.providerStatus || 'queued',
+      inboxVerified: verified,
+      requestId: delivery.requestId || '',
+    };
+  } catch (error) {
+    if (!(error instanceof AppError)) {
+      await notificationRepository.create({
+        userId: user.id,
+        title: 'Login email',
+        type: 'login-email',
+        isRead: true,
+        message: noticeMessage({
+          status: 'failed',
+          providerStatus: String(error.status || error.code || 'failed'),
+          detail: error.code || 'failed',
+        }),
+      }).catch(() => {});
+      console.error('Login email was not accepted.', error.status || error.code || 'failed');
+      throw new AppError("We couldn't send your login email. Please try again later.", 502);
+    }
+    if (error.status === 502) {
+      await notificationRepository.create({
+        userId: user.id,
+        title: 'Login email',
+        type: 'login-email',
+        isRead: true,
+        message: noticeMessage({ status: 'failed', providerStatus: 'failed', detail: 'delivery failed' }),
+      }).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+export async function requestAccount(input) {
+  const email = String(input.email || '').trim().toLowerCase();
+  const fullName = String(input.fullName || input.name || input.username || '').trim();
+  const institution = String(input.institution || '').trim();
+  const department = String(input.department || '').trim();
+  if (!fullName) throw new AppError('Please enter your full name.');
+  if (!email || !validEmail(email)) throw new AppError('Please enter a valid email address.');
+
+  const byEmail = await userRepository.findByEmailWithProfile(email);
+  if (byEmail?.role === 'admin' || byEmail?.accountStatus === 'approved') {
+    throw new AppError('An account with this email already exists.', 409);
+  }
+  if (byEmail && ['rejected', 'suspended', 'inactive'].includes(byEmail.accountStatus)) {
+    throw new AppError('This account cannot be registered again. Contact an administrator.', 403);
+  }
+
+  const profile = {
+    institution,
+    department,
+    specialization: '',
+    educationLevel: '',
+    phone: '',
+    preferences: {},
   };
+  let user = byEmail;
+  if (user) {
+    user = await userRepository.updateWithProfile(user.id, {
+      fullName,
+      role: 'unassigned',
+      accountStatus: 'pending',
+      emailVerified: false,
+      mustChangePassword: false,
+      roleConfirmed: false,
+      profile: { upsert: { create: profile, update: { institution, department } } },
+    });
+  } else {
+    user = await userRepository.createWithProfile({
+      fullName,
+      email,
+      passwordHash: await unknownPasswordHash(),
+      role: 'unassigned',
+      accountStatus: 'pending',
+      emailVerified: false,
+      mustChangePassword: false,
+      roleConfirmed: false,
+      profile: { create: profile },
+    });
+  }
+
+  await recordActivity({
+    userId: user.id,
+    actorRole: 'unassigned',
+    type: 'user.registered',
+    summary: 'New account submitted for approval',
+    targetType: 'user',
+    targetId: user.id,
+  });
+  return { message: 'Your account is waiting for administrator approval.' };
 }
 
 export async function forgotPassword(email) {
   const normalized = String(email || '').trim().toLowerCase();
   if (!validEmail(normalized)) throw new AppError('Enter a valid email address.');
+  requireEmailDelivery();
 
-  const user = await userRepository.findByEmail(normalized);
-  if (!user) {
-    return { message: 'No account was found for that email address.' };
-  }
+  const generic = { message: 'If an account exists for this email address, a temporary password will be sent.' };
+  const user = await userRepository.findByEmailWithProfile(normalized);
+  if (!user || ['rejected', 'suspended', 'inactive', 'pending'].includes(user.accountStatus)) return generic;
 
-  const resetLink = await issueSetupLink(user);
-  const mail = emailShell('Reset your PlanWise AI password', {
-    name: user.fullName,
-    intro: 'We received a request to reset your password. Choose a new one using the button below. The link expires in one hour.',
-    action: 'Reset my password',
-    outro: 'If you did not request this, you can ignore this email.',
-  }, resetLink);
-  const delivery = await trySendMail({ to: normalized, subject: 'Reset your PlanWise AI password', ...mail });
-  return {
-    resetLink,
-    emailed: delivery.sent,
-    message: delivery.sent
-      ? 'We emailed you a reset link to choose a new password — it also appears below. It expires in one hour.'
-      : 'Open the reset link below to choose a new password. It expires in one hour.',
+  const temporary = temporaryPassword();
+  const username = await loginNameFor(user.username || user.fullName, user.email, user.id);
+  const previous = {
+    username: user.username,
+    passwordHash: user.passwordHash,
+    mustChangePassword: user.mustChangePassword,
+    accountStatus: user.accountStatus,
+    emailVerified: user.emailVerified,
   };
+  await passwordResetRepository.invalidateOpen(user.id);
+  await userRepository.updateWithProfile(user.id, {
+    username,
+    passwordHash: await hashPassword(temporary),
+    mustChangePassword: true,
+    emailVerified: true,
+    accountStatus: user.accountStatus,
+  });
+  try {
+    await emailTemporaryPassword(user, username, temporary);
+  } catch (error) {
+    await userRepository.updateWithProfile(user.id, previous).catch(() => {});
+    throw error;
+  }
+  return generic;
 }
 
 export async function resetPassword({ token, password }) {
@@ -307,7 +671,7 @@ export async function resetPassword({ token, password }) {
 
   const user = await userRepository.findByIdWithProfile(record.userId);
   if (!user) throw new AppError('Account not found.', 404);
-  if (['rejected', 'suspended', 'inactive'].includes(user.accountStatus)) {
+  if (['rejected', 'suspended', 'inactive', 'pending'].includes(user.accountStatus)) {
     throw new AppError(accessDeniedMessage(user.accountStatus), 403);
   }
 

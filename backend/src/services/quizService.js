@@ -1,6 +1,7 @@
 import { AppError } from '../utils/errors.js';
 import { completeJson } from './ai/aiClient.js';
 import * as quizRepository from '../repositories/quizRepository.js';
+import { recordActivity } from './activityService.js';
 import * as documentRepository from '../repositories/documentRepository.js';
 import * as lessonPlanRepository from '../repositories/lessonPlanRepository.js';
 import { notify } from './notificationService.js';
@@ -81,7 +82,16 @@ async function createQuizWithQuestions(userId, body) {
 }
 
 export async function createQuiz(userId, body) {
-  return createQuizWithQuestions(userId, body);
+  const saved = await createQuizWithQuestions(userId, body);
+  await recordActivity({
+    userId,
+    type: 'quiz.created',
+    summary: 'Quiz saved',
+    targetType: 'quiz',
+    targetId: saved.id,
+    meta: { title: saved.title },
+  });
+  return saved;
 }
 
 export async function updateQuiz(userId, id, body) {
@@ -183,6 +193,14 @@ Return JSON:
     title: 'Quiz ready',
     message: saved.title || 'A new quiz was generated.',
     type: 'quiz',
+  });
+  await recordActivity({
+    userId,
+    type: 'ai.quiz',
+    summary: 'AI quiz generated',
+    targetType: 'quiz',
+    targetId: saved.id,
+    meta: { title: saved.title },
   });
   return saved;
 }

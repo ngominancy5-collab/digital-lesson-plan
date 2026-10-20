@@ -1,5 +1,6 @@
 import { AppError } from '../utils/errors.js';
 import * as attendanceRepository from '../repositories/attendanceRepository.js';
+import { recordActivity } from './activityService.js';
 
 function todayKey(date = new Date()) {
   return date.toISOString().slice(0, 10);
@@ -15,6 +16,13 @@ export async function clockIn(userId) {
     clockIn: now,
     status: 'open',
   });
+  await recordActivity({
+    userId,
+    type: 'attendance.clock_in',
+    summary: 'Clocked in',
+    targetType: 'attendance',
+    targetId: record.id,
+  });
   return { active: record };
 }
 
@@ -27,6 +35,13 @@ export async function clockOut(userId) {
     clockOut: now,
     status: 'completed',
     workedMinutes,
+  });
+  await recordActivity({
+    userId,
+    type: 'attendance.clock_out',
+    summary: 'Clocked out',
+    targetType: 'attendance',
+    targetId: record.id,
   });
   return { active: null, record };
 }

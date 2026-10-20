@@ -1134,17 +1134,17 @@
 }
 
 .compact-topbar .glass-search {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(480px, 58%);
+  position: relative;
+  left: auto;
+  transform: none;
+  width: min(520px, 100%);
   max-width: 520px;
 }
 
 .compact-topbar .glass-top-actions {
-  margin-left: auto;
+  margin-left: 0;
   position: relative;
-  z-index: 2;
+  z-index: 1;
 }
 
 .dash-attendance-card {
@@ -1209,7 +1209,7 @@
 .assessments-with-ai,
 .paper-marking-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }

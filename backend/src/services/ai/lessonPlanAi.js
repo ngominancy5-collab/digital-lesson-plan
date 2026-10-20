@@ -3,7 +3,7 @@ import { completeJson } from './aiClient.js';
 
 dotenv.config();
 
-function buildPrompt({ course, topics, schedule, preferences, customInstructions, difficulty }) {
+function buildPrompt({ course, topics, schedule, preferences, customInstructions, difficulty, sourceMaterial }) {
   const topicList = topics.map((topic, index) => `${index + 1}. ${topic}`).join('\n');
   const holidays = (schedule.holidays || []).map((holiday) => holiday.date || holiday).join(', ') || 'None';
 
@@ -36,6 +36,9 @@ Preferences:
 - Difficulty: ${difficulty || 'Intermediate'}
 - Custom Instructions: ${customInstructions || 'None'}
 
+Source materials supplied by the teacher:
+${sourceMaterial ? String(sourceMaterial).slice(0, 12000) : 'NONE PROVIDED'}
+
 Return valid JSON with this exact structure:
 {
   "courseName": "string",
@@ -64,28 +67,29 @@ Return valid JSON with this exact structure:
 }
 
 Rules:
-- Do not randomly assign topics. Organize topics logically across the teaching periods.
-- Use all available teaching sessions to cover the course content efficiently.
-- Split topics across multiple lessons when a topic is large.
+- Use only the course fields, topics, notes, and source materials supplied above.
+- Do not invent lesson content, learning objectives, activities, examples, or facts that those materials do not support.
+- If a section cannot be filled, write "Not provided in the source materials" and add a warning that names what is missing.
+- Include homework only when the materials mention follow-up work.
+- Do not add topics the teacher did not list and that do not appear in the source materials.
+- Organize the supplied topics across the available teaching periods.
 - Respect blocked dates and avoid scheduling on holidays.
-- Include clear, professional lesson content.
-- Keep lessons realistic and teachable.
 - If required session count exceeds availability, include a warning string in warnings.
 - Do not include markdown fences or comments.
 `;
 }
 
 export async function generateLessonPlan(payload) {
-  try {
-    const { data } = await completeJson(
-      'You are a helpful educational assistant that creates high-quality lesson plans. Return JSON only.',
-      buildPrompt(payload),
-    );
-    if (data?.lessons?.length) return data;
-  } catch (error) {
-    console.error('AI generation error:', error.response?.data || error.message);
+  const { data } = await completeJson(
+    'You are a helpful educational assistant. Create a lesson plan only from the materials the teacher supplied. Return JSON only.',
+    buildPrompt(payload),
+  );
+  if (!data?.lessons?.length) {
+    const error = new Error('The lesson plan could not be created from the supplied materials.');
+    error.status = 422;
+    throw error;
   }
-  return fallbackLessonPlan(payload);
+  return data;
 }
 
 export async function regenerateLesson(payload) {
