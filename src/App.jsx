@@ -66,7 +66,6 @@ import {
   TrendingUp,
   UserCircle2,
   Wand2,
-  X,
   BriefcaseBusiness,
   Building2,
   School,
