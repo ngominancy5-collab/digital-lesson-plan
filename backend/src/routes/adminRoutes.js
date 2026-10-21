@@ -19,6 +19,7 @@ router.get('/analytics', panel.analytics);
 router.get('/export/:kind', panel.exportCsv);
 router.post('/users', adminController.create);
 router.post('/users/:id/approve', adminController.approve);
+router.post('/users/:id/resend-credentials', adminController.resendCredentials);
 router.post('/users/:id/reject', adminController.reject);
 router.post('/users/:id/suspend', adminController.suspend);
 router.post('/users/:id/deactivate', adminController.deactivate);

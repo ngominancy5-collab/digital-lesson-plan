@@ -21,13 +21,17 @@ test.after(async () => {
 
 test('a temporary login must change password before the dashboard, and a failed notice does not undo it', async () => {
   takeCapturedNotifications();
-  await requestAccount({ fullName: 'Liah Phiri', email });
+  await requestAccount({ username: 'Liah Phiri', role: 'Lecturer', email });
   assert.equal(takeCapturedNotifications().length, 0);
   const created = await prisma.user.findUnique({ where: { email } });
   assert.equal(created.accountStatus, 'pending');
   assert.equal(created.role, 'unassigned');
   takeCapturedNotifications();
-  await approveAccount(created.id, { role: 'lecturer' }, 'admin-actor');
+  await approveAccount(created.id, {
+    role: 'lecturer',
+    institution: 'University of Zambia (UNZA)',
+    department: 'Education',
+  }, 'admin-actor');
   const [loginMail] = takeCapturedNotifications();
   assert.equal(loginMail.template, loginTemplateName());
   assert.equal(Object.hasOwn(loginMail.data, 'password'), true);

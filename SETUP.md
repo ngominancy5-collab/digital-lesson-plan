@@ -51,7 +51,7 @@ npm start
 - Frontend: http://localhost:5173
 - API health: http://localhost:3001/api/health
 
-Demo login after seed: `demo@planwise.local` / `Demo1234`
+Admin login: set `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `.env` before starting the backend.
 
 ## E. Separate processes
 ```bash

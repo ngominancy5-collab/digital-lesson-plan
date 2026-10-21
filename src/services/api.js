@@ -90,6 +90,7 @@ export const adminApi = {
   list: () => api.get('/admin/users').then((r) => r.data.users || []),
   create: (payload) => api.post('/admin/users', payload).then((r) => r.data),
   approve: (id, payload) => api.post(`/admin/users/${id}/approve`, payload || {}).then((r) => r.data),
+  resendCredentials: (id) => api.post(`/admin/users/${id}/resend-credentials`).then((r) => r.data),
   reject: (id) => api.post(`/admin/users/${id}/reject`).then((r) => r.data),
   suspend: (id) => api.post(`/admin/users/${id}/suspend`).then((r) => r.data),
   deactivate: (id) => api.post(`/admin/users/${id}/deactivate`).then((r) => r.data),
@@ -247,12 +248,103 @@ export const resourceApi = {
 export const markingApi = {
   list: () => api.get('/marking').then((r) => (r.data.papers || []).map((item) => ({
     ...item,
-    studentLabel: item.studentName,
-    subject: item.assessmentName,
-    obtained: item.score,
-    aiFeedback: item.feedback,
+    studentLabel: item.studentName || item.studentLabel,
+    subject: item.assessmentName || item.subject,
+    obtained: item.obtained ?? item.score,
+    aiFeedback: item.aiFeedback || item.feedback,
   }))),
+  get: (id) => api.get(`/marking/${id}`).then((r) => r.data.paper),
+  saveDraft: (id, payload) => api.patch(`/marking/${id}/draft`, payload).then((r) => r.data.paper),
+  update: (id, payload) => api.patch(`/marking/${id}`, payload).then((r) => r.data.paper),
+  finalize: (id, payload) => api.post(`/marking/${id}/finalize`, payload).then((r) => r.data.paper),
+  reopen: (id) => api.post(`/marking/${id}/reopen`).then((r) => r.data.paper),
+  remove: (id) => api.delete(`/marking/${id}`).then((r) => r.data),
   mark: (payload) => api.post('/ai/mark-paper', payload).then((r) => r.data),
+  /**
+   * Stream marking progress via SSE. Calls onProgress({ percent, message, estimated, done }).
+   * Resolves with the final result only after the backend confirms completion.
+   */
+  markWithProgress: async (payload, { onProgress, signal } = {}) => {
+    const token = getToken();
+    const response = await fetch(`${API_BASE}/ai/mark-paper/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+      signal,
+    });
+    if (!response.ok) {
+      let message = 'Marking failed.';
+      try {
+        const body = await response.json();
+        message = body.error || body.message || message;
+      } catch {
+        /* keep default */
+      }
+      const err = new Error(message);
+      err.status = response.status;
+      throw err;
+    }
+    if (!response.body) {
+      throw new Error('Marking stream is not available in this browser.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result = null;
+    let streamError = null;
+
+    const handleBlock = (block) => {
+      const lines = block.split(/\r?\n/);
+      let event = 'message';
+      const dataLines = [];
+      for (const line of lines) {
+        if (line.startsWith('event:')) event = line.slice(6).trim();
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+      }
+      if (!dataLines.length) return;
+      let data;
+      try {
+        data = JSON.parse(dataLines.join('\n'));
+      } catch {
+        return;
+      }
+      if (event === 'progress') {
+        onProgress?.(data);
+      } else if (event === 'done') {
+        result = data.result || data;
+        onProgress?.({
+          percent: 100,
+          message: 'Marking completed successfully!',
+          estimated: false,
+          done: true,
+        });
+      } else if (event === 'error') {
+        streamError = new Error(data.error || 'Marking failed.');
+        streamError.detail = data.detail || '';
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split(/\n\n/);
+      buffer = parts.pop() || '';
+      for (const part of parts) {
+        if (part.trim()) handleBlock(part);
+      }
+    }
+    if (buffer.trim()) handleBlock(buffer);
+
+    if (streamError) throw streamError;
+    if (!result) throw new Error('Marking ended without a result. Please try again.');
+    return result;
+  },
 };
 
 export const institutionApi = {
@@ -267,6 +359,37 @@ export const aiApi = {
   chat: (payload) => api.post('/ai/chat', payload).then((r) => r.data),
   extract: (payload) => api.post('/ai/extract', payload).then((r) => r.data),
   analyze: (payload) => api.post('/ai/analyze', payload).then((r) => r.data),
+};
+
+export const siteImageApi = {
+  hero: () => api.get('/site-images/hero').then((r) => r.data.images || []),
+  section: (sectionKey) => api.get(`/site-images/section/${sectionKey}`).then((r) => r.data.images || []),
+  list: () => api.get('/site-images').then((r) => r.data.images || []),
+  upload: (file, details = {}) => {
+    const form = new FormData();
+    form.append('file', file);
+    if (details.sectionKey) form.append('sectionKey', details.sectionKey);
+    if (details.title) form.append('title', details.title);
+    if (details.altText) form.append('altText', details.altText);
+    if (details.sortOrder != null) form.append('sortOrder', String(details.sortOrder));
+    if (details.isActive != null) form.append('isActive', String(details.isActive));
+    return api.post('/site-images', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data.image);
+  },
+  update: (id, payload) => api.patch(`/site-images/${id}`, payload).then((r) => r.data.image),
+  remove: (id) => api.delete(`/site-images/${id}`).then((r) => r.data),
+};
+
+export const billingApi = {
+  plans: () => api.get('/billing/plans').then((r) => r.data.plans || []),
+  subscription: () => api.get('/billing/subscription').then((r) => r.data),
+  history: () => api.get('/billing/history').then((r) => r.data.transactions || []),
+  admin: () => api.get('/billing/admin').then((r) => r.data),
+  checkout: (planCode) => api.post('/billing/checkout', { planCode }).then((r) => r.data),
+  preview: (token) => api.get('/billing/checkout', { params: { token } }).then((r) => r.data),
+  confirm: (token) => api.post('/billing/checkout/confirm', { token }).then((r) => r.data),
+  cancel: () => api.post('/billing/cancel').then((r) => r.data),
 };
 
 export function apiUrl(path) {

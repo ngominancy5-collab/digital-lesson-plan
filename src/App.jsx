@@ -72,6 +72,7 @@ import {
   BarChart3,
   ScanText,
   Settings2,
+  CreditCard,
 } from 'lucide-react';
 import AssistantPage from './components/AssistantPage.jsx';
 import CalendarPage from './components/CalendarPage.jsx';
@@ -79,14 +80,20 @@ import AssessmentsPage from './components/AssessmentsPage.jsx';
 import FloatingAssistant from './components/FloatingAssistant.jsx';
 import LandingPage from './components/LandingPage.jsx';
 import DashboardHome from './components/DashboardHome.jsx';
-import AdminPanel, { AssignRoleDialog } from './components/AdminPanel.jsx';
+import AdminPanel from './components/AdminPanel.jsx';
+import AssignRoleDialog from './components/AssignRoleDialog.jsx';
 import PaperMarkingPage from './components/PaperMarkingPage.jsx';
+import SiteImagesAdmin from './components/SiteImagesAdmin.jsx';
+import AdminBillingPage from './components/AdminBillingPage.jsx';
+import BillingPage from './components/BillingPage.jsx';
 import { EDUCATOR_ROLES } from './data/institutions.js';
 import TypedText from './components/TypedText.jsx';
 import Notice from './components/Notice.jsx';
+import PlanWiseMark from './components/PlanWiseMark.jsx';
 import './auth.css';
 import './components/dashboard-glass.css';
 import './components/dashboard-reference.css';
+import './components/dashboard-premium.css';
 import { suggestCalendarFromPlan } from '../shared/learningEngine.js';
 
 const teachingMethodsList = ['Lecture', 'Discussion', 'Demonstration', 'Group work', 'Practical', 'Problem solving', 'Case study', 'Project-based learning'];
@@ -105,22 +112,22 @@ const navItems = [
   { id: 'accounts', label: 'Accounts', icon: ShieldCheck },
   { id: 'admin-overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'admin-users', label: 'Users', icon: Users },
+  { id: 'admin-billing', label: 'Billing & Payments', icon: CreditCard },
+  { id: 'settings', label: 'Settings', icon: Settings2 },
   { id: 'admin-activity', label: 'System Activity', icon: Activity },
   { id: 'admin-plans', label: 'Lesson Plans', icon: FileText },
   { id: 'admin-assessments', label: 'Assessments & Quizzes', icon: ClipboardCheck },
   { id: 'admin-attendance', label: 'Attendance', icon: Clock3 },
   { id: 'admin-ai', label: 'AI Usage', icon: Sparkles },
   { id: 'admin-analytics', label: 'Analytics & Reports', icon: BarChart3 },
-  { id: 'settings', label: 'Settings', icon: Settings2 },
+  { id: 'billing', label: 'Plans & Billing', icon: CreditCard },
 ];
 
 const roleNav = {
-  Lecturer: ['dashboard', 'courses', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'resources', 'reports', 'assistant', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
-  Teacher: ['dashboard', 'courses', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'resources', 'reports', 'assistant', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
-  'School Teacher': ['dashboard', 'courses', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'resources', 'reports', 'assistant', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
-  Student: ['dashboard', 'courses', 'calendar', 'assistant', 'resources', 'progress', 'notifications', 'settings', 'profile'],
-  'Academic Coordinator': ['dashboard', 'courses', 'progress', 'calendar', 'assessments', 'reports', 'notifications', 'settings', 'profile'],
-  Administrator: ['admin-overview', 'admin-users', 'admin-activity', 'admin-plans', 'admin-assessments', 'admin-attendance', 'admin-ai', 'admin-analytics', 'settings', 'profile'],
+  Lecturer: ['dashboard', 'courses', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'resources', 'reports', 'assistant', 'billing', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
+  Teacher: ['dashboard', 'courses', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'resources', 'reports', 'assistant', 'billing', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
+  'School Teacher': ['dashboard', 'courses', 'plans', 'create-plan', 'calendar', 'assessments', 'paper-marking', 'resources', 'reports', 'assistant', 'billing', 'settings', 'progress', 'notifications', 'profile', 'upload-course'],
+  Administrator: ['admin-overview', 'admin-users', 'admin-billing', 'settings', 'admin-activity', 'admin-plans', 'admin-assessments', 'admin-attendance', 'admin-ai', 'admin-analytics'],
 };
 
 const emptyForm = {
@@ -275,18 +282,6 @@ function normalizeCourse(course) {
   };
 }
 
-function PlanWiseMark() {
-  return (
-    <svg className="pw-mark" viewBox="0 0 40 40" aria-hidden="true">
-      <path fill="#d4b06a" d="M20 4.8 33.4 10.2 20 15.6 6.6 10.2 20 4.8Z" />
-      <path fill="#d4b06a" d="M30.2 12.1v5.6c0 .55-.62.9-1.12.6L20 14.4l-9.08 3.9c-.5.3-1.12-.05-1.12-.6v-5.6L20 16.2l10.2-4.1Z" />
-      <path fill="#1f4d3a" d="M6.5 17.4c4.4 2.1 8.6 2.1 13.5 0v15.4c-4.9 2.1-9.1 2.1-13.5 0V17.4Z" />
-      <path fill="#2c6b54" d="M33.5 17.4c-4.4 2.1-8.6 2.1-13.5 0v15.4c4.9 2.1 9.1 2.1 13.5 0V17.4Z" />
-      <path fill="#e7d3a1" d="M19.15 17.6h1.7v14.8h-1.7z" />
-    </svg>
-  );
-}
-
 function AuthShell({ children, mode = 'login', onNavigate }) {
   if (mode === 'login' || mode === 'register') {
     return (
@@ -365,6 +360,11 @@ function LoginPage({ onLogin, onNavigate, notice = '' }) {
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState(notice);
   const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!error) return undefined;
+    const timer = window.setTimeout(() => setError(''), 5200);
+    return () => window.clearTimeout(timer);
+  }, [error]);
   async function submit(event) {
     event.preventDefault();
     setError('');
@@ -392,41 +392,26 @@ function LoginPage({ onLogin, onNavigate, notice = '' }) {
         <form className="auth-form pw-signup-form" onSubmit={submit}>
           <label className="auth-field"><span>Username or email</span><div className="auth-input"><UserRound size={16} /><input value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder="username or you@example.com" autoComplete="username" /></div></label>
           <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Enter your password" autoComplete="current-password" />
-          {error && <div className="auth-error" role="alert">{error}</div>}
           <div className="auth-options pw-login-options"><label><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Remember me</label><button type="button" onClick={() => onNavigate('forgot-password')}>Forgot Password?</button></div>
           <button className="pw-signup-submit" disabled={loading}>{loading ? 'Signing in...' : 'Sign In'}</button>
         </form>
         <p className="pw-signup-switch">Need an account? <button type="button" onClick={() => onNavigate('create-account')}>Sign Up</button></p>
       </div>
+      {error ? <Notice tone="error" message={error} onDismiss={() => setError('')} /> : null}
     </AuthShell>
   );
 }
 
-const ACCOUNT_NOTICES = new Set([
-  'Please enter your full name.',
-  'Please enter a valid email address.',
-  'This email address is invalid.',
-  'An account with this email already exists.',
-  "We couldn't create your account. Please try again.",
-  "We couldn't send your login email. Please try again later.",
-  'Account created successfully! Please check your email for your login credentials.',
-  'Your account is waiting for administrator approval.',
-]);
-
 function createAccountNotice(result, error) {
-  if (result?.inboxVerified) return { tone: 'ok', text: 'Your login credentials have been sent to your email.' };
-  if (result?.message) return { tone: 'ok', text: result.message };
+  if (result?.message) return { tone: 'ok', text: 'Request successfully sent!' };
   const message = String(error?.message || '');
-  if (ACCOUNT_NOTICES.has(message)) return { tone: 'error', text: message };
-  if (error?.status === 409) return { tone: 'error', text: 'An account with this email already exists.' };
-  if (error?.status === 400 && /name/i.test(message)) return { tone: 'error', text: 'Please enter your full name.' };
-  if (error?.status === 400 && /email/i.test(message)) return { tone: 'error', text: 'Please enter a valid email address.' };
-  if (error?.status === 502 || error?.status === 503) return { tone: 'error', text: "We couldn't send your login email. Please try again later." };
-  return { tone: 'error', text: "We couldn't create your account. Please try again." };
+  if (message) return { tone: 'error', text: message };
+  return { tone: 'error', text: 'We could not send your request. Please try again.' };
 }
 
 function CreateAccountPage({ onNavigate }) {
-  const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
+  const [role, setRole] = useState('');
   const [email, setEmail] = useState('');
   const [notice, setNotice] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -438,10 +423,14 @@ function CreateAccountPage({ onNavigate }) {
   async function submit(event) {
     event.preventDefault();
     if (loading) return;
-    const name = fullName.trim();
+    const name = username.trim();
     const address = email.trim();
     if (!name) {
-      setNotice({ tone: 'error', text: 'Please enter your full name.' });
+      setNotice({ tone: 'error', text: 'Please enter a username.' });
+      return;
+    }
+    if (role !== 'Lecturer' && role !== 'Teacher') {
+      setNotice({ tone: 'error', text: 'Please select Lecturer or Teacher.' });
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
@@ -451,7 +440,10 @@ function CreateAccountPage({ onNavigate }) {
     setNotice(null);
     setLoading(true);
     try {
-      const result = await authApi.createTestAccount({ fullName: name, name, email: address });
+      const result = await authApi.createTestAccount({ username: name, role, email: address });
+      setUsername('');
+      setRole('');
+      setEmail('');
       setNotice(createAccountNotice(result));
     } catch (err) {
       setNotice(createAccountNotice(null, err));
@@ -467,20 +459,44 @@ function CreateAccountPage({ onNavigate }) {
           <span>PlanWise <em>AI</em></span>
         </div>
         <h2>Create account</h2>
-        <p className="pw-signup-lead">An administrator assigns your role before you can sign in.</p>
+        <p className="pw-signup-lead">Submit your username, role, and email. An administrator reviews your request before you can sign in.</p>
         <form className="auth-form pw-signup-form" onSubmit={submit}>
-          <label className="auth-field"><span>Full name</span><div className="auth-input"><UserRound size={16} /><input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Enter your name" autoComplete="name" /></div></label>
-          <label className="auth-field"><span>Email address</span><div className="auth-input"><Mail size={16} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /></div></label>
-          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Creating account...' : 'Create Account'}</button>
+          <label className="auth-field">
+            <span>Username</span>
+            <div className="auth-input">
+              <UserRound size={16} />
+              <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Choose a username" autoComplete="username" />
+            </div>
+          </label>
+          <label className="auth-field">
+            <span>Role</span>
+            <div className="auth-input">
+              <BriefcaseBusiness size={16} />
+              <select value={role} onChange={(event) => setRole(event.target.value)} required>
+                <option value="">Select Lecturer or Teacher</option>
+                <option value="Lecturer">Lecturer</option>
+                <option value="Teacher">Teacher</option>
+              </select>
+            </div>
+          </label>
+          <label className="auth-field">
+            <span>Email address</span>
+            <div className="auth-input">
+              <Mail size={16} />
+              <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" />
+            </div>
+          </label>
+          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Sending request...' : 'Submit request'}</button>
         </form>
         <p className="pw-signup-switch">Already have an account? <button type="button" onClick={() => onNavigate('login')}>Sign In</button></p>
       </div>
-      {notice && (
-        <div className={`pw-auth-toast is-${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}>
-          {notice.tone === 'ok' ? <CheckCircle2 size={16} /> : null}
-          <span>{notice.text}</span>
-        </div>
-      )}
+      {notice ? (
+        <Notice
+          tone={notice.tone === 'ok' ? 'success' : 'error'}
+          message={notice.text}
+          onDismiss={() => setNotice(null)}
+        />
+      ) : null}
     </AuthShell>
   );
 }
@@ -529,108 +545,6 @@ function InstitutionField({ label, placeholder, options, value, onChange }) {
   );
 }
 
-function RegisterPage({ onRegister, onNavigate }) {
-  const [fields, setFields] = useState({ name: '', email: '', password: '', confirm: '', role: 'Lecturer', institution: '', institutionOther: '', department: '' });
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const checks = passwordChecks(fields.password);
-  const validPassword = Object.values(checks).every(Boolean);
-  const passwordHint = passwordFeedback(fields.password);
-  const isSchoolTeacher = fields.role === 'Teacher';
-  const [institutions, setInstitutions] = useState([]);
-  useEffect(() => {
-    institutionApi.list({ role: isSchoolTeacher ? 'teacher' : 'lecturer' })
-      .then((data) => setInstitutions(data.institutions || []))
-      .catch((err) => setError(err.message || 'Could not load institutions.'));
-  }, [isSchoolTeacher]);
-  const institutionLabel = isSchoolTeacher ? 'School' : 'Institution';
-  const departmentLabel = isSchoolTeacher ? 'Subject or Department' : 'Department';
-  const departmentPlaceholder = isSchoolTeacher ? 'Enter your subject or department' : 'Enter your department';
-  function update(field, value) { setFields((current) => ({ ...current, [field]: value })); }
-  function selectRole(role) {
-    setFields((current) => ({ ...current, role, institution: '' }));
-  }
-  async function submit(event) {
-    event.preventDefault();
-    setError('');
-    const institution = fields.institution.trim();
-    if (!fields.name.trim() || !fields.email.trim() || !fields.password || !fields.confirm || !fields.role || !institution || !fields.department.trim()) {
-      const message = 'Please complete all required fields, including role and institution.';
-      setError(message);
-      window.alert(message);
-      return;
-    }
-    if (!validPassword) {
-      const message = 'Choose a stronger password that meets all requirements.';
-      setError(message);
-      window.alert(message);
-      return;
-    }
-    if (fields.password !== fields.confirm) {
-      const message = 'Passwords do not match.';
-      setError(message);
-      window.alert(message);
-      return;
-    }
-    setLoading(true);
-    try {
-      const result = await authApi.register({
-        fullName: fields.name.trim(),
-        name: fields.name.trim(),
-        email: fields.email.trim(),
-        password: fields.password,
-        role: fields.role,
-        institution,
-        department: fields.department.trim(),
-      });
-      onRegister({ ...result.user, welcomePending: true }, result.token);
-    } catch (err) {
-      const message = err.message || 'Unable to create your account.';
-      const network = !err.status && /network|failed to fetch|timeout|ECONNABORTED/i.test(message);
-      setError(network ? 'Could not reach PlanWise. Check your connection and try again.' : message);
-      if (!network) window.alert(message);
-      setLoading(false);
-    }
-  }
-  return (
-    <AuthShell mode="register" onNavigate={onNavigate}>
-      <div className="pw-signup-card">
-        <button type="button" className="pw-signup-brand" onClick={() => onNavigate('landing')}>
-          <PlanWiseMark />
-          <span>PlanWise <em>AI</em></span>
-        </button>
-        <h2>Create your educator account</h2>
-        <form className="auth-form register-form pw-signup-form" autoComplete="off" onSubmit={submit}>
-          <div className="pw-role-toggle" role="group" aria-label="What are you?">
-            <button type="button" className={fields.role === 'Lecturer' ? 'is-active' : ''} aria-pressed={fields.role === 'Lecturer'} onClick={() => selectRole('Lecturer')}>Lecturer</button>
-            <button type="button" className={isSchoolTeacher ? 'is-active' : ''} aria-pressed={isSchoolTeacher} onClick={() => selectRole('Teacher')}>Teacher</button>
-          </div>
-          <div className="pw-signup-grid">
-            <label className="auth-field"><span>Full Name</span><div className="auth-input"><UserRound size={16} /><input value={fields.name} onChange={(event) => update('name', event.target.value)} placeholder="Enter your full name" autoComplete="off" name="planwise-full-name" /></div></label>
-            <label className="auth-field"><span>Email Address</span><div className="auth-input"><Mail size={16} /><input type="email" value={fields.email} onChange={(event) => update('email', event.target.value)} placeholder="you@example.com" autoComplete="off" name="planwise-email" /></div></label>
-            <PasswordField label="Password" value={fields.password} onChange={(value) => update('password', value)} placeholder="Create a password" autoComplete="off" />
-            <PasswordField label="Confirm Password" value={fields.confirm} onChange={(value) => update('confirm', value)} placeholder="Confirm your password" autoComplete="off" />
-          </div>
-          {passwordHint && <p className={`password-hint ${validPassword ? 'valid' : ''}`}>{passwordHint}</p>}
-          <div className="pw-signup-grid">
-            <InstitutionField
-              label={institutionLabel}
-              placeholder={isSchoolTeacher ? 'Select your school' : 'Select your university'}
-              options={institutions}
-              value={fields.institution}
-              onChange={(value) => update('institution', value)}
-            />
-            <label className="auth-field"><span>{departmentLabel}</span><div className="auth-input"><BookOpen size={16} /><input value={fields.department} onChange={(event) => update('department', event.target.value)} placeholder={departmentPlaceholder} autoComplete="off" name="planwise-department" /></div></label>
-          </div>
-          {error && <div className="auth-error" role="alert">{error}</div>}
-          <button className="pw-signup-submit" disabled={loading}>{loading ? 'Creating account...' : <>Create Account <ArrowRight size={18} /></>}</button>
-        </form>
-        <p className="pw-signup-switch">Already have an account? <button type="button" onClick={() => onNavigate('login')}>Sign In</button></p>
-      </div>
-    </AuthShell>
-  );
-}
-
 function ForgotPasswordPage({ onNavigate }) {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
@@ -669,13 +583,13 @@ function ForgotPasswordPage({ onNavigate }) {
             <p className="pw-signup-lead">Enter your email address and we will help you reset your password.</p>
             <form className="auth-form pw-signup-form" onSubmit={submit}>
               <label className="auth-field"><span>Email Address</span><div className="auth-input"><Mail size={16} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@institution.edu" /></div></label>
-              {error && <div className="auth-error" role="alert">{error}</div>}
               <button className="pw-signup-submit" disabled={loading}>{loading ? 'Sending...' : 'Send Reset Link'}</button>
             </form>
             <p className="pw-signup-switch"><button type="button" onClick={() => onNavigate('login')}>Back to Sign In</button></p>
           </>
         )}
       </div>
+      {error ? <Notice tone="error" message={error} onDismiss={() => setError('')} /> : null}
     </AuthShell>
   );
 }
@@ -718,10 +632,10 @@ function ResetPasswordPage({ onNavigate }) {
           <PasswordField label="New password" value={password} onChange={setPassword} autoComplete="new-password" />
           <PasswordField label="Confirm password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
           {password ? <p className={`password-hint ${validPassword ? 'valid' : ''}`}>{passwordFeedback(password)}</p> : null}
-          {error && <div className="auth-error" role="alert">{error}</div>}
           <button className="pw-signup-submit" disabled={loading}>{loading ? 'Saving...' : 'Save Password'}</button>
         </form>
       </div>
+      {error ? <Notice tone="error" message={error} onDismiss={() => setError('')} /> : null}
     </AuthShell>
   );
 }
@@ -787,9 +701,9 @@ function ChangePasswordPage({ onChanged }) {
           </p>
         )}
         <ChangePasswordField label="Confirm New Password" value={confirm} onChange={(value) => { setConfirm(value); setError(''); }} placeholder="Confirm new password" autoComplete="new-password" />
-        {error && <p className="auth-error" role="alert">{error}</p>}
         <button className="pw-signup-submit" disabled={loading}>{loading ? 'Updating...' : 'Update Password'}</button>
       </form>
+      {error ? <Notice tone="error" message={error} onDismiss={() => setError('')} /> : null}
     </section>
   );
 }
@@ -840,6 +754,7 @@ function ProfilePage({ user, onSave, onNavigate, startEditing = false }) {
 }
 
 function SettingsPage({ user, onNavigate, onLogout, darkMode, setDarkMode }) {
+  const isAdmin = user?.role === 'Administrator';
   const [preferences, setPreferences] = useState({
     emailNotifications: true,
     lessonPlanNotifications: true,
@@ -871,10 +786,10 @@ function SettingsPage({ user, onNavigate, onLogout, darkMode, setDarkMode }) {
         <div>
           <span className="section-kicker">ACCOUNT SETTINGS</span>
           <h1>Settings</h1>
-          <p>Manage your workspace preferences and account.</p>
+          <p>{isAdmin ? 'Manage account preferences and website images for the hero and site.' : 'Manage your workspace preferences and account.'}</p>
         </div>
       </div>
-      <div className="settings-layout settings-layout-with-photo">
+      <div className={`settings-layout ${isAdmin ? '' : 'settings-layout-with-photo'}`}>
         <div className="settings-main">
           <div className="panel-card settings-card">
             <div className="settings-title"><UserRound size={18} /><div><h3>Account</h3><span>Personal information and access</span></div></div>
@@ -899,29 +814,36 @@ function SettingsPage({ user, onNavigate, onLogout, darkMode, setDarkMode }) {
               <label className="toggle-row" key={key}><span>{label}</span><input type="checkbox" checked={preferences[key]} onChange={() => toggle(key)} /><i /></label>
             ))}
           </div>
+          {isAdmin ? <SiteImagesAdmin embedded /> : null}
         </div>
-        <aside className="settings-photo-panel" aria-hidden="true">
-          <img src="/dashboard/settings-photo.jpg" alt="" />
-        </aside>
+        {!isAdmin ? (
+          <aside className="settings-photo-panel" aria-hidden="true">
+            <img src="/dashboard/settings-photo.jpg" alt="" />
+          </aside>
+        ) : null}
       </div>
     </section>
   );
 }
 
-function AccountsPage() {
+function AccountsPage({ onAccountsChanged }) {
   const [users, setUsers] = useState([]);
   const [institutions, setInstitutions] = useState({ universities: [], schools: [] });
   const [form, setForm] = useState({ name: '', email: '', role: 'Lecturer', institution: '', department: '' });
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [tempPassword, setTempPassword] = useState('');
+  const [popup, setPopup] = useState(null);
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(null);
   const isTeacher = form.role === 'Teacher';
 
+  function showPopup(tone, text) {
+    setPopup({ tone, text });
+  }
+
   async function refresh() {
     const rows = await adminApi.list();
     setUsers(rows);
+    onAccountsChanged?.();
   }
 
   useEffect(() => {
@@ -935,12 +857,17 @@ function AccountsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!popup) return undefined;
+    const timer = window.setTimeout(() => setPopup(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [popup]);
+
   async function createAccount(event) {
     event.preventDefault();
     setError('');
-    setNotice('');
     if (!form.name.trim() || !form.email.trim() || (form.role !== 'Administrator' && (!form.institution || !form.department.trim()))) {
-      setError('Name, email, role, and institution are required.');
+      setError('Name, email, role, institution, and department are required.');
       return;
     }
     try {
@@ -953,23 +880,35 @@ function AccountsPage() {
       });
       setUsers((current) => [result.user, ...current.filter((item) => item.id !== result.user.id)]);
       setForm({ name: '', email: '', role: 'Lecturer', institution: '', department: '' });
-      setNotice('Account created. Approve it to get a temporary password.');
+      showPopup('ok', 'Account created. Approve it to send login credentials.');
+      onAccountsChanged?.();
     } catch (err) {
       setError(err.message || 'Could not create the account.');
     }
   }
 
-  async function run(action, id) {
+  async function run(action, id, kind = 'other') {
     setError('');
-    setNotice('');
-    setTempPassword('');
     try {
       const result = await action(id);
       setUsers((current) => current.map((item) => item.id === result.user.id ? result.user : item));
-      setNotice(result.message || 'Updated.');
-      setTempPassword(result.temporaryPassword || '');
+      if (kind === 'credentials') {
+        showPopup(
+          /not been sent|not accepted|failed/i.test(String(result.message || '')) ? 'error' : 'ok',
+          /not been sent|not accepted|failed/i.test(String(result.message || ''))
+            ? 'Credentials have not been sent.'
+            : 'Credentials have successfully been sent.',
+        );
+      } else {
+        showPopup('ok', result.message || 'Updated.');
+      }
+      onAccountsChanged?.();
     } catch (err) {
-      setError(err.message || 'Could not update the account.');
+      if (kind === 'credentials') {
+        showPopup('error', 'Credentials have not been sent.');
+      } else {
+        setError(err.message || 'Could not update the account.');
+      }
     }
   }
 
@@ -979,55 +918,76 @@ function AccountsPage() {
         <div>
           <span className="section-kicker">ADMINISTRATION</span>
           <h1>Accounts</h1>
-          <p>Create educator accounts, then approve them before they can log in.</p>
+          <p>Review registration requests, assign institution details, and approve accounts before they can log in.</p>
         </div>
       </div>
       {error ? <Notice message={error} /> : null}
-      {notice && <div className="auth-error" role="status">{notice}</div>}
-      {tempPassword && (
-        <div className="auth-note" role="status">
-          Temporary password: <strong>{tempPassword}</strong> — share it with the user; they must change it on first sign-in.
+      {popup ? (
+        <Notice
+          tone={popup.tone === 'error' ? 'error' : 'success'}
+          message={popup.text}
+          onDismiss={() => setPopup(null)}
+        />
+      ) : null}
+      <form className="panel-card admin-create-account-form" onSubmit={createAccount}>
+        <div className="account-form-grid">
+          <label className="field"><span>Full name</span><input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></label>
+          <label className="field"><span>Email</span><input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} /></label>
+          <label className="field"><span>Role</span>
+            <select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value, institution: '' }))}>
+              <option>Lecturer</option>
+              <option>Teacher</option>
+              <option>Administrator</option>
+            </select>
+          </label>
+          {form.role === 'Administrator' ? <label className="field"><span>Institution</span><input value="Not required" disabled /></label> : (
+            <InstitutionField
+              label={isTeacher ? 'School' : 'Institution'}
+              placeholder={isTeacher ? 'Select a school' : 'Select a university'}
+              options={isTeacher ? institutions.schools : institutions.universities}
+              value={form.institution}
+              onChange={(value) => setForm((current) => ({ ...current, institution: value }))}
+            />
+          )}
+          <label className="field"><span>Department</span><input value={form.department} onChange={(event) => setForm((current) => ({ ...current, department: event.target.value }))} /></label>
         </div>
-      )}
-      <form className="panel-card account-form-grid" onSubmit={createAccount}>
-        <label className="field"><span>Full name</span><input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></label>
-        <label className="field"><span>Email</span><input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} /></label>
-        <label className="field"><span>Role</span>
-          <select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value, institution: '' }))}>
-            <option>Lecturer</option>
-            <option>Teacher</option>
-            <option>Administrator</option>
-          </select>
-        </label>
-        {form.role === 'Administrator' ? <label className="field"><span>Institution</span><input value="Not required" disabled /></label> : (
-          <InstitutionField
-            label={isTeacher ? 'School' : 'Institution'}
-            placeholder={isTeacher ? 'Select a school' : 'Select a university'}
-            options={isTeacher ? institutions.schools : institutions.universities}
-            value={form.institution}
-            onChange={(value) => setForm((current) => ({ ...current, institution: value }))}
-          />
-        )}
-        <label className="field"><span>Department</span><input value={form.department} onChange={(event) => setForm((current) => ({ ...current, department: event.target.value }))} /></label>
-        <button className="pw-signup-submit" type="submit">Create account</button>
+        <div className="admin-create-account-actions">
+          <button className="primary-button admin-create-account-btn" type="submit">Create account</button>
+        </div>
       </form>
       <div className="panel-card accounts-table">
         {loading ? <p>Loading accounts...</p> : users.length === 0 ? <p>No accounts yet.</p> : (
           <table>
             <thead>
-              <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+              <tr>
+                <th>Username</th>
+                <th>Email</th>
+                <th>Requested role</th>
+                <th>Status</th>
+                <th>Registered</th>
+                <th>Actions</th>
+              </tr>
             </thead>
             <tbody>
               {users.map((user) => (
                 <tr key={user.id}>
-                  <td data-label="Name">{user.fullName || user.name}</td>
+                  <td data-label="Username">{user.username || user.fullName || user.name}</td>
                   <td data-label="Email">{user.email}</td>
-                  <td data-label="Role">{user.role}</td>
-                  <td data-label="Status">{user.accountStatus}</td>
+                  <td data-label="Requested role">{user.requestedRole || (user.role !== 'Not assigned' && user.role !== 'Administrator' ? user.role : '—')}</td>
+                  <td data-label="Status">
+                    <span className={`account-status-pill is-${String(user.accountStatus || '').toLowerCase()}`}>
+                      {user.accountStatus}
+                    </span>
+                    {user.credentialEmailStatus === 'failed' ? <small className="account-status-note"> · email failed</small> : null}
+                  </td>
+                  <td data-label="Registered">{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}</td>
                   <td data-label="Actions" className="account-actions">
-                    {user.accountStatus !== 'approved' && user.role !== 'Administrator' && <button type="button" onClick={() => setAssigning(user)}>Approve and Assign Role</button>}
-                    {user.accountStatus !== 'approved' && user.role === 'Administrator' && <button type="button" onClick={() => run(adminApi.approve, user.id)}>Approve</button>}
+                    {user.accountStatus === 'pending' && user.role !== 'Administrator' && <button type="button" onClick={() => setAssigning(user)}>Approve</button>}
+                    {user.accountStatus === 'pending' && user.role === 'Administrator' && <button type="button" onClick={() => run(adminApi.approve, user.id, 'credentials')}>Approve</button>}
                     {user.accountStatus === 'pending' && <button type="button" onClick={() => run(adminApi.reject, user.id)}>Reject</button>}
+                    {user.accountStatus === 'approved' && user.mustChangePassword && (user.credentialEmailStatus === 'failed' || user.credentialEmailStatus === 'accepted') && (
+                      <button type="button" onClick={() => run(adminApi.resendCredentials, user.id, 'credentials')}>Resend credentials</button>
+                    )}
                     {user.accountStatus === 'approved' && user.role !== 'Administrator' && <button type="button" onClick={() => run(adminApi.suspend, user.id)}>Suspend</button>}
                     {user.accountStatus === 'approved' && user.role !== 'Administrator' && <button type="button" onClick={() => run(adminApi.deactivate, user.id)}>Deactivate</button>}
                     {(user.accountStatus === 'suspended' || user.accountStatus === 'inactive') && <button type="button" onClick={() => run(adminApi.restore, user.id)}>Restore</button>}
@@ -1038,7 +998,19 @@ function AccountsPage() {
           </table>
         )}
       </div>
-      <AssignRoleDialog user={assigning} onClose={() => setAssigning(null)} onApproved={() => { setAssigning(null); setNotice('Role assigned and login email queued.'); refresh().catch((err) => setError(err.message || 'Could not load accounts.')); }} />
+      <AssignRoleDialog
+        user={assigning}
+        onClose={() => setAssigning(null)}
+        onApproved={(result) => {
+          setAssigning(null);
+          if (result?.credentialsSent === false) {
+            showPopup('error', 'Credentials have not been sent.');
+          } else {
+            showPopup('ok', 'Credentials have successfully been sent.');
+          }
+          refresh().catch((err) => setError(err.message || 'Could not load accounts.'));
+        }}
+      />
     </section>
   );
 }
@@ -1055,7 +1027,7 @@ function App() {
   const [activeSection, setActiveSection] = useState(() => {
     const path = window.location.pathname;
     if (path === '/profile') return 'profile';
-    if (path === '/settings') return 'settings';
+    if (path === '/settings' || path === '/admin/images') return 'settings';
     if (path === '/accounts') return 'accounts';
     if (path === '/courses') return 'courses';
     if (path === '/courses/upload') return 'upload-course';
@@ -1094,11 +1066,13 @@ function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generated, setGenerated] = useState(null);
   const [selectedLessonIndex, setSelectedLessonIndex] = useState(0);
+  const [editingLesson, setEditingLesson] = useState(null);
   const [savedPlans, setSavedPlans] = useState([]);
   const [openWeeks, setOpenWeeks] = useState({ 1: true });
   const [profileOpen, setProfileOpen] = useState(false);
   const [adminCollapsed, setAdminCollapsed] = useState(false);
   const [profileEditing, setProfileEditing] = useState(false);
+  const [checkoutToken, setCheckoutToken] = useState('');
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
@@ -1114,6 +1088,11 @@ function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
+  const [searchError, setSearchError] = useState('');
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [adminOverview, setAdminOverview] = useState(null);
+  const [adminOverviewLoading, setAdminOverviewLoading] = useState(false);
+  const [adminOverviewError, setAdminOverviewError] = useState('');
   const [planQuery, setPlanQuery] = useState('');
   const [resourceQuery, setResourceQuery] = useState('');
   const [resourceType, setResourceType] = useState('all');
@@ -1227,18 +1206,57 @@ function App() {
   useEffect(() => {
     if (mustChangePassword || awaitingRoleConfirmation(currentUser)) {
       setSearchResults(null);
+      setSearchError('');
       return undefined;
     }
     const query = searchQuery.trim();
     if (query.length < 2) {
       setSearchResults(null);
+      setSearchError('');
       return undefined;
     }
     const timer = setTimeout(() => {
-      searchApi.query(query).then(setSearchResults).catch((err) => setDataError(err.message || 'Search failed.'));
+      searchApi.query(query)
+        .then((results) => {
+          setSearchResults(results);
+          setSearchError('');
+        })
+        .catch((err) => {
+          setSearchResults(null);
+          setSearchError(err.message || 'Search failed.');
+        });
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery, mustChangePassword, currentUser]);
+
+  async function refreshAdminOverview() {
+    if (currentUser?.role !== 'Administrator') return null;
+    setAdminOverviewLoading(true);
+    try {
+      const data = await adminApi.overview();
+      setAdminOverview(data);
+      setPendingApprovals(Number(data?.cards?.pendingApprovals || 0));
+      setAdminOverviewError('');
+      return data;
+    } catch (err) {
+      setAdminOverviewError(err.message || 'Could not load administrator overview.');
+      return null;
+    } finally {
+      setAdminOverviewLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (currentUser?.role !== 'Administrator' || !isAuthenticated) {
+      setPendingApprovals(0);
+      setAdminOverview(null);
+      return undefined;
+    }
+    refreshAdminOverview();
+    const timer = window.setInterval(() => { refreshAdminOverview(); }, 30000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.role, isAuthenticated]);
 
   function adjustZoom(delta) {
     setUiZoom((current) => {
@@ -1491,13 +1509,75 @@ function App() {
     }
   }
 
-  function exportPlan(format) {
+  function printPlan() {
     if (!generated) return;
-    if (format === 'pdf' || format === 'docx') {
-      alert(`${format.toUpperCase()} export is ready for download in a real implementation. This demo generates the plan in-app.`);
-      return;
-    }
     window.print();
+  }
+
+  function listFieldToText(value) {
+    if (Array.isArray(value)) return value.join('\n');
+    return String(value || '');
+  }
+
+  function textToList(value) {
+    return String(value || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  }
+
+  async function applyLessonEdit(event) {
+    event.preventDefault();
+    if (!editingLesson || !generated) return;
+    const draft = editingLesson.draft || {};
+    const nextLesson = {
+      ...draft,
+      topic: String(draft.topic || '').trim(),
+      subtopic: String(draft.subtopic || '').trim(),
+      assessmentMethod: String(draft.assessmentMethod || '').trim(),
+      learningObjectives: textToList(draft.learningObjectivesText ?? listFieldToText(draft.learningObjectives)),
+      learningOutcomes: textToList(draft.learningOutcomesText ?? listFieldToText(draft.learningOutcomes)),
+      teacherActivities: textToList(draft.teacherActivitiesText ?? listFieldToText(draft.teacherActivities)),
+      studentActivities: textToList(draft.studentActivitiesText ?? listFieldToText(draft.studentActivities)),
+      learningResources: textToList(draft.learningResourcesText ?? listFieldToText(draft.learningResources)),
+    };
+    delete nextLesson.learningObjectivesText;
+    delete nextLesson.learningOutcomesText;
+    delete nextLesson.teacherActivitiesText;
+    delete nextLesson.studentActivitiesText;
+    delete nextLesson.learningResourcesText;
+    const lessons = [...(generated.lessons || [])];
+    lessons[editingLesson.index] = nextLesson;
+    const nextPlan = { ...generated, lessons };
+    setGenerated(nextPlan);
+    setEditingLesson(null);
+    if (nextPlan.id) {
+      try {
+        const saved = await lessonPlanApi.update(nextPlan.id, nextPlan);
+        setGenerated(saved);
+        setSavedPlans((current) => current.map((item) => item.id === saved.id ? saved : item));
+      } catch (error) {
+        setErrors({ general: error.message || 'Lesson updated locally but could not be saved to the server.' });
+      }
+    }
+  }
+
+  function duplicateLessonAt(index) {
+    if (!generated?.lessons?.[index]) return;
+    const source = generated.lessons[index];
+    const copy = {
+      ...JSON.parse(JSON.stringify(source)),
+      topic: `${source.topic || 'Lesson'} (copy)`,
+    };
+    const lessons = [...generated.lessons];
+    lessons.splice(index + 1, 0, copy);
+    const nextPlan = { ...generated, lessons };
+    setGenerated(nextPlan);
+    if (nextPlan.id) {
+      lessonPlanApi.update(nextPlan.id, nextPlan)
+        .then((saved) => {
+          setGenerated(saved);
+          setSavedPlans((current) => current.map((item) => item.id === saved.id ? saved : item));
+        })
+        .catch((error) => setErrors({ general: error.message || 'Could not save duplicated lesson.' }));
+    }
   }
 
   async function saveAssessment(next) {
@@ -1594,8 +1674,24 @@ function App() {
     }
     setActiveSection(section);
     if (section === 'profile') setProfileEditing(Boolean(options.editing));
+    if (section === 'billing-checkout') setCheckoutToken(String(options.token || ''));
+    if (section === 'billing') setCheckoutToken('');
     setProfileOpen(false);
-    const paths = { profile: '/profile', settings: '/settings', courses: '/courses', 'upload-course': '/courses/upload', progress: '/progress', 'forgot-password': '/forgot-password', login: '/login', landing: '/', accounts: '/accounts', 'create-account': '/create-account' };
+    const paths = {
+      profile: '/profile',
+      settings: '/settings',
+      courses: '/courses',
+      'upload-course': '/courses/upload',
+      progress: '/progress',
+      'forgot-password': '/forgot-password',
+      login: '/login',
+      landing: '/',
+      accounts: '/accounts',
+      'create-account': '/create-account',
+      billing: '/billing',
+      'billing-checkout': options.token ? `/billing/checkout?token=${encodeURIComponent(options.token)}` : '/billing/checkout',
+      'admin-images': '/settings',
+    };
     window.history.pushState({}, '', paths[section] || '/');
   }
 
@@ -1799,7 +1895,9 @@ function App() {
     return <><LandingPage onNavigate={navigateTo} />{floatingAssistant}</>;
   }
 
-  const visibleNavItems = navItems.filter((item) => (roleNav[currentUser.role] || roleNav.Lecturer).includes(item.id));
+  const allowedNav = roleNav[currentUser.role] || roleNav.Lecturer;
+  const navById = Object.fromEntries(navItems.map((item) => [item.id, item]));
+  const visibleNavItems = allowedNav.map((id) => navById[id]).filter(Boolean);
   const myAttendance = attendanceHistory;
   const roleLabel = currentUser.role || '';
   const navActive = (id) => activeSection === id
@@ -1827,16 +1925,18 @@ function App() {
       />
       <aside className={`glass-sidebar ${sidebarOpen ? 'is-open' : ''}`} aria-label="Workspace navigation" inert={mustChangePassword || (isAuthenticated && !sessionChecked) ? true : undefined}>
         <div className="sidebar-brand">
-          <div className="brand-mark"><BookOpen size={18} /></div>
-          <div>
-            <strong>Digital Lesson Plan</strong>
-            <small>Plan • Teach • Inspire</small>
-            {currentUser.role === 'Administrator' && (
-              <button type="button" className="text-button" onClick={() => setAdminCollapsed((value) => !value)} aria-expanded={!adminCollapsed}>
-                {adminCollapsed ? 'Show menu' : 'Hide menu'}
-              </button>
-            )}
+          <div className="sidebar-logo-lockup" aria-label="PlanWise AI — Plan • Teach • Inspire">
+            <PlanWiseMark className="sidebar-logo-mark" />
+            <div className="sidebar-logo-copy">
+              <strong>PlanWise <em>AI</em></strong>
+              <small>Plan • Teach • Inspire</small>
+            </div>
           </div>
+          {currentUser.role === 'Administrator' && (
+            <button type="button" className="text-button sidebar-collapse-btn" onClick={() => setAdminCollapsed((value) => !value)} aria-expanded={!adminCollapsed}>
+              {adminCollapsed ? 'Show menu' : 'Hide menu'}
+            </button>
+          )}
           <button type="button" className="sidebar-close" aria-label="Close navigation" onClick={() => setSidebarOpen(false)}><X size={18} /></button>
         </div>
         <nav className="sidebar-nav">
@@ -1865,8 +1965,17 @@ function App() {
             );
           })}
         </nav>
-        <div className="sidebar-footer sidebar-inspiration" data-ref-image="sidebar-inspiration" role="img" aria-label="Better Lesson Plans. Brighter Futures.">
-          <em>Better Lesson Plans. Brighter Futures.</em>
+        <div className="sidebar-footer sidebar-inspiration" data-ref-image="sidebar-inspiration">
+          <img
+            className="sidebar-inspiration-img"
+            src="/dashboard/sidebar-leaves-4k.jpg"
+            alt=""
+            width={1280}
+            height={720}
+            decoding="async"
+            fetchPriority="low"
+          />
+          <em>Better Education.<br />Brighter Futures.</em>
         </div>
       </aside>
 
@@ -1883,39 +1992,84 @@ function App() {
           </button>
           <div className="glass-search">
             <Search size={16} />
-            <input type="text" value={searchQuery} placeholder="Search lessons, resources, assessments, quizzes, calendar" onChange={(event) => setSearchQuery(event.target.value)} />
-            {searchResults && (
+            <input
+              type="text"
+              value={searchQuery}
+              placeholder={currentUser.role === 'Administrator'
+                ? 'Search users, lesson plans, assessments, quizzes'
+                : 'Search lessons, resources, assessments, quizzes, calendar'}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+            {(searchResults || searchError) && (
               <div className="profile-menu" style={{ left: 0, right: 'auto', width: 'min(420px, 70vw)' }}>
-                {[
-                  ['lessonPlans', 'Lesson plans', 'plans'],
-                  ['resources', 'Resources', 'resources'],
-                  ['courses', 'Courses', 'courses'],
-                  ['assessments', 'Assessments', 'assessments'],
-                  ['quizzes', 'Quizzes', 'assessments'],
-                  ['calendar', 'Calendar', 'calendar'],
-                ].map(([key, label, section]) => (
-                  <div key={key}>
-                    <small>{label}</small>
-                    {(searchResults[key] || []).length ? searchResults[key].map((item) => (
-                      <button key={item.id} type="button" onClick={() => { setSearchQuery(''); setSearchResults(null); navigateTo(section); }}>{item.title}<small>{item.subtitle}</small></button>
-                    )) : <p className="muted-text">No {label.toLowerCase()}</p>}
-                  </div>
-                ))}
+                {searchError ? (
+                  <p className="muted-text">{searchError}</p>
+                ) : (
+                  <>
+                    {[
+                      ...(currentUser.role === 'Administrator' ? [['users', 'Users', 'admin-users']] : []),
+                      ['lessonPlans', 'Lesson plans', currentUser.role === 'Administrator' ? 'admin-plans' : 'plans'],
+                      ...(currentUser.role === 'Administrator' ? [] : [
+                        ['resources', 'Resources', 'resources'],
+                        ['courses', 'Courses', 'courses'],
+                      ]),
+                      ['assessments', 'Assessments', currentUser.role === 'Administrator' ? 'admin-assessments' : 'assessments'],
+                      ['quizzes', 'Quizzes', currentUser.role === 'Administrator' ? 'admin-assessments' : 'assessments'],
+                      ...(currentUser.role === 'Administrator' ? [] : [['calendar', 'Calendar', 'calendar']]),
+                    ].map(([key, label, section]) => (
+                      <div key={key}>
+                        <small>{label}</small>
+                        {(searchResults?.[key] || []).length ? searchResults[key].map((item) => (
+                          <button key={item.id} type="button" onClick={() => { setSearchQuery(''); setSearchResults(null); navigateTo(section); }}>{item.title}<small>{item.subtitle}</small></button>
+                        )) : <p className="muted-text">No {label.toLowerCase()} match</p>}
+                      </div>
+                    ))}
+                    {!['users', 'lessonPlans', 'assessments', 'quizzes', 'resources', 'courses', 'calendar']
+                      .some((key) => (searchResults?.[key] || []).length) && (
+                      <p className="muted-text">No results match “{searchQuery.trim()}”.</p>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>
 
           <div className="glass-top-actions">
-            <button className="glass-icon-btn notification-button" aria-label="Notifications" onClick={async () => { navigateTo('notifications'); const notes = await notificationApi.readAll(); setNotifications(notes.notifications || []); setUnreadCount(notes.unread || 0); }}><Bell size={18} />{unreadCount > 0 && <span className="notification-dot" />}</button>
+            <button
+              className="glass-icon-btn notification-button"
+              aria-label="Notifications"
+              onClick={async () => {
+                if (currentUser.role === 'Administrator' && pendingApprovals > 0) {
+                  navigateTo('admin-users');
+                  refreshAdminOverview();
+                  const notes = await notificationApi.list();
+                  setNotifications(notes.notifications || []);
+                  setUnreadCount(notes.unread || 0);
+                  return;
+                }
+                navigateTo('notifications');
+                const notes = await notificationApi.readAll();
+                setNotifications(notes.notifications || []);
+                setUnreadCount(notes.unread || 0);
+              }}
+            >
+              <Bell size={18} />
+              {(currentUser.role === 'Administrator' ? pendingApprovals : unreadCount) > 0 && (
+                <span className="notification-dot" data-count={currentUser.role === 'Administrator' ? pendingApprovals : unreadCount}>
+                  {currentUser.role === 'Administrator' && pendingApprovals > 0 ? pendingApprovals : ''}
+                </span>
+              )}
+            </button>
             <button className="glass-icon-btn" aria-label="Toggle theme" onClick={() => setDarkMode((value) => !value)}>{darkMode ? <Sun size={18} /> : <MoonStar size={18} />}</button>
             <div className="profile-anchor" ref={profileMenuRef}>
-              <button className="mini-profile" onClick={() => setProfileOpen((value) => !value)} aria-expanded={profileOpen}>
+              <button
+                className="mini-profile is-avatar-only"
+                onClick={() => setProfileOpen((value) => !value)}
+                aria-expanded={profileOpen}
+                aria-label="Open profile menu"
+                title={currentUser.name || 'Profile'}
+              >
                 <Avatar user={currentUser} />
-                <span className="profile-chip-copy">
-                  <strong>{currentUser.name || 'User'}</strong>
-                  <small>{[roleLabel, currentUser.institution].filter(Boolean).join(' | ') || 'Profile'}</small>
-                </span>
-                <ChevronDown size={15} />
               </button>
               {profileOpen && (
                 <div className="profile-menu">
@@ -1931,8 +2085,31 @@ function App() {
         </header>
 
         <main className="glass-workspace main-panel">
-        {currentUser.role === 'Administrator' && (activeSection === 'accounts' || activeSection === 'admin-users') && <AccountsPage />}
-        {currentUser.role === 'Administrator' && String(activeSection).startsWith('admin-') && <AdminPanel section={activeSection} />}
+        {currentUser.role === 'Administrator' && (activeSection === 'accounts' || activeSection === 'admin-users') && (
+          <AccountsPage onAccountsChanged={refreshAdminOverview} />
+        )}
+        {currentUser.role === 'Administrator' && activeSection === 'admin-billing' && (
+          <AdminBillingPage />
+        )}
+        {currentUser.role === 'Administrator' && String(activeSection).startsWith('admin-') && activeSection !== 'admin-users' && activeSection !== 'admin-billing' && (
+          <AdminPanel
+            section={activeSection}
+            searchQuery={searchQuery}
+            user={currentUser}
+            overview={adminOverview}
+            overviewLoading={adminOverviewLoading}
+            overviewError={adminOverviewError}
+            onNavigate={navigateTo}
+            onOverviewRefresh={refreshAdminOverview}
+          />
+        )}
+        {(activeSection === 'billing' || activeSection === 'billing-checkout') && (
+          <BillingPage
+            mode={activeSection === 'billing-checkout' ? 'checkout' : 'plans'}
+            checkoutToken={checkoutToken}
+            onNavigate={navigateTo}
+          />
+        )}
         {activeSection === 'profile' && <ProfilePage user={currentUser} onSave={saveUser} onNavigate={navigateTo} startEditing={profileEditing} />}
         {activeSection === 'settings' && <SettingsPage user={currentUser} onNavigate={navigateTo} onLogout={() => setLogoutOpen(true)} darkMode={darkMode} setDarkMode={setDarkMode} />}
         {activeSection === 'courses' && <CoursesPage courses={courses} onOpen={navigateCourse} onUpload={() => navigateTo('upload-course')} />}
@@ -2176,7 +2353,7 @@ function App() {
                                 <button className="primary-button" onClick={savePlan}>Save</button>
                                 <button className="secondary-button" onClick={() => (generated?.id ? downloadLessonPlanPdf(generated.id) : Promise.reject(new Error('Save the lesson plan before exporting.'))).catch((error) => setErrors({ general: error.message }))}>Export PDF</button>
                                 <button className="secondary-button" onClick={() => savePlan('draft')}>Save draft</button>
-                                <button className="secondary-button" onClick={() => exportPlan('print')}>Print</button>
+                                <button className="secondary-button" onClick={printPlan}>Print</button>
                               </div>
                             </div>
 
@@ -2193,8 +2370,10 @@ function App() {
                                     <button className="pill-button" onClick={() => setOpenWeeks((current) => ({ ...current, [weekKey]: !current[weekKey] }))}>{openWeeks[weekKey] ? 'Collapse' : 'Expand'} <ChevronDown size={14} className={openWeeks[weekKey] ? 'chevron-up' : ''} /></button>
                                   </div>
                                   {openWeeks[weekKey] && <div className="week-body">
-                                    {lessons.map((lesson, idx) => (
-                                      <div key={`${lesson.lessonDate}-${idx}`} className="lesson-block">
+                                    {lessons.map((lesson, idx) => {
+                                      const lessonIndex = (generated.lessons || []).findIndex((item) => item === lesson);
+                                      return (
+                                      <div key={`${lesson.lessonDate}-${idx}-${lesson.topic}`} className="lesson-block">
                                         <div className="lesson-block-header">
                                           <div>
                                             <strong>{lesson.topic}</strong>
@@ -2202,8 +2381,18 @@ function App() {
                                           </div>
                                           <div className="lesson-block-actions">
                                             <button className="small-link" onClick={() => regenerateLesson(lesson, 'Make this lesson more practical.')}>Regenerate</button>
-                                            <button className="small-link" onClick={() => alert('Edit lesson in a full editor implementation.')}>Edit</button>
-                                            <button className="small-link" onClick={() => alert('Duplicate lesson in a full editor implementation.')}>Duplicate</button>
+                                            <button className="small-link" onClick={() => setEditingLesson({
+                                              index: lessonIndex,
+                                              draft: {
+                                                ...lesson,
+                                                learningObjectivesText: listFieldToText(lesson.learningObjectives),
+                                                learningOutcomesText: listFieldToText(lesson.learningOutcomes),
+                                                teacherActivitiesText: listFieldToText(lesson.teacherActivities),
+                                                studentActivitiesText: listFieldToText(lesson.studentActivities),
+                                                learningResourcesText: listFieldToText(lesson.learningResources),
+                                              },
+                                            })}>Edit</button>
+                                            <button className="small-link" onClick={() => duplicateLessonAt(lessonIndex)}>Duplicate</button>
                                           </div>
                                         </div>
                                         <div className="lesson-grid">
@@ -2215,11 +2404,30 @@ function App() {
                                           <div><label>Assessment</label><p>{lesson.assessmentMethod}</p></div>
                                         </div>
                                       </div>
-                                    ))}
+                                    );})}
                                   </div>}
                                 </div>
                               ))}
                             </div>
+                            {editingLesson && (
+                              <div className="admin-dialog-backdrop" role="presentation">
+                                <form className="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-lesson-title" onSubmit={applyLessonEdit}>
+                                  <h2 id="edit-lesson-title">Edit lesson</h2>
+                                  <label className="field"><span>Topic</span><input value={editingLesson.draft.topic || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, topic: event.target.value } }))} /></label>
+                                  <label className="field"><span>Subtopic</span><input value={editingLesson.draft.subtopic || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, subtopic: event.target.value } }))} /></label>
+                                  <label className="field"><span>Objectives (one per line)</span><textarea rows={3} value={editingLesson.draft.learningObjectivesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningObjectivesText: event.target.value } }))} /></label>
+                                  <label className="field"><span>Outcomes (one per line)</span><textarea rows={3} value={editingLesson.draft.learningOutcomesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningOutcomesText: event.target.value } }))} /></label>
+                                  <label className="field"><span>Teacher activities (one per line)</span><textarea rows={3} value={editingLesson.draft.teacherActivitiesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, teacherActivitiesText: event.target.value } }))} /></label>
+                                  <label className="field"><span>Student activities (one per line)</span><textarea rows={3} value={editingLesson.draft.studentActivitiesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, studentActivitiesText: event.target.value } }))} /></label>
+                                  <label className="field"><span>Resources (one per line)</span><textarea rows={2} value={editingLesson.draft.learningResourcesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningResourcesText: event.target.value } }))} /></label>
+                                  <label className="field"><span>Assessment</span><textarea rows={2} value={editingLesson.draft.assessmentMethod || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, assessmentMethod: event.target.value } }))} /></label>
+                                  <div className="admin-actions">
+                                    <button type="submit" className="primary">Save lesson</button>
+                                    <button type="button" onClick={() => setEditingLesson(null)}>Cancel</button>
+                                  </div>
+                                </form>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2401,7 +2609,14 @@ function App() {
 
         {activeSection === 'notifications' && (
           <section className="account-page">
-            <div className="account-heading"><div><span className="section-kicker">UPDATES</span><h1>Notifications</h1><p>Lesson, assessment, and AI activity reminders appear here.</p></div></div>
+            <div className="account-heading"><div><span className="section-kicker">UPDATES</span><h1>Notifications</h1><p>Account approvals, lesson, assessment, and system reminders appear here.</p></div></div>
+            {currentUser.role === 'Administrator' && pendingApprovals > 0 && (
+              <div className="panel-card" style={{ marginBottom: '1rem' }}>
+                <strong>{pendingApprovals} account{pendingApprovals === 1 ? '' : 's'} awaiting approval</strong>
+                <p className="muted-text">Review pending sign-up requests and assign Teacher or Lecturer roles.</p>
+                <button type="button" className="primary-button" onClick={() => navigateTo('admin-users')}>Review pending accounts</button>
+              </div>
+            )}
             <div className="panel-card">
               <div className="activity-list">
                 {notifications.length ? notifications.map((item) => (
@@ -2415,6 +2630,9 @@ function App() {
                           <button type="button" className="primary-button" onClick={() => { setRoleConfirmError(''); setRoleConfirmOpen(true); }}>Confirm Role</button>
                           <small>If this role is incorrect, contact an administrator to request a correction.</small>
                         </>
+                      )}
+                      {item.type === 'account-approval' && currentUser.role === 'Administrator' && (
+                        <button type="button" className="primary-button" onClick={() => navigateTo('admin-users')}>Review accounts</button>
                       )}
                     </div>
                     <small>{item.type === 'role-confirmation' && awaitingRoleConfirmation(currentUser) ? 'Action needed' : (item.isRead ? 'Read' : 'New')}</small>
@@ -2430,7 +2648,7 @@ function App() {
           <div className="dialog-backdrop welcome-backdrop" role="presentation">
             <div className="confirm-dialog welcome-dialog" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
               <div className="dialog-icon"><Sparkles size={19} /></div>
-              <h2 id="welcome-title">Welcome to your Digital Lesson Plan System</h2>
+              <h2 id="welcome-title">Welcome to Planwise</h2>
               <p>I&apos;m your AI teaching assistant. I can help you create lesson plans, organise your calendar, build assessments, mark papers, and navigate the system.</p>
               <p className="welcome-role"><strong>{currentUser.role}</strong>{currentUser.institution ? ` · ${currentUser.institution}` : ''}</p>
               <p>What would you like to do first?</p>
@@ -2479,7 +2697,7 @@ function App() {
             <h2 id="role-confirm-title">Confirm this role?</h2>
             <p>This saves <strong>{currentUser.role}</strong> as your role. You cannot change it yourself.</p>
             <p>If it is incorrect, contact an administrator to request a correction.</p>
-            {roleConfirmError && <p className="auth-error" role="alert">{roleConfirmError}</p>}
+            {roleConfirmError ? <Notice tone="error" message={roleConfirmError} onDismiss={() => setRoleConfirmError('')} /> : null}
             <div className="dialog-actions">
               <button type="button" className="secondary-button" onClick={() => setRoleConfirmOpen(false)} disabled={roleConfirming}>Cancel</button>
               <button type="button" className="primary-button" disabled={roleConfirming} onClick={confirmAssignedRole}>{roleConfirming ? 'Confirming...' : 'Confirm Role'}</button>

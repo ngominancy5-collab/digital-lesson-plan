@@ -36,6 +36,35 @@ export function passwordChangedTemplateData(name) {
   return { user_name: String(name || '').trim() || 'there' };
 }
 
+export function accountCreatedTemplateName() {
+  return String(process.env.NEXUS_ACCOUNT_CREATED_TEMPLATE || 'account_created').trim();
+}
+
+export function accountCreatedMail(name) {
+  const greeting = String(name || '').trim() || 'there';
+  const subject = 'Welcome to PlanWise AI — Your Account Is Successfully Created';
+  const text = [
+    `Hello ${greeting},`,
+    '',
+    'Congratulations! Your PlanWise AI account has been successfully created, and you now have access to your dashboard.',
+    '',
+    "You can now start exploring PlanWise AI's features and tools to support your teaching and lesson-planning activities.",
+    '',
+    'Thank you for joining PlanWise AI.',
+    '',
+    'Best regards,',
+    'The PlanWise AI Team',
+  ].join('\n');
+  const html = [
+    `<p>Hello ${escapeHtml(greeting)},</p>`,
+    '<p>Congratulations! Your PlanWise AI account has been successfully created, and you now have access to your dashboard.</p>',
+    "<p>You can now start exploring PlanWise AI's features and tools to support your teaching and lesson-planning activities.</p>",
+    '<p>Thank you for joining PlanWise AI.</p>',
+    '<p>Best regards,<br>The PlanWise AI Team</p>',
+  ].join('');
+  return { subject, text, html };
+}
+
 const captured = [];
 
 function nexusConfig() {
@@ -69,7 +98,11 @@ function renderEmail({ template, data }) {
   if (templateName === passwordChangedTemplateName() || templateName === 'password_changed') {
     return passwordChangedMail(name);
   }
+  if (templateName === accountCreatedTemplateName() || templateName === 'account_created') {
+    return accountCreatedMail(name);
+  }
   const secret = String(payload.password || '').trim();
+  const loginUrl = String(payload.login_url || payload.loginUrl || '').trim();
   const appName = 'PlanWise AI';
   const isReset = String(template || '').trim() === resetTemplateName();
   const isLink = /^https?:\/\//i.test(secret);
@@ -101,22 +134,31 @@ function renderEmail({ template, data }) {
   const text = [
     `Hello ${name},`,
     '',
-    `An administrator created your ${appName} account.`,
+    `An administrator approved your ${appName} account.`,
+    `Username: ${name}`,
     `Temporary password: ${secret}`,
+    loginUrl ? `Sign in here: ${loginUrl}` : 'Sign in to PlanWise AI and choose a new password.',
     '',
-    'Sign in and choose a new password.',
+    'You must choose a new password the first time you sign in.',
   ].join('\n');
   const html = [
     `<p>Hello ${escapeHtml(name)},</p>`,
-    `<p>An administrator created your ${appName} account.</p>`,
-    `<p>Temporary password: <strong>${escapeHtml(secret)}</strong></p>`,
-    '<p>Sign in and choose a new password.</p>',
+    `<p>An administrator approved your ${appName} account.</p>`,
+    `<p>Username: <strong>${escapeHtml(name)}</strong><br>Temporary password: <strong>${escapeHtml(secret)}</strong></p>`,
+    loginUrl
+      ? `<p><a href="${escapeHtml(loginUrl)}">Sign in to PlanWise AI</a></p><p>If the button does not work, paste this link into your browser:<br>${escapeHtml(loginUrl)}</p>`
+      : '<p>Sign in to PlanWise AI and choose a new password.</p>',
+    '<p>You must choose a new password the first time you sign in.</p>',
   ].join('');
   return { subject, text, html };
 }
 
 export function loginTemplateName() {
-  return String(process.env.NEXUS_ACCOUNT_SETUP_TEMPLATE || process.env.NEXUS_LOGIN_TEMPLATE || 'Planwise Ai Login credentials').trim();
+  return String(
+    process.env.NEXUS_ACCOUNT_SETUP_TEMPLATE
+      || process.env.NEXUS_LOGIN_TEMPLATE
+      || 'Planwise Ai Login credentials',
+  ).trim();
 }
 
 export function resetTemplateName() {
@@ -129,6 +171,24 @@ export function takeCapturedNotifications() {
 
 function captureOnly() {
   return process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() === 'true';
+}
+
+async function sendViaHttpEmail({ template, to, data }) {
+  if (!emailConfigured()) {
+    const error = new Error('HTTP email is not configured.');
+    error.code = 'EMAIL_NOT_CONFIGURED';
+    throw error;
+  }
+  const { subject, text, html } = renderEmail({ template, data });
+  try {
+    const info = await sendMail({ to, subject, text, html });
+    return { id: info.messageId || '', requestId: '', status: 'delivered', provider: 'mailjet' };
+  } catch (error) {
+    console.error('Email delivery failed.', error.code || error.message || 'failed');
+    const wrapped = new Error('The email could not be sent.');
+    wrapped.code = 'EMAIL_SEND_FAILED';
+    throw wrapped;
+  }
 }
 
 export async function sendNotification({ template, to, data }) {
@@ -147,16 +207,7 @@ export async function sendNotification({ template, to, data }) {
 
   if (!config) {
     if (emailConfigured()) {
-      const { subject, text, html } = renderEmail({ template: payload.template, data: payload.data });
-      try {
-        const info = await sendMail({ to: payload.to, subject, text, html });
-        return { id: info.messageId || '', requestId: '', status: 'delivered' };
-      } catch (error) {
-        console.error('Email delivery failed.', error.code || 'failed');
-        const wrapped = new Error('The email could not be sent.');
-        wrapped.code = 'EMAIL_SEND_FAILED';
-        throw wrapped;
-      }
+      return sendViaHttpEmail(payload);
     }
     const error = new Error('Nexus email is not configured.');
     error.code = 'NEXUS_NOT_CONFIGURED';
@@ -174,26 +225,100 @@ export async function sendNotification({ template, to, data }) {
       body: JSON.stringify(payload),
     });
   } catch (error) {
-    console.error('Nexus notification request failed.', error.code || 'NETWORK');
+    console.error('Nexus notification request failed.', error.code || error.message || 'NETWORK');
+    if (emailConfigured()) {
+      console.error('Falling back to HTTP email provider after Nexus network failure.');
+      return sendViaHttpEmail(payload);
+    }
     const wrapped = new Error('Nexus could not be reached.');
     wrapped.code = 'NEXUS_NETWORK';
     throw wrapped;
   }
 
-  const body = await response.json().catch(() => ({}));
+  const raw = await response.text().catch(() => '');
+  let body = {};
+  try {
+    body = raw ? JSON.parse(raw) : {};
+  } catch {
+    body = { raw: raw.slice(0, 500) };
+  }
+
   if (response.status !== 202) {
-    console.error('Nexus rejected the notification.', response.status, body.error || body.message || 'rejected');
-    const wrapped = new Error('Nexus did not accept the notification.');
+    const detail = body.error || body.message || body.ErrorMessage || raw.slice(0, 300) || 'rejected';
+    console.error('Nexus rejected the notification.', response.status, detail);
+    if (emailConfigured()) {
+      console.error('Falling back to HTTP email provider after Nexus rejection.');
+      try {
+        return await sendViaHttpEmail(payload);
+      } catch (fallbackError) {
+        console.error('HTTP email fallback also failed.', fallbackError.code || fallbackError.message || 'failed');
+      }
+    }
+    const wrapped = new Error(`Nexus did not accept the notification (${response.status}): ${detail}`);
     wrapped.code = 'NEXUS_REJECTED';
     wrapped.status = response.status;
     throw wrapped;
   }
 
-  return {
+  const accepted = {
     id: body.id,
-    requestId: body.request_id || '',
+    requestId: body.request_id || String(body.id || ''),
     status: body.status || 'queued',
+    provider: 'nexus',
   };
+  console.info('Nexus accepted notification.', accepted.requestId || 'queued');
+
+  // Nexus returns 202 before rendering. Poll briefly so missing templates
+  // fall through to the HTTP email provider instead of a silent inbox miss.
+  const delivery = await waitForNexusDelivery(accepted.requestId || accepted.id);
+  if (delivery && isFailedDelivery(delivery.status)) {
+    console.error(
+      'Nexus delivery failed after accept.',
+      delivery.status,
+      delivery.errorMessage || delivery.template || 'unknown',
+    );
+    if (emailConfigured()) {
+      console.error('Falling back to HTTP email provider after Nexus delivery failure.');
+      return sendViaHttpEmail(payload);
+    }
+    const wrapped = new Error(
+      `Nexus accepted the notification but could not deliver it: ${delivery.errorMessage || delivery.status}`,
+    );
+    wrapped.code = 'NEXUS_DELIVERY_FAILED';
+    throw wrapped;
+  }
+  if (delivery?.status) accepted.status = delivery.status;
+  return accepted;
+}
+
+function isFailedDelivery(status) {
+  const value = String(status || '').trim().toLowerCase();
+  return value === 'failed' || value === 'error' || value === 'rejected';
+}
+
+async function waitForNexusDelivery(requestId, { attempts = 6, delayMs = 400 } = {}) {
+  const id = String(requestId || '').trim();
+  if (!id) return null;
+  let last = null;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      last = await getNotificationStatus(id);
+      const status = String(last.status || '').trim().toLowerCase();
+      if (!status || status === 'queued' || status === 'pending' || status === 'processing') {
+        await sleep(delayMs);
+        continue;
+      }
+      return last;
+    } catch (error) {
+      console.error('Nexus status poll failed.', error.message || error.code || 'failed');
+      await sleep(delayMs);
+    }
+  }
+  return last;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function getNotificationStatus(requestId) {

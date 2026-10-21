@@ -54,3 +54,28 @@ export function listWithProfiles() {
 export function countByRole(role) {
   return prisma.user.count({ where: { role } });
 }
+
+export function listApprovedAdmins() {
+  return prisma.user.findMany({
+    where: { role: 'admin', accountStatus: 'approved' },
+    select: { id: true, email: true, fullName: true },
+  });
+}
+
+export function searchUsers(query, take = 8) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+  return prisma.user.findMany({
+    where: {
+      OR: [
+        { fullName: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { username: { contains: q, mode: 'insensitive' } },
+        { profile: { institution: { contains: q, mode: 'insensitive' } } },
+      ],
+    },
+    include: { profile: true },
+    orderBy: { createdAt: 'desc' },
+    take,
+  });
+}

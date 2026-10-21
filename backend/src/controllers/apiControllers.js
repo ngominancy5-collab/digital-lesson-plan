@@ -178,3 +178,7 @@ export const chatStream = asyncHandler(async (req, res) => {
 export const markPaper = asyncHandler(async (req, res) => {
   res.json(await markingService.markPaper(req.userId, req.body || {}));
 });
+
+export const markPaperStream = asyncHandler(async (req, res) => {
+  await markingService.markPaperStream(req.userId, req.body || {}, req.user, res);
+});

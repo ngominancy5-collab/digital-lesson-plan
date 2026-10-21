@@ -106,10 +106,16 @@ ${JSON.stringify(payload.lesson, null, 2)}
 Return the full lesson object with the same fields.`,
     );
     if (data && (data.topic || data.learningOutcomes || data.mainContent)) return data;
+    const error = new Error('The AI did not return a usable regenerated lesson.');
+    error.status = 502;
+    throw error;
   } catch (error) {
     console.error('Lesson regeneration error:', error.response?.data || error.message);
+    if (error.status) throw error;
+    const failure = new Error(error.response?.data?.error || error.message || 'Lesson regeneration failed.');
+    failure.status = 502;
+    throw failure;
   }
-  return fallbackRegeneratedLesson(payload);
 }
 
 export function generateObjectives(topic, difficulty) {

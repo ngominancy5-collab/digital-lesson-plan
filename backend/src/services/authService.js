@@ -1,10 +1,19 @@
 import crypto from 'node:crypto';
 import { hashPassword, verifyPassword } from '../utils/password.js';
 import { signAccessToken, createResetToken, hashToken } from '../utils/tokens.js';
-import { mapUser, parseRole } from '../utils/mappers.js';
+import { mapUser, parseRequestedRole, parseRole } from '../utils/mappers.js';
 import { AppError } from '../utils/errors.js';
 import { env, unapprovedTestAccountsAllowed } from '../config/env.js';
-import { emailDeliveryConfigured, getNotificationStatus, loginTemplateName, passwordChangedTemplateData, passwordChangedTemplateName, sendNotification } from './nexusService.js';
+import {
+  accountCreatedTemplateName,
+  emailDeliveryConfigured,
+  getNotificationStatus,
+  loginTemplateName,
+  passwordChangedTemplateData,
+  passwordChangedTemplateName,
+  sendNotification,
+} from './nexusService.js';
+import prisma from '../config/database.js';
 import { assertInstitutionForRole } from './institutionService.js';
 import * as userRepository from '../repositories/userRepository.js';
 import * as passwordResetRepository from '../repositories/passwordResetRepository.js';
@@ -202,7 +211,8 @@ export async function changePassword(userId, { currentPassword, password } = {})
     mustChangePassword: false,
   });
   await emailPasswordChanged(updated);
-  return mapUser(updated);
+  await maybeSendAccountCreatedConfirmation(updated.id);
+  return mapUser(await userRepository.findByIdWithProfile(userId));
 }
 
 export async function confirmAssignedRole(userId) {
@@ -216,13 +226,18 @@ export async function confirmAssignedRole(userId) {
     await userRepository.updateWithProfile(userId, { roleConfirmed: true });
     await notificationRepository.markReadByType(userId, 'role-confirmation');
   }
+  await maybeSendAccountCreatedConfirmation(userId);
   return getMe(userId);
 }
 
 export async function getMe(userId) {
   const user = await userRepository.findByIdWithProfile(userId);
   if (!user) throw new AppError('Account not found.', 404);
-  return mapUser(user);
+  assertApprovedAccount(user);
+  if (!user.mustChangePassword && (user.role === 'admin' || user.roleConfirmed !== false)) {
+    await maybeSendAccountCreatedConfirmation(userId);
+  }
+  return mapUser(await userRepository.findByIdWithProfile(userId));
 }
 
 export async function updateProfile(userId, input) {
@@ -562,12 +577,84 @@ async function emailTemporaryPassword(user, username, temporary) {
   }
 }
 
+function normalizeUsername(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function validUsername(value) {
+  return /^[A-Za-z0-9][A-Za-z0-9 ._-]{1,38}[A-Za-z0-9]$/.test(value) || /^[A-Za-z0-9]{3,40}$/.test(value);
+}
+
+export async function maybeSendAccountCreatedConfirmation(userId) {
+  const user = await userRepository.findByIdWithProfile(userId);
+  if (!user) return { sent: false, reason: 'missing' };
+  if (user.accountStatus !== 'approved') return { sent: false, reason: 'not_approved' };
+  if (user.mustChangePassword) return { sent: false, reason: 'must_change_password' };
+  if (user.role !== 'admin' && user.roleConfirmed === false) return { sent: false, reason: 'role_unconfirmed' };
+  if (user.confirmationEmailStatus === 'accepted') return { sent: false, reason: 'already_sent' };
+
+  const claimed = await prisma.user.updateMany({
+    where: {
+      id: user.id,
+      accountStatus: 'approved',
+      mustChangePassword: false,
+      confirmationEmailStatus: { in: ['none', 'failed', 'pending'] },
+      OR: [
+        { role: 'admin' },
+        { roleConfirmed: true },
+      ],
+    },
+    data: { confirmationEmailStatus: 'pending' },
+  });
+  if (!claimed.count) return { sent: false, reason: 'already_claimed' };
+
+  const displayName = String(user.username || user.fullName || '').trim() || 'there';
+  try {
+    if (!emailDeliveryConfigured() && process.env.NODE_ENV !== 'test') {
+      await userRepository.updateWithProfile(user.id, { confirmationEmailStatus: 'failed' });
+      return { sent: false, reason: 'email_not_configured' };
+    }
+    const delivery = await sendNotification({
+      template: accountCreatedTemplateName(),
+      to: user.email,
+      data: { user_name: displayName },
+    });
+    const looked = await readProviderStatus(delivery).catch(() => ({
+      providerStatus: delivery.status || 'queued',
+      detail: '',
+    }));
+    if (/^failed$/i.test(looked.providerStatus)) {
+      await userRepository.updateWithProfile(user.id, { confirmationEmailStatus: 'failed' });
+      return { sent: false, reason: 'provider_failed' };
+    }
+    await userRepository.updateWithProfile(user.id, {
+      confirmationEmailStatus: 'accepted',
+      confirmationEmailSentAt: new Date(),
+    });
+    await notificationRepository.create({
+      userId: user.id,
+      title: 'Account created email',
+      type: 'account-created-email',
+      isRead: true,
+      message: 'Account-created confirmation email accepted for processing.',
+    }).catch(() => {});
+    return { sent: true };
+  } catch (error) {
+    console.error('Account-created confirmation email failed.', error.code || error.status || 'failed');
+    await userRepository.updateWithProfile(user.id, { confirmationEmailStatus: 'failed' }).catch(() => {});
+    return { sent: false, reason: 'send_failed' };
+  }
+}
+
 export async function requestAccount(input) {
   const email = String(input.email || '').trim().toLowerCase();
-  const fullName = String(input.fullName || input.name || input.username || '').trim();
-  const institution = String(input.institution || '').trim();
-  const department = String(input.department || '').trim();
-  if (!fullName) throw new AppError('Please enter your full name.');
+  const username = normalizeUsername(input.username || input.fullName || input.name || '');
+  const requestedRole = parseRequestedRole(input.role);
+  if (!username) throw new AppError('Please enter a username.');
+  if (!validUsername(username) || username.length < 3 || username.length > 40) {
+    throw new AppError('Username must be 3–40 characters and use letters, numbers, spaces, dots, hyphens, or underscores.');
+  }
+  if (!requestedRole) throw new AppError('Please select Lecturer or Teacher.');
   if (!email || !validEmail(email)) throw new AppError('Please enter a valid email address.');
 
   const byEmail = await userRepository.findByEmailWithProfile(email);
@@ -577,39 +664,43 @@ export async function requestAccount(input) {
   if (byEmail && ['rejected', 'suspended', 'inactive'].includes(byEmail.accountStatus)) {
     throw new AppError('This account cannot be registered again. Contact an administrator.', 403);
   }
+  if (byEmail?.accountStatus === 'pending') {
+    throw new AppError('A registration request with this email is already pending.', 409);
+  }
+
+  const byUsername = await userRepository.findByUsernameWithProfile(username);
+  if (byUsername && byUsername.email !== email) {
+    if (byUsername.accountStatus === 'pending') {
+      throw new AppError('A registration request with this username is already pending.', 409);
+    }
+    if (byUsername.accountStatus === 'approved' || byUsername.role === 'admin') {
+      throw new AppError('This username is already taken.', 409);
+    }
+  }
 
   const profile = {
-    institution,
-    department,
+    institution: '',
+    department: '',
     specialization: '',
     educationLevel: '',
     phone: '',
     preferences: {},
   };
-  let user = byEmail;
-  if (user) {
-    user = await userRepository.updateWithProfile(user.id, {
-      fullName,
-      role: 'unassigned',
-      accountStatus: 'pending',
-      emailVerified: false,
-      mustChangePassword: false,
-      roleConfirmed: false,
-      profile: { upsert: { create: profile, update: { institution, department } } },
-    });
-  } else {
-    user = await userRepository.createWithProfile({
-      fullName,
-      email,
-      passwordHash: await unknownPasswordHash(),
-      role: 'unassigned',
-      accountStatus: 'pending',
-      emailVerified: false,
-      mustChangePassword: false,
-      roleConfirmed: false,
-      profile: { create: profile },
-    });
-  }
+  const user = await userRepository.createWithProfile({
+    fullName: username,
+    username,
+    email,
+    passwordHash: await unknownPasswordHash(),
+    role: 'unassigned',
+    requestedRole,
+    accountStatus: 'pending',
+    emailVerified: false,
+    mustChangePassword: false,
+    roleConfirmed: false,
+    credentialEmailStatus: 'none',
+    confirmationEmailStatus: 'none',
+    profile: { create: profile },
+  });
 
   await recordActivity({
     userId: user.id,
@@ -618,8 +709,15 @@ export async function requestAccount(input) {
     summary: 'New account submitted for approval',
     targetType: 'user',
     targetId: user.id,
+    meta: { requestedRole },
   });
-  return { message: 'Your account is waiting for administrator approval.' };
+  try {
+    const { notifyAdminsOfPendingAccount } = await import('./notificationService.js');
+    await notifyAdminsOfPendingAccount(user);
+  } catch (error) {
+    console.error('Could not notify administrators about the new account request.', error.message || error);
+  }
+  return { message: 'Request successfully sent!' };
 }
 
 export async function forgotPassword(email) {

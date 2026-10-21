@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import { fallbackAnalyze, isReadableEducationalText, truncateText } from '../../../../shared/learningEngine.js';
+import { isReadableEducationalText, truncateText } from '../../../../shared/learningEngine.js';
 import { converse } from '../../../../shared/tutorEngine.js';
 import { completeJson, getLlmStatus, streamText } from './aiClient.js';
 
@@ -39,8 +39,12 @@ export async function analyzeLearningMaterial({ text, fileName }) {
     };
   }
 
-  const local = fallbackAnalyze(text, fileName);
   const status = getLlmStatus();
+  if (!status.configured) {
+    return {
+      error: 'AI is not configured. Set GEMINI_API_KEY (or AI_API_KEY / GITHUB_TOKEN) on the server to analyse materials.',
+    };
+  }
 
   try {
     const { provider, data } = await completeJson(
@@ -50,19 +54,19 @@ export async function analyzeLearningMaterial({ text, fileName }) {
     if (data?.error) return { error: data.error };
     if (data?.topic && Array.isArray(data.learningObjectives) && data.learningObjectives.length) {
       return {
-        ...(local.error ? {} : local),
         ...data,
         fileName,
         sourceReady: true,
         provider: provider || status.provider,
       };
     }
+    return { error: 'The AI did not return a usable analysis. Try again or upload a clearer document.' };
   } catch (error) {
     console.error('Material analysis error:', error.response?.data || error.message);
+    return {
+      error: error.response?.data?.error || error.message || 'Material analysis failed. Check the AI provider configuration.',
+    };
   }
-
-  if (local.error) return local;
-  return { ...local, provider: 'local' };
 }
 
 export async function runLearningTurn({
@@ -88,8 +92,28 @@ export async function runLearningTurn({
     progress,
   });
 
+  const status = getLlmStatus();
   if (local.kind === 'quiz-live') {
-    return { ...local, provider: getLlmStatus().configured ? 'hybrid' : 'local' };
+    if (!status.configured) {
+      return {
+        reply: 'AI is not configured. Set GEMINI_API_KEY (or AI_API_KEY / GITHUB_TOKEN) on the server before using the assistant.',
+        kind: 'error',
+        provider: null,
+        session: local.session || session,
+        difficulty: local.difficulty || difficulty,
+      };
+    }
+    return { ...local, provider: status.provider };
+  }
+
+  if (!status.configured) {
+    return {
+      reply: 'AI is not configured. Set GEMINI_API_KEY (or AI_API_KEY / GITHUB_TOKEN) on the server before using the assistant.',
+      kind: 'error',
+      provider: null,
+      session: local.session || session,
+      difficulty: local.difficulty || difficulty,
+    };
   }
 
   try {
@@ -135,7 +159,15 @@ Section rules:
       history,
     );
 
-    if (!data?.reply) return { ...local, provider: 'local' };
+    if (!data?.reply) {
+      return {
+        reply: 'The AI did not return a usable reply. Please try again.',
+        kind: 'error',
+        provider: provider || status.provider,
+        session: local.session || session,
+        difficulty: local.difficulty || difficulty,
+      };
+    }
 
     return {
       ...local,
@@ -146,11 +178,17 @@ Section rules:
       calendarSuggestion: data.calendarSuggestion && data.calendarSuggestion.title && data.calendarSuggestion.date
         ? data.calendarSuggestion
         : null,
-      provider: provider || 'openai',
+      provider: provider || status.provider,
     };
   } catch (error) {
     console.error('Learning AI error:', error.response?.data || error.message);
-    return { ...local, provider: 'local' };
+    return {
+      reply: error.response?.data?.error || error.message || 'The AI service failed. Please try again.',
+      kind: 'error',
+      provider: status.provider,
+      session: local.session || session,
+      difficulty: local.difficulty || difficulty,
+    };
   }
 }
 
@@ -204,11 +242,26 @@ export async function* runLearningTurnStream(args) {
     progress: args.progress,
   });
   const status = getLlmStatus();
-  const base = { ...local, provider: status.configured ? status.provider : 'local' };
+  if (!status.configured) {
+    const message = 'AI is not configured. Set GEMINI_API_KEY (or AI_API_KEY / GITHUB_TOKEN) on the server before using the assistant.';
+    yield { event: 'delta', data: message };
+    yield {
+      event: 'done',
+      data: {
+        reply: message,
+        kind: 'error',
+        provider: null,
+        session: local.session || args.session,
+        difficulty: local.difficulty || args.difficulty,
+      },
+    };
+    return;
+  }
+
+  const base = { ...local, provider: status.provider };
   yield { event: 'meta', data: { ...base, reply: '' } };
 
-  const keepLocalVoice = local.kind === 'quiz-live' || !status.configured;
-  if (keepLocalVoice) {
+  if (local.kind === 'quiz-live') {
     yield { event: 'delta', data: local.reply };
     yield { event: 'done', data: base };
     return;
@@ -227,8 +280,9 @@ export async function* runLearningTurnStream(args) {
       yield { event: 'delta', data: token };
     }
     if (!full.trim()) {
-      yield { event: 'delta', data: local.reply };
-      yield { event: 'done', data: { ...local, provider: 'local' } };
+      const message = 'The AI did not return a usable reply. Please try again.';
+      yield { event: 'delta', data: message };
+      yield { event: 'done', data: { ...local, reply: message, kind: 'error', provider: status.provider } };
       return;
     }
     yield { event: 'done', data: { ...local, reply: full.trim(), provider: status.provider } };
@@ -238,10 +292,8 @@ export async function* runLearningTurnStream(args) {
       || error.response?.data?.message
       || error.message
       || 'AI request failed';
-    yield {
-      event: 'delta',
-      data: `I could not reach the live AI service (${detail}). Falling back to the local tutor for this reply.\n\n${local.reply}`,
-    };
-    yield { event: 'done', data: { ...local, provider: 'local', llmError: detail } };
+    const message = `I could not reach the AI service (${detail}). Please try again.`;
+    yield { event: 'delta', data: message };
+    yield { event: 'done', data: { reply: message, kind: 'error', provider: status.provider, llmError: detail, session: local.session || args.session } };
   }
 }

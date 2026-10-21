@@ -38,6 +38,13 @@ enum AccountStatus {
   inactive
 }
 
+enum EmailDeliveryStatus {
+  none
+  pending
+  accepted
+  failed
+}
+
 model User {
   id           String   @id @default(cuid())
   fullName     String
@@ -46,6 +53,7 @@ model User {
   emailVerified Boolean @default(false)
   passwordHash String
   role                UserRole      @default(lecturer)
+  requestedRole       UserRole?
   accountStatus       AccountStatus @default(approved)
   mustChangePassword  Boolean       @default(false)
   roleConfirmed       Boolean       @default(true)
@@ -53,6 +61,10 @@ model User {
   approvedById        String?
   profileImage        String?
   lastLoginAt         DateTime?
+  credentialEmailStatus     EmailDeliveryStatus @default(none)
+  credentialEmailSentAt     DateTime?
+  confirmationEmailStatus   EmailDeliveryStatus @default(none)
+  confirmationEmailSentAt   DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -70,8 +82,137 @@ model User {
   notifications           Notification[]
   notificationPreference  NotificationPreference?
   activities              ActivityLog[]
+  subscription            UserSubscription?
+  usagePeriods            UsagePeriod[]
+  billingTransactions     BillingTransaction[]
 
   @@index([email])
+}
+
+enum PlanInterval {
+  none
+  monthly
+  yearly
+}
+
+enum SubscriptionStatus {
+  free
+  active
+  past_due
+  canceled
+  incomplete
+  payment_pending
+  expired
+}
+
+enum BillingStatus {
+  pending
+  paid
+  failed
+  refunded
+  cancelled
+  expired
+}
+
+/// Website CMS image metadata (files live in FILE_STORAGE_PATH).
+model SiteImage {
+  id          String   @id @default(cuid())
+  sectionKey  String
+  title       String   @default("")
+  altText     String   @default("")
+  storagePath String
+  storageUrl  String
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([sectionKey, isActive, sortOrder])
+}
+
+model SubscriptionPlan {
+  id            String       @id @default(cuid())
+  code          String       @unique
+  name          String
+  description   String       @default("")
+  interval      PlanInterval @default(none)
+  priceCents    Int          @default(0)
+  currency      String       @default("ZMW")
+  aiPromptLimit Int          @default(25)
+  uploadLimit   Int          @default(10)
+  isActive      Boolean      @default(true)
+  sortOrder     Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  subscriptions UserSubscription[]
+  transactions  BillingTransaction[]
+}
+
+model UserSubscription {
+  id                     String             @id @default(cuid())
+  userId                 String             @unique
+  planId                 String
+  status                 SubscriptionStatus @default(free)
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean            @default(false)
+  provider               String             @default("internal")
+  providerCustomerId     String?
+  providerSubscriptionId String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan         SubscriptionPlan     @relation(fields: [planId], references: [id])
+  transactions BillingTransaction[]
+
+  @@index([planId])
+  @@index([status])
+}
+
+model UsagePeriod {
+  id            String   @id @default(cuid())
+  userId        String
+  periodKey     String
+  aiPromptCount Int      @default(0)
+  uploadCount   Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, periodKey])
+  @@index([userId])
+}
+
+model BillingTransaction {
+  id             String        @id @default(cuid())
+  userId         String
+  subscriptionId String?
+  planId         String?
+  amountCents    Int
+  currency       String        @default("ZMW")
+  status         BillingStatus @default(pending)
+  provider       String        @default("mtn")
+  paymentMethod  String?
+  msisdn         String?
+  providerRef    String?
+  checkoutToken  String?       @unique
+  callbackSecret String?
+  meta           Json          @default("{}")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription UserSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  plan         SubscriptionPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([providerRef])
+  @@index([paymentMethod])
 }
 
 model ActivityLog {
@@ -341,21 +482,40 @@ model Attendance {
 }
 
 model MarkedPaper {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   userId         String
   studentName    String
   assessmentName String
+  /// Teacher/lecturer final score (source of truth once reviewed).
   score          Float?
   totalMarks     Float?
   percentage     Float?
-  questions      Json     @default("[]")
-  feedback       String?  @db.Text
-  markedAt       DateTime @default(now())
-  createdAt      DateTime @default(now())
+  /// Frozen AI totals for comparison.
+  aiScore        Float?
+  aiTotalMarks   Float?
+  aiPercentage   Float?
+  /// Current question marks (teacher-editable). Includes AI suggestion fields per item.
+  questions      Json      @default("[]")
+  /// Immutable snapshot of AI-suggested questions at first mark.
+  aiQuestions    Json      @default("[]")
+  feedback       String?   @db.Text
+  aiFeedback     String?   @db.Text
+  /// ai_completed | under_review | draft | finalized
+  reviewStatus   String    @default("ai_completed")
+  reviewedAt     DateTime?
+  finalizedAt    DateTime?
+  lastSavedAt    DateTime?
+  /// Soft-delete / archive timestamp. Finalized papers are archived, not hard-deleted.
+  deletedAt      DateTime?
+  markedAt       DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, reviewStatus])
+  @@index([userId, deletedAt])
 }
 
 model Notification {

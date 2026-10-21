@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { adminApi } from '../services/api.js';
+import AdminDashboardHome from './AdminDashboardHome.jsx';
+import AssignRoleDialog from './AssignRoleDialog.jsx';
+import Notice from './Notice.jsx';
 import './admin-panel.css';
+
+export { AssignRoleDialog };
 
 const RANGES = [
   ['7', '7 days'],
@@ -60,139 +65,32 @@ function useLoad(loader, deps) {
   return { data, error, loading, reload: () => loader().then(setData).catch((err) => setError(err.message || 'Could not load this page.')) };
 }
 
-export function AssignRoleDialog({ user, onClose, onApproved }) {
-  const [role, setRole] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  if (!user) return null;
-  async function submit(event) {
-    event.preventDefault();
-    if (!role) {
-      setError('Select Teacher or Lecturer.');
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      await adminApi.approve(user.id, { role });
-      onApproved();
-    } catch (err) {
-      setError(err.message || 'The account was not approved.');
-      setLoading(false);
-    }
-  }
-  return (
-    <div className="admin-dialog-backdrop" role="presentation">
-      <form className="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="assign-role-title" onSubmit={submit}>
-        <h2 id="assign-role-title">Approve and Assign Role</h2>
-        <div className="admin-identity">
-          <strong>{user.fullName || user.name}</strong>
-          <span>{user.email}</span>
-          <span>{user.institution || 'No institution'} · Registered {formatWhen(user.createdAt)}</span>
-        </div>
-        <fieldset className="admin-role-choice">
-          <legend>Assigned role</legend>
-          {['teacher', 'lecturer'].map((item) => (
-            <label key={item}>
-              <input type="radio" name="assigned-role" value={item} checked={role === item} onChange={() => { setRole(item); setError(''); }} />
-              <span>{item === 'teacher' ? 'Teacher' : 'Lecturer'}</span>
-            </label>
-          ))}
-        </fieldset>
-        {error && <p className="admin-error">{error}</p>}
-        <div className="admin-actions">
-          <button type="submit" className="primary" disabled={loading || !role}>{loading ? 'Approving...' : 'Approve and Send Role'}</button>
-          <button type="button" onClick={onClose} disabled={loading}>Cancel</button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-export default function AdminPanel({ section }) {
+export default function AdminPanel({
+  section,
+  searchQuery = '',
+  user = null,
+  overview = null,
+  overviewLoading = false,
+  overviewError = '',
+  onNavigate,
+  onOverviewRefresh,
+}) {
   if (section === 'admin-users') return <UsersPage />;
   if (section === 'admin-activity') return <ActivityPage />;
-  if (section === 'admin-plans') return <PlansPage />;
-  if (section === 'admin-assessments') return <AssessmentsPage />;
+  if (section === 'admin-plans') return <PlansPage searchQuery={searchQuery} />;
+  if (section === 'admin-assessments') return <AssessmentsPage searchQuery={searchQuery} />;
   if (section === 'admin-attendance') return <AttendancePage />;
   if (section === 'admin-ai') return <AiPage />;
   if (section === 'admin-analytics') return <AnalyticsPage />;
-  return <OverviewPage />;
-}
-
-function OverviewPage() {
-  const { data, error, loading, reload } = useLoad(() => adminApi.overview(), []);
-  const [assigning, setAssigning] = useState(null);
-  const [notice, setNotice] = useState('');
-  const cards = data?.cards;
   return (
-    <section className="admin-panel">
-      <div className="admin-heading">
-        <span className="admin-kicker">ADMINISTRATION</span>
-        <h1>Welcome back, Administrator</h1>
-        <p>Monitor your platform&apos;s users, educational activities, and performance in one place.</p>
-      </div>
-      {error && <div className="admin-error">{error}</div>}
-      {notice && <p className="admin-note">{notice}</p>}
-      {loading && <p className="admin-muted">Loading platform totals...</p>}
-      {cards && (
-        <>
-          <div className="admin-cards">
-            <article className="admin-card"><span>Total Users</span><strong>{cards.users}</strong></article>
-            <article className="admin-card"><span>Pending Approvals</span><strong>{cards.pendingApprovals}</strong></article>
-            <article className="admin-card"><span>Approved Users</span><strong>{cards.approvedUsers}</strong></article>
-            <article className="admin-card"><span>Awaiting Role Confirmation</span><strong>{cards.awaitingRoleConfirmation}</strong></article>
-            <article className="admin-card"><span>Confirmed Accounts</span><strong>{cards.confirmedAccounts}</strong></article>
-            <article className="admin-card"><span>Suspended Accounts</span><strong>{cards.suspendedAccounts}</strong></article>
-          </div>
-          <article className="admin-table-card">
-            <h2>Pending approvals</h2>
-            {data.pendingApprovals?.length ? (
-              <table className="admin-table">
-                <thead><tr><th>Name</th><th>Email</th><th>Institution</th><th>Registered</th><th>Status</th><th>Role</th><th></th></tr></thead>
-                <tbody>
-                  {data.pendingApprovals.map((user) => (
-                    <tr key={user.id}>
-                      <td>{user.fullName}</td>
-                      <td>{user.email}</td>
-                      <td>{user.institution || 'Not set'}</td>
-                      <td>{formatWhen(user.createdAt)}</td>
-                      <td><span className="admin-status">{user.accountStatus}</span></td>
-                      <td>{user.role}</td>
-                      <td>
-                        {user.role === 'Administrator'
-                          ? <button type="button" className="primary" onClick={() => adminApi.approve(user.id).then(() => { setNotice('Account updated.'); reload(); }).catch((err) => setNotice(err.message || 'The account was not updated.'))}>Approve</button>
-                          : <button type="button" className="primary" onClick={() => setAssigning(user)}>Approve and Assign Role</button>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : <p className="admin-muted">No accounts are waiting for approval.</p>}
-          </article>
-          <div className="admin-cards">
-            <article className="admin-card"><span>Lesson plans</span><strong>{cards.lessonPlans}</strong><small>{data.comparisons.lessonPlans.current} in the last 30 days, {data.comparisons.lessonPlans.previous} in the 30 days before</small></article>
-            <article className="admin-card"><span>Assessments and quizzes</span><strong>{cards.assessmentsAndQuizzes}</strong><small>{cards.assessments} assessments, {cards.quizzes} quizzes</small></article>
-            <article className="admin-card"><span>Attendance sessions</span><strong>{cards.attendanceSessions}</strong><small>Clock-in records, not logins</small></article>
-            <article className="admin-card"><span>AI activity</span><strong>{cards.aiTrackedSuccess}</strong><small>{cards.aiStoredOutputs} stored AI outputs. {cards.aiTrackedFailed} failed requests since logging started.</small></article>
-          </div>
-          <article className="admin-table-card">
-            <h2>Recent activity</h2>
-            {data.recentActivity.length ? (
-              <table className="admin-table">
-                <thead><tr><th>When</th><th>User</th><th>Activity</th></tr></thead>
-                <tbody>
-                  {data.recentActivity.map((row) => (
-                    <tr key={row.id}><td>{formatWhen(row.createdAt)}</td><td>{row.user}</td><td>{row.summary}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : <p className="admin-muted">Activity logging starts with the next registration, sign-in, lesson, assessment, attendance, or AI action. Older actions were not stored as events.</p>}
-          </article>
-        </>
-      )}
-      <AssignRoleDialog user={assigning} onClose={() => setAssigning(null)} onApproved={() => { setAssigning(null); setNotice('Role assigned and login email queued.'); reload(); }} />
-    </section>
+    <AdminDashboardHome
+      user={user}
+      overview={overview}
+      loading={overviewLoading}
+      error={overviewError}
+      onNavigate={onNavigate}
+      onRefresh={onOverviewRefresh}
+    />
   );
 }
 
@@ -204,32 +102,52 @@ function UsersPage() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
   const [assigning, setAssigning] = useState(null);
-  const [notice, setNotice] = useState('');
+  const [popup, setPopup] = useState(null);
   const { data, error, loading, reload } = useLoad(() => adminApi.directory({ q, role, status, sort, page, pageSize: 10 }), [q, role, status, sort, page]);
 
-  async function act(action, id, label) {
+  useEffect(() => {
+    if (!popup) return undefined;
+    const timer = window.setTimeout(() => setPopup(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [popup]);
+
+  async function act(action, id, label, kind = 'other') {
     if (!window.confirm(`${label} this account?`)) return;
-    setNotice('');
     try {
       await action(id);
-      setNotice('Account updated.');
+      if (kind === 'credentials') {
+        setPopup({ tone: 'ok', text: 'Credentials have successfully been sent.' });
+      } else {
+        setPopup({ tone: 'ok', text: 'Account updated.' });
+      }
       const next = await adminApi.user(id);
       setSelected(next);
       await reload();
     } catch (err) {
-      setNotice(err.message || 'The account was not updated.');
+      setPopup({
+        tone: 'error',
+        text: kind === 'credentials' ? 'Credentials have not been sent.' : (err.message || 'The account was not updated.'),
+      });
     }
   }
 
   return (
     <section className="admin-panel">
-      <div className="admin-heading"><span className="admin-kicker">USERS</span><h1>Lecturers and teachers</h1><p>Search the directory and review each account without seeing passwords.</p></div>
+      <div className="admin-heading"><span className="admin-kicker">USERS</span><h1>User directory</h1><p>Search accounts and review each profile without seeing passwords. Create accounts from Accounts.</p></div>
+      {popup ? (
+        <Notice
+          tone={popup.tone === 'error' ? 'error' : 'success'}
+          message={popup.text}
+          onDismiss={() => setPopup(null)}
+        />
+      ) : null}
       <div className="admin-toolbar">
         <input value={q} placeholder="Search name, email, or institution" onChange={(event) => { setPage(1); setQ(event.target.value); }} />
         <select value={role} onChange={(event) => { setPage(1); setRole(event.target.value); }}>
           <option value="educators">Lecturers and teachers</option>
           <option value="lecturer">Lecturers</option>
           <option value="teacher">Teachers</option>
+          <option value="admin">Administrators</option>
           <option value="admin">Administrators</option>
         </select>
         <select value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }}>
@@ -246,22 +164,27 @@ function UsersPage() {
         </select>
       </div>
       {error && <div className="admin-error">{error}</div>}
-      {notice && <p className="admin-note">{notice}</p>}
       {loading && <p className="admin-muted">Loading users...</p>}
       {data && (
         <article className="admin-table-card">
           <table className="admin-table">
-            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Institution</th><th>Registered</th><th>Last sign-in</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Username</th><th>Email</th><th>Requested role</th><th>Institution</th><th>Registered</th><th>Last sign-in</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {data.users.length ? data.users.map((user) => (
                 <tr key={user.id}>
-                  <td>{user.fullName}</td>
+                  <td>{user.username || user.fullName}</td>
                   <td>{user.email}</td>
-                  <td>{user.role}</td>
+                  <td>{user.requestedRole || user.role}</td>
                   <td>{user.institution || 'Not set'}</td>
                   <td>{formatWhen(user.createdAt)}</td>
                   <td>{user.lastLoginAt ? formatWhen(user.lastLoginAt) : 'Not recorded'}</td>
-                  <td><span className="admin-status">{user.accountStatus}{user.accountStatus === 'approved' && user.role !== 'Administrator' && user.roleConfirmed === false ? ' · awaiting confirmation' : ''}</span></td>
+                  <td>
+                    <span className={`admin-status is-${String(user.accountStatus || '').toLowerCase()}`}>
+                      {user.accountStatus}
+                      {user.accountStatus === 'approved' && user.role !== 'Administrator' && user.roleConfirmed === false ? ' · awaiting confirmation' : ''}
+                      {user.credentialEmailStatus === 'failed' ? ' · email failed' : ''}
+                    </span>
+                  </td>
                   <td><button type="button" onClick={() => adminApi.user(user.id).then(setSelected)}>View</button></td>
                 </tr>
               )) : <tr><td colSpan="8">No accounts match these filters.</td></tr>}
@@ -272,13 +195,14 @@ function UsersPage() {
       )}
       {selected && (
         <article className="admin-detail">
-          <h2>{selected.fullName}</h2>
-          <p className="admin-muted">{selected.email} · {selected.role} · {selected.institution || 'No institution'}</p>
+          <h2>{selected.username || selected.fullName}</h2>
+          <p className="admin-muted">{selected.email} · Requested: {selected.requestedRole || '—'} · Assigned: {selected.role} · {selected.institution || 'No institution'}</p>
           <p>{selected.lessonPlans} lesson plans · {selected.assessments} assessments · {selected.quizzes} quizzes · {selected.attendanceSessions} attendance sessions</p>
           <div className="admin-actions">
-            {selected.accountStatus === 'pending' && selected.role !== 'Administrator' && <button type="button" className="primary" onClick={() => setAssigning(selected)}>Approve and Assign Role</button>}
-            {selected.accountStatus === 'pending' && selected.role === 'Administrator' && <button type="button" className="primary" onClick={() => act(adminApi.approve, selected.id, 'Approve')}>Approve</button>}
+            {selected.accountStatus === 'pending' && selected.role !== 'Administrator' && <button type="button" className="primary" onClick={() => setAssigning(selected)}>Approve</button>}
+            {selected.accountStatus === 'pending' && selected.role === 'Administrator' && <button type="button" className="primary" onClick={() => act(adminApi.approve, selected.id, 'Approve', 'credentials')}>Approve</button>}
             {selected.accountStatus === 'pending' && <button type="button" onClick={() => act(adminApi.reject, selected.id, 'Reject')}>Reject</button>}
+            {selected.accountStatus === 'approved' && selected.mustChangePassword && <button type="button" onClick={() => act(adminApi.resendCredentials, selected.id, 'Resend credentials', 'credentials')}>Resend credentials</button>}
             {selected.accountStatus === 'approved' && selected.role !== 'Administrator' && <button type="button" onClick={() => act(adminApi.suspend, selected.id, 'Suspend')}>Suspend</button>}
             {selected.accountStatus === 'approved' && selected.role !== 'Administrator' && <button type="button" onClick={() => act(adminApi.deactivate, selected.id, 'Deactivate')}>Deactivate</button>}
             {['suspended', 'inactive'].includes(selected.accountStatus) && <button type="button" className="primary" onClick={() => act(adminApi.restore, selected.id, 'Reactivate')}>Reactivate</button>}
@@ -286,10 +210,15 @@ function UsersPage() {
           </div>
         </article>
       )}
-      <AssignRoleDialog user={assigning} onClose={() => setAssigning(null)} onApproved={async () => {
+      <AssignRoleDialog user={assigning} onClose={() => setAssigning(null)} onApproved={async (result) => {
         const id = assigning.id;
         setAssigning(null);
-        setNotice('Role assigned and login email queued.');
+        setPopup({
+          tone: result?.credentialsSent === false ? 'error' : 'ok',
+          text: result?.credentialsSent === false
+            ? 'Credentials have not been sent.'
+            : 'Credentials have successfully been sent.',
+        });
         const next = await adminApi.user(id);
         setSelected(next);
         await reload();
@@ -354,19 +283,20 @@ function RangePicker({ value, onChange }) {
   );
 }
 
-function PlansPage() {
-  const [q, setQ] = useState('');
+function PlansPage({ searchQuery = '' }) {
+  const q = String(searchQuery || '').trim();
   const [range, setRange] = useState('all');
   const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [q]);
   const { data, error, loading } = useLoad(() => adminApi.lessonPlans({ q, range, page, pageSize: 10 }), [q, range, page]);
   return (
     <section className="admin-panel">
-      <div className="admin-heading"><span className="admin-kicker">LESSON PLANS</span><h1>Lesson plans</h1><p>Saved plans from lecturers and teachers. New saves appear here after refresh.</p></div>
+      <div className="admin-heading"><span className="admin-kicker">LESSON PLANS</span><h1>Lesson plans</h1><p>Saved plans from lecturers and teachers. Use the top search bar to find title, subject, topic, or creator.</p></div>
       <div className="admin-toolbar">
-        <input value={q} placeholder="Search title, subject, topic, or creator" onChange={(event) => { setPage(1); setQ(event.target.value); }} />
         <RangePicker value={range} onChange={(next) => { setPage(1); setRange(next); }} />
         <button type="button" onClick={() => adminApi.exportCsv('lesson-plans', { q, range })}>Export CSV</button>
       </div>
+      {q ? <p className="admin-muted">Filtering by top search: “{q}”</p> : null}
       {error && <div className="admin-error">{error}</div>}
       {loading && <p className="admin-muted">Loading lesson plans...</p>}
       {data && (
@@ -387,18 +317,19 @@ function PlansPage() {
   );
 }
 
-function AssessmentsPage() {
-  const [q, setQ] = useState('');
+function AssessmentsPage({ searchQuery = '' }) {
+  const q = String(searchQuery || '').trim();
   const [range, setRange] = useState('all');
   const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [q]);
   const { data, error, loading } = useLoad(() => adminApi.assessments({ q, range, page, pageSize: 8 }), [q, range, page]);
   return (
     <section className="admin-panel">
-      <div className="admin-heading"><span className="admin-kicker">ASSESSMENTS</span><h1>Assessments and quizzes</h1></div>
+      <div className="admin-heading"><span className="admin-kicker">ASSESSMENTS</span><h1>Assessments and quizzes</h1><p>Use the top search bar to find a title or creator across the platform.</p></div>
       <div className="admin-toolbar">
-        <input value={q} placeholder="Search title or creator" onChange={(event) => { setPage(1); setQ(event.target.value); }} />
         <RangePicker value={range} onChange={(next) => { setPage(1); setRange(next); }} />
       </div>
+      {q ? <p className="admin-muted">Filtering by top search: “{q}”</p> : null}
       {error && <div className="admin-error">{error}</div>}
       {loading && <p className="admin-muted">Loading assessments...</p>}
       {data && (

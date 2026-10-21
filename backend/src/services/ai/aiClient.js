@@ -57,10 +57,10 @@ export function getLlmStatus() {
   return {
     configured: Boolean(provider),
     provider,
-    label: provider ? labels[provider] : 'Local fallback',
+    label: provider ? labels[provider] : 'Not configured',
     hint: provider
       ? `Using ${labels[provider]} for lesson analysis and tutoring.`
-      : 'Add AI_API_KEY (ChatGPT), GEMINI_API_KEY, or GITHUB_TOKEN to the server .env file to generate real AI lesson content.',
+      : 'Add GEMINI_API_KEY, AI_API_KEY (ChatGPT), or GITHUB_TOKEN to the server .env file. AI features require a configured provider.',
   };
 }
 

@@ -63,16 +63,24 @@ async function datedRows(model, range, extra = {}) {
 }
 
 function publicUser(user) {
+  const requestedRoleKey = user.requestedRole && user.requestedRole !== 'unassigned'
+    ? user.requestedRole
+    : null;
   return {
     id: user.id,
     fullName: user.fullName,
+    username: user.username || user.fullName || '',
     email: user.email,
     role: formatRole(user.role),
     roleKey: user.role,
+    requestedRole: requestedRoleKey ? formatRole(requestedRoleKey) : '',
+    requestedRoleKey: requestedRoleKey || '',
     institution: user.profile?.institution || '',
     department: user.profile?.department || '',
     accountStatus: user.accountStatus,
     roleConfirmed: user.roleConfirmed !== false,
+    credentialEmailStatus: user.credentialEmailStatus || 'none',
+    mustChangePassword: Boolean(user.mustChangePassword),
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
     lessonPlans: user._count?.lessonPlans ?? 0,
@@ -132,12 +140,16 @@ export async function overview() {
       select: {
         id: true,
         fullName: true,
+        username: true,
         email: true,
         role: true,
+        requestedRole: true,
         accountStatus: true,
         roleConfirmed: true,
+        credentialEmailStatus: true,
+        mustChangePassword: true,
         createdAt: true,
-        profile: { select: { institution: true } },
+        profile: { select: { institution: true, department: true } },
       },
     }),
   ]);
@@ -234,10 +246,14 @@ export async function listUsers(query) {
       select: {
         id: true,
         fullName: true,
+        username: true,
         email: true,
         role: true,
+        requestedRole: true,
         accountStatus: true,
         roleConfirmed: true,
+        credentialEmailStatus: true,
+        mustChangePassword: true,
         createdAt: true,
         lastLoginAt: true,
         profile: { select: { institution: true, department: true } },
@@ -254,10 +270,14 @@ export async function userDetail(id) {
     select: {
       id: true,
       fullName: true,
+      username: true,
       email: true,
       role: true,
+      requestedRole: true,
       accountStatus: true,
       roleConfirmed: true,
+      credentialEmailStatus: true,
+      mustChangePassword: true,
       createdAt: true,
       lastLoginAt: true,
       profile: { select: { institution: true, department: true } },

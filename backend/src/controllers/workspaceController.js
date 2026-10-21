@@ -24,7 +24,7 @@ export const report = asyncHandler(async (req, res) => {
 });
 
 export const search = asyncHandler(async (req, res) => {
-  res.json(await searchService.searchWorkspace(req.userId, req.query.q));
+  res.json(await searchService.searchWorkspace(req.userId, req.query.q, req.user?.role));
 });
 
 export const listNotifications = asyncHandler(async (req, res) => {
@@ -72,6 +72,30 @@ export const deleteResource = asyncHandler(async (req, res) => {
 
 export const listMarkedPapers = asyncHandler(async (req, res) => {
   res.json({ papers: await markingService.listMarkedPapers(req.userId) });
+});
+
+export const getMarkedPaper = asyncHandler(async (req, res) => {
+  res.json({ paper: await markingService.getMarkedPaper(req.userId, req.params.id) });
+});
+
+export const saveMarkingDraft = asyncHandler(async (req, res) => {
+  res.json({ paper: await markingService.saveMarkingDraft(req.userId, req.params.id, req.body || {}) });
+});
+
+export const finalizeMarking = asyncHandler(async (req, res) => {
+  res.json({ paper: await markingService.finalizeMarking(req.userId, req.params.id, req.body || {}) });
+});
+
+export const reopenMarking = asyncHandler(async (req, res) => {
+  res.json({ paper: await markingService.reopenMarking(req.userId, req.params.id) });
+});
+
+export const updateMarkedPaper = asyncHandler(async (req, res) => {
+  res.json({ paper: await markingService.updateMarkedPaperMeta(req.userId, req.params.id, req.body || {}) });
+});
+
+export const deleteMarkedPaper = asyncHandler(async (req, res) => {
+  res.json(await markingService.deleteMarkedPaper(req.userId, req.params.id));
 });
 
 export const exportLessonPlan = asyncHandler(async (req, res) => {

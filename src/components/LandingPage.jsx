@@ -129,13 +129,6 @@ const steps = [
   { icon: CalendarDays, title: 'Review & Edit', text: 'Make changes, adjust the level, and save to your calendar.' },
 ];
 
-// DEMO ONLY — replace these sample quotes with real educator testimonials before publishing them as fact.
-const demoTestimonials = [
-  { quote: 'Sample quote: planning a week of lessons from one outline used to take an evening. This is the kind of help I want beside the classroom.', name: 'Sample educator', role: 'Placeholder · High school' },
-  { quote: 'Sample quote: quizzes and lesson activities that stay tied to the same material would save our department a lot of repeated work.', name: 'Sample lecturer', role: 'Placeholder · University' },
-  { quote: 'Sample quote: a calm workspace for plans, assessments, and the calendar is what I would actually open on a Sunday night.', name: 'Sample teacher', role: 'Placeholder · Primary' },
-];
-
 const benefits = [
   'User-friendly and intuitive design',
   'AI-powered lesson planning',
@@ -172,7 +165,7 @@ export default function LandingPage({ onNavigate }) {
   const featureGridRef = useRef(null);
 
   useEffect(() => {
-    document.title = 'PlanWise AI — Digital Lesson Plan System';
+    document.title = 'Planwise AI';
     document.body.classList.add('lp-lock');
     return () => {
       document.body.classList.remove('lp-lock');
@@ -308,14 +301,6 @@ export default function LandingPage({ onNavigate }) {
         <div className="lp-wrap lp-split">
           <Reveal className="lp-showcase-visual">
             <img src="/landing/hero-desk.jpg" alt="A wooden desk with books, a plant, and a laptop" />
-            <div className="lp-app-mock" aria-hidden="true">
-              <div className="lp-app-mock-bar"><GraduationCap size={14} /> PlanWise AI</div>
-              <strong>Create your lesson plan</strong>
-              <span>Course · Topics · Schedule</span>
-              <i />
-              <i />
-              <em>Objectives ready</em>
-            </div>
           </Reveal>
           <Reveal className="lp-copy" delay={120}>
             <p className="lp-eyebrow">Built for educators</p>
@@ -344,31 +329,6 @@ export default function LandingPage({ onNavigate }) {
                 <span className="lp-step-icon"><Icon size={20} /></span>
                 <h3>{title}</h3>
                 <p>{text}</p>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="lp-quotes" id="lp-stories">
-        <div className="lp-wrap">
-          <Reveal className="lp-center lp-quotes-head">
-            <p className="lp-eyebrow">Sample voices</p>
-            <h2>What teachers are saying</h2>
-            <p>These cards are editable placeholders, not real reviews.</p>
-          </Reveal>
-          <div className="lp-quote-row">
-            {demoTestimonials.map((item, index) => (
-              <Reveal className="lp-quote" delay={index * 80} key={item.name}>
-                <span className="lp-stars" aria-hidden="true">★★★★★</span>
-                <p>{item.quote}</p>
-                <footer>
-                  <span className="lp-avatar" aria-hidden="true">{item.name.slice(0, 1)}</span>
-                  <div>
-                    <strong>{item.name}</strong>
-                    <small>{item.role}</small>
-                  </div>
-                </footer>
               </Reveal>
             ))}
           </div>

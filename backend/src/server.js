@@ -34,6 +34,8 @@ import {
 import { ensureSeeded } from './services/institutionService.js';
 import { ensureBootstrapAdmin } from './services/adminService.js';
 import adminRoutes from './routes/adminRoutes.js';
+import { billingRoutes, siteImageRoutes } from './routes/platformRoutes.js';
+import { ensureDefaultPlans } from './services/subscriptionService.js';
 
 assertEnv();
 
@@ -87,6 +89,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/resources', resourceRoutes);
 app.use('/api/marking', markingRoutes);
+app.use('/api/site-images', siteImageRoutes);
+app.use('/api/billing', billingRoutes);
 
 const distPath = path.resolve(__dirname, '../../dist');
 if (existsSync(distPath)) {
@@ -105,6 +109,14 @@ ensureSeeded().catch((error) => {
 ensureBootstrapAdmin().catch((error) => {
   console.error('Could not prepare the administrator account', error.message || error);
 });
+ensureDefaultPlans().catch((error) => {
+  console.error('Could not seed subscription plans', error.message || error);
+});
+
+// Persist payment provider mode for ops visibility (secrets stay server-side only).
+if (!process.env.PAYMENT_PROVIDER) {
+  process.env.PAYMENT_PROVIDER = 'internal';
+}
 
 app.listen(env.port, () => {
   const llm = getLlmStatus();

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
+import { recordUsageAfterSuccess, requireUsageAllowance } from '../middleware/usageLimits.js';
 import * as c from '../controllers/workspaceController.js';
 
 export const attendanceRoutes = Router();
@@ -25,9 +26,22 @@ settingsRoutes.put('/notifications', requireAuth, c.updateNotificationSettings);
 
 export const resourceRoutes = Router();
 resourceRoutes.get('/', requireAuth, c.listResources);
-resourceRoutes.post('/upload', requireAuth, upload.single('file'), c.uploadResource);
+resourceRoutes.post(
+  '/upload',
+  requireAuth,
+  requireUsageAllowance('upload'),
+  upload.single('file'),
+  recordUsageAfterSuccess('upload'),
+  c.uploadResource,
+);
 resourceRoutes.get('/:id', requireAuth, c.getResource);
 resourceRoutes.delete('/:id', requireAuth, c.deleteResource);
 
 export const markingRoutes = Router();
 markingRoutes.get('/', requireAuth, c.listMarkedPapers);
+markingRoutes.get('/:id', requireAuth, c.getMarkedPaper);
+markingRoutes.patch('/:id/draft', requireAuth, c.saveMarkingDraft);
+markingRoutes.patch('/:id', requireAuth, c.updateMarkedPaper);
+markingRoutes.post('/:id/finalize', requireAuth, c.finalizeMarking);
+markingRoutes.post('/:id/reopen', requireAuth, c.reopenMarking);
+markingRoutes.delete('/:id', requireAuth, c.deleteMarkedPaper);

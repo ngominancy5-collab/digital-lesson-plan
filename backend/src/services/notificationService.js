@@ -1,6 +1,8 @@
 import * as notificationRepository from '../repositories/notificationRepository.js';
 import * as preferenceRepository from '../repositories/notificationPreferenceRepository.js';
 
+import * as userRepository from '../repositories/userRepository.js';
+
 const TYPE_FLAG = {
   lesson: 'lessonPlanNotifications',
   assessment: 'assessmentNotifications',
@@ -9,6 +11,8 @@ const TYPE_FLAG = {
   system: 'systemNotifications',
   resource: 'systemNotifications',
   marking: 'systemNotifications',
+  'account-approval': 'systemNotifications',
+  'role-confirmation': 'systemNotifications',
 };
 
 export async function getPreferences(userId) {
@@ -33,6 +37,17 @@ export async function notify(userId, { title, message, type = 'system' }) {
   const flag = TYPE_FLAG[type] || 'systemNotifications';
   if (prefs[flag] === false) return null;
   return notificationRepository.create({ userId, title, message, type });
+}
+
+export async function notifyAdminsOfPendingAccount(user) {
+  const admins = await userRepository.listApprovedAdmins();
+  const name = String(user?.fullName || user?.name || 'A user').trim();
+  const email = String(user?.email || '').trim();
+  await Promise.all(admins.map((admin) => notify(admin.id, {
+    title: 'New account awaiting approval',
+    message: `${name}${email ? ` (${email})` : ''} requested a Planwise account.`,
+    type: 'account-approval',
+  })));
 }
 
 export async function listNotifications(userId) {

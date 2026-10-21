@@ -21,7 +21,6 @@ import { api, streamAiChat } from '../services/api.js';
 import Notice from './Notice.jsx';
 import {
   DIFFICULTY_LEVELS,
-  fallbackAnalyze,
   makeId,
   nowTime,
   QUESTION_TYPES,
@@ -30,7 +29,7 @@ import {
   isReadableEducationalText,
   looksLikeReadablePhrase,
 } from '../../shared/learningEngine.js';
-import { converse, LEARNING_MODES } from '../../shared/tutorEngine.js';
+import { LEARNING_MODES } from '../../shared/tutorEngine.js';
 
 function RichText({ text }) {
   const source = String(text || '');
@@ -141,7 +140,7 @@ export default function AssistantPage({
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [progress, setProgress] = useState({ quizzes: [], weakTopics: [] });
-  const [llmStatus, setLlmStatus] = useState({ configured: false, label: 'Local fallback', hint: '' });
+  const [llmStatus, setLlmStatus] = useState({ configured: false, label: 'Not configured', hint: '' });
   const [spec, setSpec] = useState({
     count: 10,
     questionTypes: ['multiple-choice', 'true-false', 'short-answer'],
@@ -159,8 +158,8 @@ export default function AssistantPage({
 
   useEffect(() => {
     api.get('/ai/status')
-      .then((response) => setLlmStatus(response.data || { configured: false, label: 'Local fallback' }))
-      .catch(() => setLlmStatus({ configured: false, label: 'Local fallback', hint: 'The AI server is not connected yet. Add an API key to generate ChatGPT or Gemini lesson content.' }));
+      .then((response) => setLlmStatus(response.data || { configured: false, label: 'Not configured' }))
+      .catch(() => setLlmStatus({ configured: false, label: 'Not configured', hint: 'The AI server is not connected. Add GEMINI_API_KEY (or AI_API_KEY) on the server.' }));
   }, []);
 
   useEffect(() => {
@@ -188,13 +187,6 @@ export default function AssistantPage({
       });
   }, [user?.id]);
 
-  function persistLocal(nextMessages, nextSession, id, title) {
-    if (!user?.id) return;
-    const record = { id: id || conversationId || makeId('convo'), title: title || nextSession.subject || 'Conversation', messages: nextMessages, session: nextSession, updatedAt: new Date().toISOString() };
-    setConversations((current) => [record, ...current.filter((item) => item.id !== record.id)].slice(0, 20));
-    setConversationId(record.id);
-  }
-
   async function processFile(file) {
     if (!file) return;
     const ext = fileExtension(file.name);
@@ -213,12 +205,12 @@ export default function AssistantPage({
       }
       if (!isReadableEducationalText(text)) throw new Error(`I couldn't process this document. Please upload a supported PDF, DOCX, PPTX or TXT file with selectable text.`);
       bump(84);
-      let analysis = fallbackAnalyze(text, file.name);
+      let analysis;
       try {
         const response = await api.post('/ai/analyze', { text, fileName: file.name });
         analysis = response.data;
       } catch (error) {
-        if (error.response?.data?.error) analysis = { error: error.response.data.error };
+        analysis = { error: error.response?.data?.error || error.message || 'AI analysis failed.' };
       }
       if (analysis.error || !looksLikeReadablePhrase(analysis.topic)) {
         const message = analysis.error || `I opened ${file.name} but could not turn it into a readable lesson. Please upload a text-based file.`;
@@ -285,17 +277,23 @@ export default function AssistantPage({
         });
       }
       if (result.calendarSuggestions?.length) onScheduleEvents(result.calendarSuggestions);
-      setMessages((current) => {
-        const next = current.map((item) => item.id === botId ? {
-          ...item,
-          text: result.reply || item.text,
-          streaming: false,
-          quizPrompt: result.quizPrompt || null,
-          quizSummary: result.quizSummary || null,
-        } : item);
-        persistLocal(next, result.session || session, result.conversationId, result.conversationTitle);
-        return next;
-      });
+      setMessages((current) => current.map((item) => item.id === botId ? {
+        ...item,
+        text: result.reply || item.text,
+        streaming: false,
+        quizPrompt: result.quizPrompt || null,
+        quizSummary: result.quizSummary || null,
+      } : item));
+      if (result.conversationId) {
+        setConversations((current) => {
+          const record = {
+            id: result.conversationId,
+            title: result.conversationTitle || result.session?.subject || 'Conversation',
+            updatedAt: new Date().toISOString(),
+          };
+          return [record, ...current.filter((item) => item.id !== record.id)].slice(0, 20);
+        });
+      }
     }
 
     const controller = new AbortController();
@@ -331,18 +329,8 @@ export default function AssistantPage({
       if (error.name === 'AbortError') {
         setMessages((current) => current.map((item) => item.id === botId ? { ...item, streaming: false, text: item.text || 'Generation stopped.' } : item));
       } else {
-        const result = converse({
-          message: prompt,
-          history,
-          profile: user,
-          session,
-          materialText: sourceReady ? material.text : '',
-          materialName: sourceReady ? material.name : '',
-          difficulty,
-          spec,
-          progress,
-        });
-        applyResult(result);
+        const message = error.response?.data?.error || error.message || 'Could not reach the AI service. Check that the API is running and GEMINI_API_KEY is set.';
+        setMessages((current) => current.map((item) => item.id === botId ? { ...item, streaming: false, text: message } : item));
       }
     } finally {
       abortRef.current = null;

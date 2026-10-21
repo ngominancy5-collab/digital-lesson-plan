@@ -1,4 +1,4 @@
-# PlanWise AI — Digital Lesson Plan System
+# Planwise AI
 
 Full-stack teaching workspace: React frontend + Express/Prisma API + PostgreSQL + Gemini.
 
@@ -49,7 +49,7 @@ npm install
 cd backend && npm install && npx prisma generate && npx prisma db push && npm run db:seed && cd ..
 ```
 
-Demo account after seed: `demo@planwise.local` / `Demo1234`
+First administrator: set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env`, then start the backend.
 
 ## 4. Run
 

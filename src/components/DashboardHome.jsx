@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
+  ArrowRight,
   BookOpen,
-  Building2,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -10,9 +10,10 @@ import {
   FileStack,
   FileText,
   TrendingUp,
-  UserRound,
 } from 'lucide-react';
+import DashboardHero from './DashboardHero.jsx';
 import './dashboard-reference.css';
+import './dashboard-premium.css';
 
 function buildMonthMatrix(anchor) {
   const year = anchor.getFullYear();
@@ -118,78 +119,78 @@ export default function DashboardHome({
   }, [calendarEvents, monthAnchor]);
 
   const todayEvents = todaySchedule.slice(0, 3);
-
   const planCount = savedPlans.length;
   const assessmentCount = assessments.length;
   const paperCount = Number(markingCount) || 0;
 
+  const clockAside = (
+    <aside className={`pw-hero-panel ${activeClock ? 'is-active' : ''}`}>
+      <div className="pw-hero-panel-status">
+        <span className="pw-hero-dot" />
+        <strong>{activeClock ? 'Clocked In' : 'Clocked Out'}</strong>
+      </div>
+      <div className="pw-hero-panel-value">
+        {activeClock ? formatClock(activeClock.clockIn) : '—'}
+      </div>
+      <small>Today, {todayDisplay.replace(/^.*?,\s*/, '')}</small>
+      {activeClock ? (
+        <button type="button" className="pw-hero-panel-btn soft" onClick={onClockOut}>
+          <Clock3 size={14} /> Clock Out
+        </button>
+      ) : (
+        <button type="button" className="pw-hero-panel-btn" onClick={onClockIn}>
+          <Clock3 size={14} /> Clock In
+        </button>
+      )}
+    </aside>
+  );
+
   return (
     <div className="dlp-dash">
       <div className="dlp-dash-main">
-        <section className="dlp-welcome">
-          <div className="dlp-welcome-media" aria-hidden="true" />
-          <div className="dlp-welcome-copy">
-            <span className="dlp-welcome-label">Welcome back,</span>
-            <h1>{displayName || 'Educator'} 👋</h1>
-            <p>Plan better. Teach smarter. Make an impact.</p>
-            <div className="dlp-welcome-meta">
-              <div className="dlp-meta-pill">
-                <span className="dlp-meta-icon" aria-hidden="true"><Building2 size={15} /></span>
-                <span>
-                  <strong>{institution || 'Institution not set'}</strong>
-                  <small>Your Institution</small>
-                </span>
-              </div>
-              <div className="dlp-meta-pill">
-                <span className="dlp-meta-icon" aria-hidden="true"><UserRound size={15} /></span>
-                <span>
-                  <strong>{role || 'Role not set'}</strong>
-                  <small>Your Role</small>
-                </span>
-              </div>
-            </div>
-          </div>
-          <aside className={`dlp-clock-card ${activeClock ? 'is-in' : 'is-out'}`}>
-            <div className="dlp-clock-status">
-              <span className="dlp-clock-dot" />
-              <strong>{activeClock ? 'Clocked In' : 'Clocked Out'}</strong>
-            </div>
-            <div className="dlp-clock-time">
-              {activeClock ? formatClock(activeClock.clockIn) : '—'}
-            </div>
-            <small>Today, {todayDisplay.replace(/^.*?,\s*/, '')}</small>
-            {activeClock ? (
-              <button type="button" className="dlp-clock-btn" onClick={onClockOut}><Clock3 size={14} /> Clock Out</button>
-            ) : (
-              <button type="button" className="dlp-clock-btn solid" onClick={onClockIn}><Clock3 size={14} /> Clock In</button>
-            )}
-          </aside>
-        </section>
+        <DashboardHero
+          userName={displayName || 'Educator'}
+          subtitle="Plan better. Teach smarter. Make an impact today."
+          workspaceLabel={institution || 'Institution not set'}
+          workspaceHint="Your institution"
+          roleLabel={role || 'Role not set'}
+          roleHint="Your role"
+          variant="educator"
+          aside={clockAside}
+        />
 
         <section className="dlp-actions">
           <article className="dlp-action tone-green">
             <span className="dlp-action-icon"><BookOpen size={20} /></span>
             <h3>Create Lesson Plan</h3>
             <p>Build or generate lesson plans with AI assistance.</p>
-            <button type="button" className="dlp-action-cta" onClick={onCreatePlan}>+ New Lesson Plan</button>
+            <button type="button" className="dlp-action-cta" onClick={onCreatePlan}>
+              New Lesson Plan <ArrowRight size={14} />
+            </button>
           </article>
           <article className="dlp-action tone-blue">
             <span className="dlp-action-icon"><CalendarDays size={20} /></span>
             <h3>View Calendar</h3>
             <p>Check your schedule and upcoming events.</p>
-            <button type="button" className="dlp-action-cta" onClick={() => onNavigate?.('calendar')}>Open Calendar</button>
+            <button type="button" className="dlp-action-cta" onClick={() => onNavigate?.('calendar')}>
+              Open Calendar <ArrowRight size={14} />
+            </button>
           </article>
           <article className="dlp-action tone-purple">
             <span className="dlp-action-icon"><ClipboardCheck size={20} /></span>
             <h3>Create Assessment</h3>
             <p>Build quizzes, tests and assignments.</p>
-            <button type="button" className="dlp-action-cta" onClick={() => onNavigate?.('assessments')}>New Assessment</button>
+            <button type="button" className="dlp-action-cta" onClick={() => onNavigate?.('assessments')}>
+              New Assessment <ArrowRight size={14} />
+            </button>
           </article>
           <article className="dlp-action tone-gold">
             <span className="dlp-action-icon"><FileStack size={20} /></span>
             <h3>Upload & Mark Papers</h3>
             <p>Scan or upload papers and let AI mark them.</p>
-            <button type="button" className="dlp-action-cta" onClick={() => onNavigate?.('paper-marking')}>Start Marking</button>
+            <button type="button" className="dlp-action-cta" onClick={() => onNavigate?.('paper-marking')}>
+              Start Marking <ArrowRight size={14} />
+            </button>
           </article>
         </section>
 
@@ -272,7 +273,14 @@ export default function DashboardHome({
                 <p className="dlp-empty compact">No events today.</p>
               )}
             </div>
-            <button type="button" className="dlp-link" onClick={() => onNavigate?.('calendar')}>View Full Calendar</button>
+            <div className="pw-quick-links">
+              <button type="button" className="pw-quick-link" onClick={() => onNavigate?.('assessments')}>
+                <ClipboardCheck size={16} /> Assessments
+              </button>
+              <button type="button" className="pw-quick-link" onClick={() => onNavigate?.('calendar')}>
+                <CalendarDays size={16} /> Full calendar
+              </button>
+            </div>
           </article>
         </section>
 

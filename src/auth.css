@@ -441,16 +441,31 @@
   padding: 36px 32px;
 }
 
-.aurelia-auth .auth-error {
-  margin: 2px 0 0;
-  padding: 10px 12px;
-  border: 1px solid rgba(166, 62, 48, 0.22);
-  border-radius: 12px;
-  background: #fdeceb;
-  color: #8d3a2e;
-  font-size: 0.86rem;
-  font-weight: 600;
-  line-height: 1.45;
+/* Auth errors: top-right toast, never inline in the form. */
+.aurelia-auth .auth-error,
+.auth-error {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  left: auto;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(340px, calc(100% - 40px));
+  margin: 0;
+  padding: 14px 16px;
+  transform: none;
+  border: none;
+  border-radius: 14px;
+  background: #9f1d1d;
+  color: #fff7f7;
+  box-shadow: 0 14px 32px rgba(16, 43, 37, 0.22);
+  font-size: 0.92rem;
+  font-weight: 650;
+  line-height: 1.35;
+  pointer-events: none;
+  animation: soft-pop 220ms ease both;
 }
 
 .aurelia-form-wrap h2 {
@@ -825,15 +840,35 @@
 }
 
 .pw-signup .auth-input input,
+.pw-signup .auth-input select,
 .pw-signup .password-input input {
   min-width: 0;
+  flex: 1 1 auto;
   padding: 0;
-  border: 0;
+  border: 0 !important;
+  outline: none;
   border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+  background: transparent !important;
+  box-shadow: none !important;
   color: var(--pw-ink);
+  font: inherit;
   font-size: 0.92rem;
+}
+
+.pw-signup .auth-input select {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 1.4rem 0 0;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238d847b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right center;
+  background-size: 16px;
 }
 
 .pw-signup .auth-input input::placeholder,
@@ -1248,29 +1283,63 @@
   }
 }
 
-.pw-auth-toast {
+.pw-auth-toast,
+.pw-credential-popup,
+.pw-flash-popup {
   position: fixed;
-  left: 50%;
-  bottom: 24px;
-  z-index: 40;
+  top: 20px;
+  right: 20px;
+  left: auto;
+  z-index: 90;
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: min(420px, calc(100% - 32px));
-  padding: 12px 14px;
-  transform: translateX(-50%);
+  gap: 10px;
+  width: min(340px, calc(100% - 40px));
+  padding: 14px 16px;
+  transform: none;
+  border: none;
   border-radius: 14px;
-  background: #1f4d3a;
-  color: #f6f3ec;
-  box-shadow: 0 12px 30px rgba(22, 40, 32, 0.2);
+  box-shadow: 0 14px 32px rgba(16, 43, 37, 0.22);
   font-size: 0.92rem;
-  line-height: 1.4;
+  font-weight: 650;
+  line-height: 1.35;
+  pointer-events: none;
+  animation: soft-pop 220ms ease both;
 }
 
-.pw-auth-toast.is-error {
-  background: #fbf8f3;
-  color: #98453d;
-  border: 1px solid rgba(180, 83, 75, 0.22);
+.pw-auth-toast,
+.pw-auth-toast:not(.is-error),
+.pw-credential-popup.is-ok,
+.pw-flash-popup.is-ok {
+  background: #163c2e;
+  color: #fffdf8;
+}
+
+.pw-auth-toast.is-error,
+.pw-credential-popup.is-error,
+.pw-flash-popup.is-error {
+  background: #9f1d1d;
+  color: #fff7f7;
+}
+
+.pw-flash-popup.has-action {
+  pointer-events: auto;
+}
+
+.pw-flash-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .dlp-shell.is-password-locked {
@@ -1393,11 +1462,6 @@
   overflow: auto;
 }
 
-.pw-password-card .auth-error {
-  margin: 0;
-  padding: 8px 10px;
-  font-size: 0.8rem;
-}
 
 .dlp-shell .success-toast {
   z-index: 90;
@@ -1421,6 +1485,71 @@
 
 .accounts-table {
   overflow-x: auto;
+}
+
+.admin-create-account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: visible;
+}
+
+.admin-create-account-actions {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 4px;
+}
+
+.admin-create-account-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 180px;
+  min-height: 44px;
+  padding: 12px 22px;
+  border: 0;
+  border-radius: 999px;
+  background: #163c2e;
+  color: #fffdf8;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-create-account-btn:hover {
+  background: #0f2a20;
+}
+
+.account-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: lowercase;
+  letter-spacing: 0.01em;
+}
+
+.account-status-pill.is-pending {
+  color: #9f1d1d;
+  background: #fde8e8;
+}
+
+.account-status-pill.is-approved {
+  color: #17653f;
+  background: #e4f5ea;
+}
+
+.account-status-pill.is-rejected,
+.account-status-pill.is-suspended,
+.account-status-pill.is-inactive {
+  color: #7a4b12;
+  background: #fff1db;
+}
+
+.account-status-note {
+  color: #9f1d1d;
+  font-weight: 600;
 }
 
 .accounts-table table {

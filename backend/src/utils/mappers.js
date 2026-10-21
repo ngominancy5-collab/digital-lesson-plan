@@ -1,6 +1,9 @@
 export function mapUser(user) {
   if (!user) return null;
   const profile = user.profile || {};
+  const requestedRoleKey = user.requestedRole && user.requestedRole !== 'unassigned'
+    ? user.requestedRole
+    : null;
   return {
     id: user.id,
     name: user.fullName,
@@ -10,9 +13,13 @@ export function mapUser(user) {
     emailVerified: Boolean(user.emailVerified),
     role: formatRole(user.role),
     roleKey: user.role,
+    requestedRole: requestedRoleKey ? formatRole(requestedRoleKey) : '',
+    requestedRoleKey: requestedRoleKey || '',
     accountStatus: user.accountStatus || 'approved',
     mustChangePassword: Boolean(user.mustChangePassword),
     roleConfirmed: user.roleConfirmed !== false,
+    credentialEmailStatus: user.credentialEmailStatus || 'none',
+    confirmationEmailStatus: user.confirmationEmailStatus || 'none',
     institution: profile.institution || '',
     department: profile.department || '',
     phone: profile.phone || '',
@@ -26,6 +33,13 @@ export function mapUser(user) {
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
+}
+
+export function parseRequestedRole(input) {
+  const value = String(input || '').trim().toLowerCase();
+  if (value === 'teacher' || value.includes('teacher') || value.includes('school')) return 'teacher';
+  if (value === 'lecturer' || value.includes('lecturer')) return 'lecturer';
+  return '';
 }
 
 export function formatRole(role) {

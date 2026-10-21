@@ -3,10 +3,12 @@ import prisma from '../config/database.js';
 import { hashPassword } from '../utils/password.js';
 import { mapUser, parseRole } from '../utils/mappers.js';
 import { AppError } from '../utils/errors.js';
+import { env } from '../config/env.js';
 import { assertInstitutionForRole } from './institutionService.js';
 import { emailDeliveryConfigured, loginTemplateName, sendNotification } from './nexusService.js';
 import * as userRepository from '../repositories/userRepository.js';
 import { recordActivity } from './activityService.js';
+import { notifyAdminsOfPendingAccount } from './notificationService.js';
 
 function temporaryPassword() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
@@ -24,6 +26,10 @@ async function unknownPasswordHash() {
 
 function captureOnly() {
   return process.env.NODE_ENV === 'test' && String(process.env.NEXUS_CAPTURE || '').toLowerCase() === 'true';
+}
+
+function loginUrl() {
+  return `${String(env.clientUrl || 'http://localhost:5180').replace(/\/$/, '')}/login`;
 }
 
 export async function createAccount(input) {
@@ -48,12 +54,16 @@ export async function createAccount(input) {
 
   const user = await userRepository.createWithProfile({
     fullName,
+    username: fullName,
     email,
     passwordHash: await unknownPasswordHash(),
     role,
+    requestedRole: role === 'admin' ? null : role,
     accountStatus: 'pending',
     mustChangePassword: false,
     roleConfirmed: role === 'admin',
+    credentialEmailStatus: 'none',
+    confirmationEmailStatus: 'none',
     profile: {
       create: {
         institution,
@@ -74,6 +84,13 @@ export async function createAccount(input) {
     targetType: 'user',
     targetId: user.id,
   });
+  if (user.accountStatus === 'pending') {
+    try {
+      await notifyAdminsOfPendingAccount(user);
+    } catch (error) {
+      console.error('Could not notify administrators about the created account.', error.message || error);
+    }
+  }
   return mapUser(user);
 }
 
@@ -82,11 +99,30 @@ export async function listAccounts() {
   return users.map(mapUser);
 }
 
-function explicitTeachingRole(input) {
+function explicitAssignableRole(input) {
   const value = String(input || '').trim().toLowerCase();
   if (value === 'teacher') return 'teacher';
   if (value === 'lecturer') return 'lecturer';
   return '';
+}
+
+const ROLE_LABELS = {
+  teacher: 'Teacher',
+  lecturer: 'Lecturer',
+  admin: 'Administrator',
+};
+
+async function sendCredentialEmail(user, temporary, username) {
+  return sendNotification({
+    template: loginTemplateName(),
+    to: user.email,
+    data: {
+      user_name: username,
+      email: user.email,
+      password: temporary,
+      login_url: loginUrl(),
+    },
+  });
 }
 
 export async function approveAccount(userId, input = {}, actorId) {
@@ -95,7 +131,7 @@ export async function approveAccount(userId, input = {}, actorId) {
   const user = await userRepository.findByIdWithProfile(userId);
   if (!user) throw new AppError('Account not found.', 404);
   if (user.accountStatus === 'approved' && user.mustChangePassword) {
-    throw new AppError('This account is already approved and waiting for a password change.');
+    throw new AppError('This account is already approved. Use Resend credentials if the login email failed.');
   }
   if (user.accountStatus === 'approved') {
     throw new AppError('This account is already approved.');
@@ -104,24 +140,57 @@ export async function approveAccount(userId, input = {}, actorId) {
     throw new AppError('Login email is not available because email delivery is not configured.', 503);
   }
 
-  const requested = explicitTeachingRole(input.role);
+  const requested = explicitAssignableRole(input.role);
   if (user.role === 'admin') {
-    if (requested) throw new AppError('An administrator account cannot be assigned Teacher or Lecturer here.', 400);
+    if (requested) {
+      throw new AppError('An administrator account cannot be reassigned a teaching role here.', 400);
+    }
   } else if (!requested) {
     throw new AppError('Select Teacher or Lecturer before approving this account.', 400);
   }
 
   const assignedRole = user.role === 'admin' ? 'admin' : requested;
-  const roleLabel = assignedRole === 'teacher' ? 'Teacher' : assignedRole === 'lecturer' ? 'Lecturer' : 'Administrator';
+  const roleLabel = ROLE_LABELS[assignedRole] || 'Administrator';
+  const institution = Object.prototype.hasOwnProperty.call(input, 'institution')
+    ? String(input.institution || '').trim()
+    : String(user.profile?.institution || '').trim();
+  const department = Object.prototype.hasOwnProperty.call(input, 'department')
+    ? String(input.department || '').trim()
+    : String(user.profile?.department || '').trim();
+
+  if (assignedRole === 'teacher' || assignedRole === 'lecturer') {
+    await assertInstitutionForRole(assignedRole, institution);
+    if (!department) throw new AppError('Department is required.');
+  }
+
   const temporary = temporaryPassword();
-  const nameTaken = await userRepository.findByUsernameWithProfile(user.fullName);
-  const username = user.username || (!nameTaken || nameTaken.id === user.id ? user.fullName : user.email);
+  const preferredUsername = String(user.username || user.fullName || '').trim();
+  const nameTaken = preferredUsername
+    ? await userRepository.findByUsernameWithProfile(preferredUsername)
+    : null;
+  const username = preferredUsername && (!nameTaken || nameTaken.id === user.id)
+    ? preferredUsername
+    : user.email;
   const passwordHash = await hashPassword(temporary);
+  const previous = {
+    username: user.username,
+    passwordHash: user.passwordHash,
+    role: user.role,
+    accountStatus: user.accountStatus,
+    emailVerified: user.emailVerified,
+    mustChangePassword: user.mustChangePassword,
+    roleConfirmed: user.roleConfirmed,
+    credentialEmailStatus: user.credentialEmailStatus,
+    institution: user.profile?.institution || '',
+    department: user.profile?.department || '',
+  };
+
   const approved = await prisma.$transaction(async (tx) => {
     const updated = await tx.user.update({
       where: { id: user.id },
       data: {
         username,
+        fullName: user.fullName || username,
         passwordHash,
         role: assignedRole,
         accountStatus: 'approved',
@@ -130,6 +199,23 @@ export async function approveAccount(userId, input = {}, actorId) {
         roleConfirmed: assignedRole === 'admin',
         approvedAt: new Date(),
         approvedById: actorId,
+        credentialEmailStatus: 'pending',
+        profile: {
+          upsert: {
+            create: {
+              institution: assignedRole === 'admin' ? '' : institution,
+              department: assignedRole === 'admin' ? '' : department,
+              specialization: '',
+              educationLevel: '',
+              phone: '',
+              preferences: {},
+            },
+            update: {
+              institution: assignedRole === 'admin' ? '' : institution,
+              department: assignedRole === 'admin' ? '' : department,
+            },
+          },
+        },
       },
       include: { profile: true },
     });
@@ -147,31 +233,45 @@ export async function approveAccount(userId, input = {}, actorId) {
   }, { maxWait: 15000, timeout: 30000 });
 
   try {
-    await sendNotification({
-      template: loginTemplateName(),
-      to: approved.email,
-      data: {
-        user_name: username,
-        email: approved.email,
-        password: temporary,
-      },
-    });
+    await sendCredentialEmail(approved, temporary, username);
   } catch (error) {
     await prisma.notification.deleteMany({ where: { userId: user.id, type: 'role-confirmation', isRead: false } }).catch(() => {});
     await userRepository.updateWithProfile(user.id, {
-      username: user.username,
+      username: previous.username,
       passwordHash: await unknownPasswordHash(),
-      role: user.role,
-      accountStatus: user.accountStatus,
-      emailVerified: user.emailVerified,
-      mustChangePassword: user.mustChangePassword,
-      roleConfirmed: user.roleConfirmed,
+      role: previous.role,
+      accountStatus: previous.accountStatus,
+      emailVerified: previous.emailVerified,
+      mustChangePassword: previous.mustChangePassword,
+      roleConfirmed: previous.roleConfirmed,
       approvedAt: null,
       approvedById: null,
+      credentialEmailStatus: 'failed',
+      profile: {
+        upsert: {
+          create: {
+            institution: previous.institution,
+            department: previous.department,
+            specialization: '',
+            educationLevel: '',
+            phone: '',
+            preferences: {},
+          },
+          update: {
+            institution: previous.institution,
+            department: previous.department,
+          },
+        },
+      },
     }).catch(() => {});
-    console.error('Nexus login email failed.', error.status || error.code || 'failed');
-    throw new AppError('The account was not approved because the login email was not accepted.', 502);
+    console.error('Login credential email failed.', error.status || error.code || 'failed');
+    throw new AppError('The account was not approved because the login email was not accepted. You can retry approval.', 502);
   }
+
+  await userRepository.updateWithProfile(approved.id, {
+    credentialEmailStatus: 'accepted',
+    credentialEmailSentAt: new Date(),
+  }).catch(() => {});
 
   await recordActivity({
     userId: approved.id,
@@ -182,7 +282,53 @@ export async function approveAccount(userId, input = {}, actorId) {
     targetId: approved.id,
     meta: { approvedById: actorId },
   });
-  return mapUser(approved);
+  return mapUser(await userRepository.findByIdWithProfile(approved.id));
+}
+
+export async function resendCredentialEmail(userId, actorId) {
+  if (!actorId) throw new AppError('Administrator access is required.', 403);
+  const user = await userRepository.findByIdWithProfile(userId);
+  if (!user) throw new AppError('Account not found.', 404);
+  if (user.accountStatus !== 'approved') {
+    throw new AppError('Only an approved account can receive credential email retries.', 400);
+  }
+  if (!user.mustChangePassword) {
+    throw new AppError('This user has already set a password. Ask them to use Forgot password instead.', 400);
+  }
+  if (!emailDeliveryConfigured() && !captureOnly()) {
+    throw new AppError('Login email is not available because email delivery is not configured.', 503);
+  }
+
+  const temporary = temporaryPassword();
+  const username = String(user.username || user.fullName || user.email).trim();
+  const passwordHash = await hashPassword(temporary);
+  await userRepository.updateWithProfile(user.id, {
+    passwordHash,
+    credentialEmailStatus: 'pending',
+  });
+
+  try {
+    await sendCredentialEmail(user, temporary, username);
+  } catch (error) {
+    await userRepository.updateWithProfile(user.id, { credentialEmailStatus: 'failed' }).catch(() => {});
+    console.error('Credential email retry failed.', error.status || error.code || 'failed');
+    throw new AppError('The login email was not accepted. You can retry sending credentials.', 502);
+  }
+
+  const updated = await userRepository.updateWithProfile(user.id, {
+    credentialEmailStatus: 'accepted',
+    credentialEmailSentAt: new Date(),
+  });
+  await recordActivity({
+    userId: user.id,
+    actorRole: user.role,
+    type: 'admin.resend_credentials',
+    summary: 'Login credentials resent',
+    targetType: 'user',
+    targetId: user.id,
+    meta: { approvedById: actorId },
+  });
+  return mapUser(updated);
 }
 
 async function setStatus(userId, accountStatus, type) {
@@ -234,28 +380,33 @@ export async function ensureBootstrapAdmin() {
   const email = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
   const password = String(process.env.ADMIN_PASSWORD || '');
   const existingAdmin = await userRepository.countByRole('admin');
-  if (existingAdmin > 0) return { created: false };
-  if (!email || !password) {
-    console.info('No administrator exists. Set ADMIN_EMAIL and ADMIN_PASSWORD to create the first one.');
-    return { created: false, missingEnv: true };
-  }
-  if (password.length < 8) {
-    console.error('ADMIN_PASSWORD must be at least 8 characters. The first administrator was not created.');
-    return { created: false };
-  }
+  if (!email || !password) return null;
+  if (existingAdmin > 0) return null;
+
   const existing = await userRepository.findByEmail(email);
   if (existing) {
-    console.info('ADMIN_EMAIL already belongs to an account. It was not changed into an administrator.');
-    return { created: false };
+    return userRepository.updateWithProfile(existing.id, {
+      role: 'admin',
+      accountStatus: 'approved',
+      emailVerified: true,
+      mustChangePassword: false,
+      roleConfirmed: true,
+      passwordHash: await hashPassword(password),
+    });
   }
-  await userRepository.createWithProfile({
-    fullName: String(process.env.ADMIN_NAME || 'PlanWise Administrator').trim() || 'PlanWise Administrator',
+
+  return userRepository.createWithProfile({
+    fullName: 'PlanWise Administrator',
+    username: 'admin',
     email,
     passwordHash: await hashPassword(password),
     role: 'admin',
     accountStatus: 'approved',
     emailVerified: true,
     mustChangePassword: false,
+    roleConfirmed: true,
+    credentialEmailStatus: 'none',
+    confirmationEmailStatus: 'none',
     profile: {
       create: {
         institution: '',
@@ -267,6 +418,4 @@ export async function ensureBootstrapAdmin() {
       },
     },
   });
-  console.info('First administrator account is ready.');
-  return { created: true };
 }

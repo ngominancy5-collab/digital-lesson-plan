@@ -26,7 +26,7 @@ const HELP_KB = [
   {
     keys: ['what is', 'about', 'planwise', 'this system', 'digital lesson'],
     answer:
-      'PlanWise AI is a Digital Lesson Plan workspace for educators. It helps you turn course material into structured lesson plans, assessments, quizzes, and a teaching calendar — with an interactive AI tutor once you sign in.',
+      'Planwise AI is a teaching workspace for educators. It helps you turn course material into structured lesson plans, assessments, quizzes, and a teaching calendar — with an interactive AI tutor once you sign in.',
   },
   {
     keys: ['how does it work', 'how it works', 'overview', 'get started', 'start'],
@@ -177,7 +177,7 @@ export default function FloatingAssistant({
         {
           id: 'welcome-help',
           role: 'assistant',
-          text: 'Hi — I am the PlanWise help guide. Ask how the Digital Lesson Plan system works. For creating personalized lesson plans, log in first.',
+          text: 'Hi — I am the Planwise help guide. Ask how the system works. For creating personalized lesson plans, log in first.',
           time: nowTime(),
         },
       ]);

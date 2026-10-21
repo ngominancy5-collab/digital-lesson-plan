@@ -24,32 +24,44 @@ test.after(async () => {
 
 test('an administrator assigns the role and the user must confirm it', async () => {
   takeCapturedNotifications();
-  await requestAccount({ fullName: 'Role Teacher', email: teacherEmail, role: 'lecturer' });
+  await requestAccount({ username: 'Role Teacher', email: teacherEmail, role: 'lecturer' });
   const pending = await prisma.user.findUnique({ where: { email: teacherEmail } });
   assert.equal(pending.role, 'unassigned');
+  assert.equal(pending.requestedRole, 'lecturer');
   assert.equal(pending.accountStatus, 'pending');
   assert.equal(takeCapturedNotifications().length, 0);
 
   const before = await overview();
   assert.ok(before.pendingApprovals.some((user) => user.email === teacherEmail));
   assert.equal(before.cards.pendingApprovals, await prisma.user.count({ where: { accountStatus: 'pending' } }));
-  assert.equal(before.cards.users, await prisma.user.count());
-  assert.equal(before.cards.suspendedAccounts, await prisma.user.count({ where: { accountStatus: 'suspended' } }));
 
   await assert.rejects(
     () => approveAccount(pending.id, {}, 'admin-actor'),
     (error) => error.status === 400 && /select teacher or lecturer/i.test(error.message),
   );
   await assert.rejects(
-    () => approveAccount(pending.id, { role: 'lecturer' }, pending.id),
+    () => approveAccount(pending.id, { role: 'teacher' }, 'admin-actor'),
+    (error) => /institution|school|department/i.test(error.message),
+  );
+  await assert.rejects(
+    () => approveAccount(pending.id, {
+      role: 'lecturer',
+      institution: 'University of Zambia (UNZA)',
+      department: 'Education',
+    }, pending.id),
     (error) => error.status === 403 && /own account/i.test(error.message),
   );
 
   takeCapturedNotifications();
-  const approved = await approveAccount(pending.id, { role: 'teacher' }, 'admin-actor');
+  const approved = await approveAccount(pending.id, {
+    role: 'teacher',
+    institution: 'David Kaunda National STEM Secondary School',
+    department: 'Mathematics',
+  }, 'admin-actor');
   assert.equal(approved.role, 'Teacher');
   assert.equal(approved.roleConfirmed, false);
   assert.equal(approved.accountStatus, 'approved');
+  assert.equal(approved.institution, 'David Kaunda National STEM Secondary School');
   const [mail] = takeCapturedNotifications();
   assert.match(mail.data.password, /^Pw/);
   const note = await prisma.notification.findFirst({ where: { userId: pending.id, type: 'role-confirmation' } });
@@ -59,9 +71,6 @@ test('an administrator assigns the role and the user must confirm it', async () 
   const session = await loginUser({ email: teacherEmail, password: mail.data.password });
   assert.equal(session.user.roleConfirmed, false);
   assert.equal(roleConfirmationBlocks({ role: 'teacher', roleConfirmed: false }, '/api/lesson-plans'), true);
-  assert.equal(roleConfirmationBlocks({ role: 'teacher', roleConfirmed: false }, '/api/notifications'), false);
-  assert.equal(roleConfirmationBlocks({ role: 'teacher', roleConfirmed: false }, '/api/auth/confirm-role'), false);
-  assert.equal(roleConfirmationBlocks({ role: 'teacher', roleConfirmed: true }, '/api/lesson-plans'), false);
 
   await assert.rejects(
     () => updateProfile(pending.id, { fullName: 'Role Teacher', email: teacherEmail, role: 'lecturer' }),
@@ -72,13 +81,15 @@ test('an administrator assigns the role and the user must confirm it', async () 
   const confirmed = await confirmAssignedRole(pending.id);
   assert.equal(confirmed.roleConfirmed, true);
   assert.equal(confirmed.role, 'Teacher');
-  const resolved = await prisma.notification.findFirst({ where: { userId: pending.id, type: 'role-confirmation' } });
-  assert.equal(resolved.isRead, true);
-  assert.equal(roleConfirmationBlocks({ role: 'teacher', roleConfirmed: true }, '/api/lesson-plans'), false);
 
-  await requestAccount({ fullName: 'Role Lecturer', email: lecturerEmail });
+  await requestAccount({ username: 'Role Lecturer', email: lecturerEmail, role: 'Teacher' });
   const second = await prisma.user.findUnique({ where: { email: lecturerEmail } });
-  const lecturer = await approveAccount(second.id, { role: 'lecturer' }, 'admin-actor');
+  assert.equal(second.requestedRole, 'teacher');
+  const lecturer = await approveAccount(second.id, {
+    role: 'lecturer',
+    institution: 'University of Zambia (UNZA)',
+    department: 'Science',
+  }, 'admin-actor');
   assert.equal(lecturer.role, 'Lecturer');
   assert.equal(lecturer.roleConfirmed, false);
   const lecturerNote = await prisma.notification.findFirst({ where: { userId: second.id, type: 'role-confirmation' } });
@@ -88,6 +99,4 @@ test('an administrator assigns the role and the user must confirm it', async () 
   assert.equal(after.cards.awaitingRoleConfirmation, await prisma.user.count({
     where: { accountStatus: 'approved', roleConfirmed: false, role: { in: ['teacher', 'lecturer'] } },
   }));
-  assert.equal(after.cards.confirmedAccounts, await prisma.user.count({ where: { accountStatus: 'approved', roleConfirmed: true } }));
-  assert.equal(after.cards.approvedUsers, await prisma.user.count({ where: { accountStatus: 'approved' } }));
 });

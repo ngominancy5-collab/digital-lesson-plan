@@ -1,38 +1,21 @@
 import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+/**
+ * Production seed: remove known demo accounts. First admin is created at
+ * server startup via ADMIN_EMAIL / ADMIN_PASSWORD (see ensureBootstrapAdmin).
+ */
 async function main() {
-  const email = 'demo@planwise.local';
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    console.log('Demo user already exists:', email);
-    return;
-  }
-
-  const passwordHash = await bcrypt.hash('Demo1234', 12);
-  await prisma.user.create({
-    data: {
-      fullName: 'Demo Lecturer',
-      email,
-      passwordHash,
-      role: 'lecturer',
-      profile: {
-        create: {
-          institution: 'University of Zambia',
-          department: 'Information Technology',
-          preferences: {
-            notifications: true,
-            lessons: true,
-            assessments: true,
-            ai: true,
-          },
-        },
-      },
-    },
+  const demoEmails = ['demo@planwise.local'];
+  const result = await prisma.user.deleteMany({
+    where: { email: { in: demoEmails } },
   });
-  console.log('Seeded demo user: demo@planwise.local / Demo1234');
+  if (result.count) {
+    console.log(`Removed ${result.count} demo account(s).`);
+  } else {
+    console.log('No demo accounts to remove. Bootstrap admin via ADMIN_EMAIL / ADMIN_PASSWORD.');
+  }
 }
 
 main()
