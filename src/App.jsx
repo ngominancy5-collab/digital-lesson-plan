@@ -372,11 +372,21 @@ function LoginPage({ onLogin, onNavigate, notice = '' }) {
     if (!password) { setError('Enter your password.'); return; }
     setLoading(true);
     try {
-      const result = await authApi.login({ identifier: identifier.trim(), email: identifier.trim(), password });
+      const result = await authApi.login({
+        identifier: identifier.trim(),
+        email: identifier.trim(),
+        password: password.trim(),
+      });
       onLogin(result.user, remember, result.token);
     } catch (err) {
       const offline = !err.status && /network|failed to fetch|timeout|ECONNABORTED/i.test(err.message || '');
-      setError(offline ? 'Could not reach PlanWise. Check your connection and try again.' : (err.message || 'Incorrect username or password.'));
+      if (offline) {
+        setError('Could not reach PlanWise. Check your connection and try again.');
+      } else if (err.status === 401 && import.meta.env.PROD) {
+        setError('Incorrect username or password for this hosted site. Local PC accounts do not work here — use Sign Up on this page, or ask an admin to approve your account.');
+      } else {
+        setError(err.message || 'Incorrect username or password.');
+      }
     } finally {
       setLoading(false);
     }
@@ -396,6 +406,9 @@ function LoginPage({ onLogin, onNavigate, notice = '' }) {
           <button className="pw-signup-submit" disabled={loading}>{loading ? 'Signing in...' : 'Sign In'}</button>
         </form>
         <p className="pw-signup-switch">Need an account? <button type="button" onClick={() => onNavigate('create-account')}>Sign Up</button></p>
+        {import.meta.env.PROD ? (
+          <p className="pw-signup-switch pw-hosted-login-hint">This site has its own accounts (separate from any localhost login).</p>
+        ) : null}
       </div>
       {error ? <Notice tone="error" message={error} onDismiss={() => setError('')} /> : null}
     </AuthShell>

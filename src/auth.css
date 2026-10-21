@@ -1061,6 +1061,13 @@
   color: var(--pw-green);
 }
 
+.pw-hosted-login-hint {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  opacity: 0.92;
+}
+
 .pw-login-options {
   display: flex;
   align-items: center;
