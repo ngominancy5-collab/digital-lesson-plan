@@ -8,3 +8,4 @@ dist/
 backend/uploads/*
 !backend/uploads/.gitkeep
 *.traineddata
+.neon

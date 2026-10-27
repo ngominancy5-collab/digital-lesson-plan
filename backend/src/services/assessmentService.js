@@ -67,12 +67,41 @@ export async function deleteAssessment(userId, id) {
   return { ok: true };
 }
 
+async function loadOwnedMaterialText(userId, documentIds) {
+  const ids = [...new Set((documentIds || []).map((id) => String(id || '').trim()).filter(Boolean))];
+  if (!ids.length) return { materialText: '', sourceDocumentIds: [] };
+
+  const parts = [];
+  const sourceDocumentIds = [];
+  for (const id of ids) {
+    const doc = await documentRepository.findOwned(userId, id);
+    if (!doc) {
+      throw new AppError('One of the selected files was not found or you do not have access to it.', 404);
+    }
+    const text = String(doc.extractedText || '').trim();
+    if (!text) {
+      throw new AppError(
+        `"${doc.originalName || 'Selected file'}" has no readable text yet. Wait for processing to finish, or choose another file.`,
+        400,
+      );
+    }
+    parts.push(`--- ${doc.originalName || id} ---\n${text}`);
+    sourceDocumentIds.push(doc.id);
+  }
+  return { materialText: parts.join('\n\n'), sourceDocumentIds };
+}
+
 export async function generateAssessment(userId, body) {
+  const requestedIds = [
+    ...(Array.isArray(body.documentIds) ? body.documentIds : []),
+    ...(body.documentId ? [body.documentId] : []),
+  ];
   let materialText = body.materialText || '';
-  if (body.documentId) {
-    const doc = await documentRepository.findOwned(userId, body.documentId);
-    if (!doc?.extractedText) throw new AppError('Upload and process a document before generating an assessment.');
-    materialText = doc.extractedText;
+  let sourceDocumentIds = [];
+  if (requestedIds.length) {
+    const loaded = await loadOwnedMaterialText(userId, requestedIds);
+    materialText = loaded.materialText;
+    sourceDocumentIds = loaded.sourceDocumentIds;
   }
   if (!String(materialText).trim()) {
     throw new AppError('Source material is required to generate an assessment.');
@@ -124,7 +153,12 @@ Return JSON:
     marks: data.totalMarks,
     lessonPlanId: body.lessonPlanId || null,
     status: 'draft',
-    meta: { generated: true, sourceDocumentId: body.documentId || null, difficulty },
+    meta: {
+      generated: true,
+      sourceDocumentId: sourceDocumentIds[0] || body.documentId || null,
+      sourceDocumentIds,
+      difficulty,
+    },
   });
   await notify(userId, {
     title: 'Assessment ready',

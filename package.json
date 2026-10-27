@@ -18,6 +18,8 @@
     "postinstall": "npm --prefix backend install --include=dev"
   },
   "dependencies": {
+    "@neon/config": "^1.9.3",
+    "@neon/env": "^1.6.4",
     "axios": "^1.7.7",
     "jszip": "^3.10.1",
     "lucide-react": "^0.469.0",

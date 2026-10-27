@@ -3,12 +3,12 @@
 #
 # One Node web service runs the Express API and serves the built React app
 # from /dist (see backend/src/server.js). Postgres is hosted on Neon
-# (https://neon.tech); DATABASE_URL is an external secret set in Render.
+# (https://neon.tech); set DATABASE_URL + DATABASE_URL_UNPOOLED as secrets.
 #
-# Use Neon's DIRECT (non-pooled) connection string — the one whose host does
-# NOT contain "-pooler". `prisma db push` runs at startup and needs a direct
-# connection (pooled PgBouncer connections break schema operations).
-# Append `?sslmode=require` if it is not already present.
+# Neon:
+#   DATABASE_URL          = pooled URL (host contains "-pooler") — app traffic
+#   DATABASE_URL_UNPOOLED = direct URL (no "-pooler") — prisma db push at start
+# Append ?sslmode=require if missing. Do not wrap URLs in quotes.
 #
 # Deploy: push this repo to GitHub, then in Render:
 #   New + > Blueprint > pick this repo > Apply.
@@ -27,9 +27,12 @@ services:
       - key: NODE_ENV
         value: production
 
-      # Neon Postgres connection string (DIRECT, not the -pooler host).
-      # e.g. postgresql://user:pass@ep-xxx.aws.neon.tech/planwise?sslmode=require
+      # Neon pooled (app)
       - key: DATABASE_URL
+        sync: false
+
+      # Neon direct (Prisma migrations / db push)
+      - key: DATABASE_URL_UNPOOLED
         sync: false
 
       # Auth
@@ -38,8 +41,8 @@ services:
       - key: JWT_EXPIRES_IN
         value: 7d
 
-      # Public URL of this service (e.g. https://planwise-ai.onrender.com).
-      # Used for CORS and password-reset links.
+      # Public URL of this service (e.g. https://planwise-ai-bmj3.onrender.com).
+      # Used for CORS and password-reset links. No trailing slash.
       - key: CLIENT_URL
         sync: false
 
@@ -62,19 +65,16 @@ services:
       # Email (optional). Render's free plan blocks SMTP, so mail is sent over
       # HTTPS via a provider API. If these are unset, setup/reset links and the
       # approved temporary password are still shown in the UI.
-      # Mailjet is the default provider; set EMAIL_HTTP_PROVIDER=brevo + BREVO_API_KEY
-      # to use Brevo instead.
       - key: MAILJET_API_KEY
         sync: false
       - key: MAILJET_API_SECRET
         sync: false
-      # Verified sender address used as "From", e.g. "PlanWise AI <you@example.com>"
       - key: EMAIL_FROM
         sync: false
       - key: EMAIL_HTTP_PROVIDER
         value: mailjet
 
-      # Uploaded-file storage (ephemeral on the free plan).
+      # Uploaded-file storage (ephemeral on the free plan; extracted text lives in Neon).
       - key: FILE_STORAGE_PATH
         value: ./uploads
       - key: FILE_STORAGE_URL

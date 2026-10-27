@@ -145,11 +145,36 @@ export async function deleteQuiz(userId, id) {
   return { ok: true };
 }
 
+async function loadOwnedMaterialText(userId, documentIds) {
+  const ids = [...new Set((documentIds || []).map((id) => String(id || '').trim()).filter(Boolean))];
+  if (!ids.length) return '';
+
+  const parts = [];
+  for (const id of ids) {
+    const doc = await documentRepository.findOwned(userId, id);
+    if (!doc) {
+      throw new AppError('One of the selected files was not found or you do not have access to it.', 404);
+    }
+    const text = String(doc.extractedText || '').trim();
+    if (!text) {
+      throw new AppError(
+        `"${doc.originalName || 'Selected file'}" has no readable text yet. Wait for processing to finish, or choose another file.`,
+        400,
+      );
+    }
+    parts.push(`--- ${doc.originalName || id} ---\n${text}`);
+  }
+  return parts.join('\n\n');
+}
+
 export async function generateQuiz(userId, body) {
+  const requestedIds = [
+    ...(Array.isArray(body.documentIds) ? body.documentIds : []),
+    ...(body.documentId ? [body.documentId] : []),
+  ];
   let materialText = body.materialText || '';
-  if (body.documentId) {
-    const doc = await documentRepository.findOwned(userId, body.documentId);
-    if (doc?.extractedText) materialText = doc.extractedText;
+  if (requestedIds.length) {
+    materialText = await loadOwnedMaterialText(userId, requestedIds);
   }
   if (body.lessonPlanId) {
     const plan = await lessonPlanRepository.findOwned(userId, body.lessonPlanId);

@@ -63,6 +63,7 @@ import {
   Sparkles,
   Star,
   Sun,
+  Trash2,
   TrendingUp,
   UserCircle2,
   Wand2,
@@ -1096,6 +1097,7 @@ function App() {
   const [activeClock, setActiveClock] = useState(null);
   const [report, setReport] = useState(null);
   const [resources, setResources] = useState([]);
+  const [deletingMaterialId, setDeletingMaterialId] = useState('');
   const [quizzes, setQuizzes] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -1335,7 +1337,14 @@ function App() {
       setErrors({ source: `${rejected.name} is too large.`, sourceDetail: 'The limit is 15 MB.' });
       return;
     }
+    const pendingNames = files.map((file) => file.name).join(', ');
     setErrors({});
+    setForm((previous) => ({
+      ...previous,
+      sourceFileName: previous.sourceFileName
+        ? `${previous.sourceFileName}, Uploading ${pendingNames}…`
+        : `Uploading ${pendingNames}…`,
+    }));
     const added = [];
     const failures = [];
     const failedFiles = [];
@@ -1350,7 +1359,7 @@ function App() {
         failedFiles.push(file);
         failures.push({
           name: file.name,
-          message: error.message || `Could not read ${file.name}.`,
+          message: error.message || `Could not upload ${file.name}.`,
           detail: error.detail || '',
         });
       }
@@ -1359,25 +1368,42 @@ function App() {
       setResources((current) => [...added, ...current.filter((item) => !added.some((resource) => resource.id === item.id))]);
       setForm((previous) => {
         const ids = [...new Set([...(previous.sourceDocumentIds || []), ...added.map((resource) => resource.id)])];
-        const names = added.map((resource) => resource.fileName).filter(Boolean);
+        const priorNames = String(previous.sourceFileName || '')
+          .split(', ')
+          .map((part) => part.trim())
+          .filter((part) => part && !part.startsWith('Uploading '));
+        const names = [...new Set([
+          ...priorNames,
+          ...added.map((resource) => resource.fileName || resource.originalName).filter(Boolean),
+        ])];
         const first = added[0];
         return {
           ...previous,
           sourceDocumentIds: ids,
           sourceDocumentId: ids[0] || '',
-          sourceFileName: [...new Set([...(previous.sourceFileName ? previous.sourceFileName.split(', ') : []), ...names])].join(', '),
+          sourceFileName: names.join(', '),
           courseName: previous.courseName || first.courseName || '',
           courseCode: previous.courseCode || first.courseCode || '',
         };
       });
       const withTopics = added.find((resource) => Array.isArray(resource.topics) && resource.topics.length);
       if (withTopics) setTopics((current) => (current.filter(Boolean).length ? current : withTopics.topics));
+    } else {
+      setForm((previous) => ({
+        ...previous,
+        sourceFileName: String(previous.sourceFileName || '')
+          .split(', ')
+          .map((part) => part.trim())
+          .filter((part) => part && !part.startsWith('Uploading '))
+          .join(', '),
+      }));
     }
     lessonRetryFiles.current = failedFiles;
     if (failures.length) {
       setErrors({
-        source: failures.length === 1 ? failures[0].message : `Could not read ${failures.length} files.`,
-        sourceDetail: failures.map((item) => item.detail || item.message).filter(Boolean).join(' '),
+        source: failures.length === 1 ? failures[0].message : `Could not upload ${failures.length} files.`,
+        sourceDetail: failures.map((item) => item.detail || item.message).filter(Boolean).join(' ')
+          || 'Check that the API is running and try again.',
       });
     } else {
       const notes = added.map((resource) => resource.extractionNote).filter(Boolean);
@@ -1388,6 +1414,45 @@ function App() {
           sourceTone: 'warning',
         });
       }
+    }
+  }
+
+  async function deleteLessonMaterial(item) {
+    const name = item.fileName || item.originalName || 'this file';
+    if (!window.confirm(`Delete "${name}" permanently?\n\nThis removes the file from your library and cannot be undone.`)) {
+      return;
+    }
+    setDeletingMaterialId(item.id);
+    setErrors((previous) => {
+      const next = { ...previous };
+      delete next.source;
+      delete next.sourceDetail;
+      delete next.sourceTone;
+      return next;
+    });
+    try {
+      await resourceApi.remove(item.id);
+      setResources((current) => current.filter((entry) => entry.id !== item.id));
+      setForm((previous) => {
+        const nextIds = (previous.sourceDocumentIds || []).filter((id) => id !== item.id);
+        const remainingNames = String(previous.sourceFileName || '')
+          .split(', ')
+          .map((part) => part.trim())
+          .filter((part) => part && part !== name && !part.startsWith('Uploading '));
+        return {
+          ...previous,
+          sourceDocumentIds: nextIds,
+          sourceDocumentId: nextIds[0] || '',
+          sourceFileName: remainingNames.join(', '),
+        };
+      });
+    } catch (error) {
+      setErrors({
+        source: error.message || `Could not delete ${name}.`,
+        sourceDetail: error.detail || 'The file was not removed. Try again.',
+      });
+    } finally {
+      setDeletingMaterialId('');
     }
   }
 
@@ -2222,36 +2287,80 @@ function App() {
                     </label>
                     <div className="field">
                       <span>Subject materials</span>
-                      <div className="choice-group wrap">
-                        {resources
-                          .filter((item) => !form.courseName || !item.courseName || String(item.courseName).toLowerCase() === form.courseName.trim().toLowerCase())
-                          .map((item) => {
+                      <div className="choice-group wrap material-chip-group">
+                        {(() => {
+                          const materials = resources.filter((item) => (
+                            !form.courseName
+                            || !item.courseName
+                            || String(item.courseName).toLowerCase() === form.courseName.trim().toLowerCase()
+                          ));
+                          if (!materials.length) {
+                            return <p className="muted-text material-chip-hint">No uploaded files yet. Use Upload notes below to add PDFs, DOC, DOCX, or TXT files.</p>;
+                          }
+                          return materials.map((item) => {
                             const selected = (form.sourceDocumentIds || []).includes(item.id);
+                            const busy = deletingMaterialId === item.id;
+                            function syncSourceNames(nextIds) {
+                              return resources
+                                .filter((resource) => nextIds.includes(resource.id))
+                                .map((resource) => resource.fileName)
+                                .filter(Boolean)
+                                .join(', ');
+                            }
                             return (
-                              <button
-                                type="button"
-                                key={item.id}
-                                className={`choice-btn ${selected ? 'active' : ''}`}
-                                onClick={() => setForm((previous) => {
-                                  const ids = new Set(previous.sourceDocumentIds || []);
-                                  if (ids.has(item.id)) ids.delete(item.id);
-                                  else ids.add(item.id);
-                                  const nextIds = [...ids];
-                                  const names = resources.filter((resource) => nextIds.includes(resource.id)).map((resource) => resource.fileName);
-                                  return { ...previous, sourceDocumentIds: nextIds, sourceDocumentId: nextIds[0] || '', sourceFileName: names.join(', ') };
-                                })}
-                              >
-                                {item.fileName}
-                              </button>
+                              <div key={item.id} className={`material-chip ${selected ? 'active' : ''} ${busy ? 'is-deleting' : ''}`}>
+                                <button
+                                  type="button"
+                                  className="material-chip-select"
+                                  disabled={busy}
+                                  onClick={() => setForm((previous) => {
+                                    const ids = new Set(previous.sourceDocumentIds || []);
+                                    if (ids.has(item.id)) ids.delete(item.id);
+                                    else ids.add(item.id);
+                                    const nextIds = [...ids];
+                                    return {
+                                      ...previous,
+                                      sourceDocumentIds: nextIds,
+                                      sourceDocumentId: nextIds[0] || '',
+                                      sourceFileName: syncSourceNames(nextIds),
+                                    };
+                                  })}
+                                >
+                                  {item.fileName}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="material-chip-delete"
+                                  aria-label={`Delete ${item.fileName}`}
+                                  title="Delete file permanently"
+                                  disabled={Boolean(deletingMaterialId)}
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    void deleteLessonMaterial(item);
+                                  }}
+                                >
+                                  <Trash2 size={14} />
+                                  <span className="material-chip-delete-label">{busy ? 'Deleting…' : 'Delete'}</span>
+                                </button>
+                              </div>
                             );
-                          })}
+                          });
+                        })()}
                       </div>
+                      {resources.some((item) => (
+                        !form.courseName
+                        || !item.courseName
+                        || String(item.courseName).toLowerCase() === form.courseName.trim().toLowerCase()
+                      )) ? (
+                        <p className="muted-text material-chip-hint">Click a file name to select it for this lesson. Use Delete to permanently remove a file from your library.</p>
+                      ) : null}
                     </div>
                     <label className="field">
                       <span>Upload notes</span>
-                      <input type="file" multiple accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={(event) => { attachLessonSource(event.target.files); event.target.value = ''; }} />
+                      <input type="file" multiple accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={(event) => { const picked = event.target.files; void attachLessonSource(picked); event.target.value = ''; }} />
                     </label>
-                    {form.sourceFileName ? <p className="muted-text">Using {form.sourceFileName}</p> : null}
+                    {form.sourceFileName ? <p className="muted-text">{/Uploading /.test(form.sourceFileName) ? form.sourceFileName : `Using ${form.sourceFileName}`}</p> : null}
                     {errors.source ? <Notice tone={errors.sourceTone || 'error'} message={errors.source} detail={errors.sourceDetail} onRetry={!errors.sourceTone && lessonRetryFiles.current.length ? () => attachLessonSource(lessonRetryFiles.current) : undefined} /> : null}
                     {errors.topics ? <div className="error-box">{errors.topics}</div> : null}
                   </>
@@ -2508,6 +2617,11 @@ function App() {
             difficulty={aiDifficulty}
             onGenerate={generateCheckedWork}
             onSave={saveAssessment}
+            onResourcesChange={async () => {
+              const resourceList = await resourceApi.list();
+              setResources(resourceList);
+            }}
+            onNavigate={navigateTo}
             onDelete={async (item) => {
               try {
                 if (item.recordKind === 'quiz') {
@@ -2581,7 +2695,24 @@ function App() {
                 <div className="footer-actions-row">
                   <button className="secondary-button" onClick={() => navigateTo('assessments')}>Generate assessment</button>
                   <button className="secondary-button" onClick={() => navigateTo('create-plan')}>Generate plan</button>
-                  <button className="secondary-button danger" onClick={async () => { await resourceApi.remove(item.id); setResources((current) => current.filter((entry) => entry.id !== item.id)); }}>Delete</button>
+                  <button className="secondary-button danger" onClick={async () => {
+                    const name = item.fileName || item.courseName || 'this file';
+                    if (!window.confirm(`Delete "${name}" permanently?\n\nThis removes the file from your library and cannot be undone.`)) return;
+                    try {
+                      await resourceApi.remove(item.id);
+                      setResources((current) => current.filter((entry) => entry.id !== item.id));
+                      setForm((previous) => {
+                        const nextIds = (previous.sourceDocumentIds || []).filter((id) => id !== item.id);
+                        return {
+                          ...previous,
+                          sourceDocumentIds: nextIds,
+                          sourceDocumentId: nextIds[0] || '',
+                        };
+                      });
+                    } catch (error) {
+                      setErrors({ general: error.message || `Could not delete ${name}.` });
+                    }
+                  }}>Delete</button>
                 </div>
               </article>
             )) : <div className="panel-card empty-course"><h2>No resources yet</h2><p>Upload a TXT, PDF, DOC, or DOCX outline.</p></div>}

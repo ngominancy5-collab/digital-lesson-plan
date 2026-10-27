@@ -170,9 +170,8 @@ export const documentApi = {
   upload: (file) => {
     const form = new FormData();
     form.append('file', file);
-    return api.post('/documents/upload', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }).then((r) => r.data.document);
+    // Let the browser set multipart boundary — do not force Content-Type.
+    return api.post('/documents/upload', form).then((r) => r.data.document);
   },
   remove: (id) => api.delete(`/documents/${id}`).then((r) => r.data),
 };
@@ -238,9 +237,8 @@ export const resourceApi = {
     form.append('file', file);
     if (details.courseName) form.append('courseName', details.courseName);
     if (details.courseCode) form.append('courseCode', details.courseCode);
-    return api.post('/resources/upload', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }).then((r) => r.data.resource);
+    // Let the browser set multipart boundary — do not force Content-Type.
+    return api.post('/resources/upload', form).then((r) => r.data.resource);
   },
   remove: (id) => api.delete(`/resources/${id}`).then((r) => r.data),
 };
@@ -373,9 +371,8 @@ export const siteImageApi = {
     if (details.altText) form.append('altText', details.altText);
     if (details.sortOrder != null) form.append('sortOrder', String(details.sortOrder));
     if (details.isActive != null) form.append('isActive', String(details.isActive));
-    return api.post('/site-images', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }).then((r) => r.data.image);
+    // Let the browser set multipart boundary — do not force Content-Type.
+    return api.post('/site-images', form).then((r) => r.data.image);
   },
   update: (id, payload) => api.patch(`/site-images/${id}`, payload).then((r) => r.data.image),
   remove: (id) => api.delete(`/site-images/${id}`).then((r) => r.data),

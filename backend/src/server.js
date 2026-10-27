@@ -44,7 +44,16 @@ const app = express();
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
-  origin: env.clientUrl,
+  origin(origin, callback) {
+    // Same-origin / server-to-server requests have no Origin header.
+    if (!origin) return callback(null, true);
+    const allowed = env.corsOrigins || [env.clientUrl].filter(Boolean);
+    if (allowed.includes(origin) || allowed.includes(origin.replace(/\/$/, ''))) {
+      return callback(null, true);
+    }
+    console.warn(`CORS blocked origin ${origin}. Set CLIENT_URL to your public site URL.`);
+    return callback(null, false);
+  },
   credentials: true,
 }));
 app.use(express.json({ limit: '25mb' }));
