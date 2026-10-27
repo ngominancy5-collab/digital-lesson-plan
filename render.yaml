@@ -55,7 +55,7 @@ services:
       - key: AI_PROVIDER
         value: gemini
 
-      # First administrator — created only when the database has no admin yet.
+      # Bootstrap administrator — created or password-synced on every boot.
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD

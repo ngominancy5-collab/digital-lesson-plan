@@ -379,27 +379,33 @@ export async function restoreAccount(userId) {
 export async function ensureBootstrapAdmin() {
   const email = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
   const password = String(process.env.ADMIN_PASSWORD || '');
-  const existingAdmin = await userRepository.countByRole('admin');
+  const fullName = String(process.env.ADMIN_NAME || 'PlanWise Administrator').trim() || 'PlanWise Administrator';
   if (!email || !password) return null;
-  if (existingAdmin > 0) return null;
 
+  const passwordHash = await hashPassword(password);
   const existing = await userRepository.findByEmail(email);
+
+  // Keep ADMIN_EMAIL / ADMIN_PASSWORD as the source of truth on every boot so
+  // hosted credentials match Render env even when an admin row already exists.
   if (existing) {
-    return userRepository.updateWithProfile(existing.id, {
+    const updated = await userRepository.updateWithProfile(existing.id, {
+      fullName: existing.fullName || fullName,
       role: 'admin',
       accountStatus: 'approved',
       emailVerified: true,
       mustChangePassword: false,
       roleConfirmed: true,
-      passwordHash: await hashPassword(password),
+      passwordHash,
     });
+    console.info(`Bootstrap admin synced for ${email}.`);
+    return updated;
   }
 
-  return userRepository.createWithProfile({
-    fullName: 'PlanWise Administrator',
+  const created = await userRepository.createWithProfile({
+    fullName,
     username: 'admin',
     email,
-    passwordHash: await hashPassword(password),
+    passwordHash,
     role: 'admin',
     accountStatus: 'approved',
     emailVerified: true,
@@ -418,4 +424,6 @@ export async function ensureBootstrapAdmin() {
       },
     },
   });
+  console.info(`Bootstrap admin created for ${email}.`);
+  return created;
 }
