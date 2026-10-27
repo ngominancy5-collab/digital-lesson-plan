@@ -14,7 +14,7 @@
     "db:push": "npm --prefix backend run db:push",
     "db:generate": "npm --prefix backend run db:generate",
     "db:seed": "npm --prefix backend run db:seed",
-    "start:prod": "npm --prefix backend run db:push && npm --prefix backend start",
+    "start:prod": "node backend/scripts/prod-start.mjs",
     "postinstall": "npm --prefix backend install --include=dev"
   },
   "dependencies": {

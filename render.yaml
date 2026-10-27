@@ -20,7 +20,8 @@ services:
     runtime: node
     plan: free
     buildCommand: npm ci --include=dev && npm run build && npm --prefix backend run db:generate
-    startCommand: npm --prefix backend run db:push && npm --prefix backend start
+    # Falls back to DATABASE_URL when DATABASE_URL_UNPOOLED is missing (see prod-start.mjs).
+    startCommand: npm run start:prod
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
