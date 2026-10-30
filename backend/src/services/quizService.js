@@ -1,5 +1,6 @@
 import { AppError } from '../utils/errors.js';
 import { completeJson } from './ai/aiClient.js';
+import { packSourceMaterial } from './ai/sourceMaterialPacker.js';
 import * as quizRepository from '../repositories/quizRepository.js';
 import { recordActivity } from './activityService.js';
 import * as documentRepository from '../repositories/documentRepository.js';
@@ -145,11 +146,11 @@ export async function deleteQuiz(userId, id) {
   return { ok: true };
 }
 
-async function loadOwnedMaterialText(userId, documentIds) {
+async function loadOwnedMaterialFiles(userId, documentIds) {
   const ids = [...new Set((documentIds || []).map((id) => String(id || '').trim()).filter(Boolean))];
-  if (!ids.length) return '';
+  if (!ids.length) return [];
 
-  const parts = [];
+  const files = [];
   for (const id of ids) {
     const doc = await documentRepository.findOwned(userId, id);
     if (!doc) {
@@ -162,9 +163,9 @@ async function loadOwnedMaterialText(userId, documentIds) {
         400,
       );
     }
-    parts.push(`--- ${doc.originalName || id} ---\n${text}`);
+    files.push({ id: doc.id, name: doc.originalName || id, text });
   }
-  return parts.join('\n\n');
+  return files;
 }
 
 export async function generateQuiz(userId, body) {
@@ -172,41 +173,54 @@ export async function generateQuiz(userId, body) {
     ...(Array.isArray(body.documentIds) ? body.documentIds : []),
     ...(body.documentId ? [body.documentId] : []),
   ];
-  let materialText = body.materialText || '';
+  let materialText = String(body.materialText || '').trim();
   if (requestedIds.length) {
-    materialText = await loadOwnedMaterialText(userId, requestedIds);
+    const files = await loadOwnedMaterialFiles(userId, requestedIds);
+    const packed = packSourceMaterial(files, { totalBudget: 5500 });
+    materialText = packed.materialText;
+  } else if (materialText) {
+    materialText = materialText.slice(0, 5500);
   }
   if (body.lessonPlanId) {
     const plan = await lessonPlanRepository.findOwned(userId, body.lessonPlanId);
-    if (plan) materialText += `\n\n${JSON.stringify(plan.lessons || []).slice(0, 6000)}`;
+    if (plan) {
+      const lessonSnippet = JSON.stringify(plan.lessons || []).slice(0, 2500);
+      materialText = `${materialText}\n\nLesson plan context:\n${lessonSnippet}`.slice(0, 6500);
+    }
   }
-  if (!String(materialText).trim()) {
+  if (!materialText) {
     throw new AppError('Provide a document or lesson plan to generate a quiz from.');
   }
 
-  const count = Number(body.count || 8);
+  const count = Math.max(1, Math.min(Number(body.count || 8) || 8, 25));
+  const marksPerQuestion = Number(body.marksPerQuestion || 1) || 1;
+  const questionTypes = (body.questionTypes || ['multiple-choice', 'true-false', 'short-answer']).slice(0, 4);
   const { data } = await completeJson(
-    'You are an expert quiz designer. Return JSON only.',
-    `Create a quiz with ${count} questions at ${body.difficulty || 'Intermediate'} difficulty.
+    'Expert quiz designer. Return compact JSON only. Ground every question in the source.',
+    `Create a quiz with exactly ${count} questions (${body.difficulty || 'Intermediate'}).
 
 Source:
-${String(materialText).slice(0, 12000)}
+${materialText}
 
-Return JSON:
-{
-  "title": "string",
-  "instructions": "string",
-  "difficulty": "Easy|Intermediate|Advanced|Professional",
-  "questions": [
+Types: ${questionTypes.join(', ')}
+Marks/question: ${marksPerQuestion}
+Keep prompts short. Options only for multiple-choice/true-false.
+
+JSON shape:
+{"title":"","instructions":"","difficulty":"Intermediate","questions":[{"question":"","questionType":"multiple-choice","marks":${marksPerQuestion},"correctAnswer":"","options":["A","B","C","D"]}]}`,
+    [],
     {
-      "question": "string",
-      "questionType": "multiple-choice|true-false|short-answer",
-      "marks": 1,
-      "correctAnswer": "string",
-      "options": ["A text","B text","C text","D text"]
-    }
-  ]
-}`,
+      temperature: 0.3,
+      maxOutputTokens: Math.min(4096, 700 + count * 160),
+      timeout: 45000,
+      retries: 0,
+      preferredModels: [
+        process.env.GEMINI_ASSESSMENT_MODEL,
+        process.env.GEMINI_MODEL,
+        'gemini-3.5-flash-lite',
+        'gemini-3.5-flash',
+      ],
+    },
   );
 
   if (!data?.questions?.length) throw new AppError('AI could not generate the quiz.', 502);

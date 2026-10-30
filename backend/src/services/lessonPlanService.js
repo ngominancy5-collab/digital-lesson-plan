@@ -5,6 +5,7 @@ import { completeJson } from './ai/aiClient.js';
 import { deriveTopicsFromMaterial, packSourceMaterial } from './ai/sourceMaterialPacker.js';
 import * as lessonPlanRepository from '../repositories/lessonPlanRepository.js';
 import * as documentRepository from '../repositories/documentRepository.js';
+import * as userRepository from '../repositories/userRepository.js';
 import { recordActivity } from './activityService.js';
 
 function normalizeDifficulty(value) {
@@ -139,8 +140,7 @@ export async function generateAndSaveLessonPlan(userId, payload) {
   const packed = packSourceMaterial(files, {
     topics: topicHints,
     notes,
-    // Keep prompt compact so Gemini can finish a full plan in one fast call.
-    totalBudget: files.length > 3 ? 6500 : files.length > 1 ? 7000 : 7500,
+    totalBudget: files.length > 3 ? 7500 : files.length > 1 ? 8500 : 9000,
   });
   const materialText = packed.materialText;
   let topics = topicHints;
@@ -151,19 +151,30 @@ export async function generateAndSaveLessonPlan(userId, payload) {
     throw new AppError('Add lesson notes, topics, or an uploaded file before generating a lesson plan.', 422);
   }
 
-  const weeks = Math.max(1, Math.min(Number(payload.numberOfWeeks) || 4, 8));
-  const lessonsPerWeek = Math.max(1, Math.min(Number(payload.lessonsPerWeek) || 2, 4));
+  // Prefer fewer, richer sessions when the client did not specify a schedule.
+  const weeks = Math.max(1, Math.min(Number(payload.numberOfWeeks) || 2, 6));
+  const lessonsPerWeek = Math.max(1, Math.min(Number(payload.lessonsPerWeek) || 2, 3));
+
+  let profile = {};
+  try {
+    const user = await userRepository.findByIdWithProfile(userId);
+    profile = user?.profile || {};
+    if (!payload.lecturer && user?.fullName) payload.lecturer = user.fullName;
+  } catch {
+    profile = {};
+  }
 
   let result;
   try {
     result = await aiGenerateLessonPlan({
       course: {
+        institution: payload.institution || profile.institution || '',
         courseName: payload.courseName,
         courseCode: payload.courseCode,
         programme: payload.programme,
-        level: payload.level || payload.gradeLevel,
-        department: payload.department,
-        lecturer: payload.lecturer,
+        level: payload.level || payload.gradeLevel || profile.educationLevel || '',
+        department: payload.department || profile.department || '',
+        lecturer: payload.lecturer || '',
         semester: payload.semester,
         academicYear: payload.academicYear,
       },
@@ -173,7 +184,7 @@ export async function generateAndSaveLessonPlan(userId, payload) {
         endDate: payload.endDate,
         numberOfWeeks: weeks,
         lessonsPerWeek,
-        lessonDuration: payload.lessonDuration,
+        lessonDuration: payload.lessonDuration || '60 minutes',
         holidays: payload.holidays || [],
       },
       preferences: {
@@ -199,17 +210,17 @@ export async function generateAndSaveLessonPlan(userId, payload) {
   const plan = await lessonPlanRepository.create({
     userId,
     title: result.courseName || payload.courseName || 'Generated lesson plan',
-    subject: payload.courseName || '',
+    subject: payload.courseName || first.subject || '',
     topic: first.topic || topics[0] || '',
-    gradeLevel: payload.level || '',
+    gradeLevel: payload.level || first.level || '',
     duration: payload.lessonDuration || first.duration || '',
     learningObjectives: first.learningObjectives || [],
-    introduction: first.introduction || '',
+    introduction: first.introduction || first.procedure?.[0]?.content || '',
     lessonActivities: first.studentActivities || first.teacherActivities || [],
     teachingMethods: first.teachingMethods || payload.teachingMethods || [],
     requiredMaterials: first.learningResources || [],
-    assessmentMethod: first.assessmentMethod || '',
-    conclusion: first.notes || '',
+    assessmentMethod: first.assessmentMethod || (first.assessmentMethods || []).join('; '),
+    conclusion: first.conclusion || first.homework || first.notes || '',
     difficulty: normalizeDifficulty(payload.difficulty),
     sourceDocumentId: payload.documentId || documentIds[0] || null,
     aiGenerated: true,
@@ -219,12 +230,14 @@ export async function generateAndSaveLessonPlan(userId, payload) {
     lessons: result.lessons || [],
     warnings: result.warnings || [],
     meta: {
-      schedule: payload,
+      schedule: { ...payload, numberOfWeeks: weeks, lessonsPerWeek },
+      institution: result.institution || payload.institution || profile.institution || '',
       sourcePack: {
         fileCount: packed.fileCount,
         usedChars: packed.usedChars,
         fromCache: packed.fromCache,
       },
+      structureVersion: 2,
     },
   });
   await recordActivity({

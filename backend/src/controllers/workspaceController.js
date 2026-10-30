@@ -6,6 +6,7 @@ import * as notificationService from '../services/notificationService.js';
 import * as resourceService from '../services/resourceService.js';
 import * as markingService from '../services/markingService.js';
 import { exportLessonPlanPdf } from '../services/lessonPlanExportService.js';
+import { exportAssessmentPdf, exportQuizPdf } from '../services/assessmentExportService.js';
 
 export const getAttendance = asyncHandler(async (req, res) => {
   res.json(await attendanceService.getAttendance(req.userId));
@@ -100,6 +101,20 @@ export const deleteMarkedPaper = asyncHandler(async (req, res) => {
 
 export const exportLessonPlan = asyncHandler(async (req, res) => {
   const { buffer, filename } = await exportLessonPlanPdf(req.userId, req.params.id);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buffer);
+});
+
+export const exportAssessment = asyncHandler(async (req, res) => {
+  const { buffer, filename } = await exportAssessmentPdf(req.userId, req.params.id);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buffer);
+});
+
+export const exportQuiz = asyncHandler(async (req, res) => {
+  const { buffer, filename } = await exportQuizPdf(req.userId, req.params.id);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(buffer);

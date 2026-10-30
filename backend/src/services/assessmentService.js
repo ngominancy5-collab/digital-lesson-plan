@@ -1,6 +1,7 @@
 import { AppError } from '../utils/errors.js';
 import { mapAssessment } from '../utils/mappers.js';
 import { completeJson } from './ai/aiClient.js';
+import { packSourceMaterial } from './ai/sourceMaterialPacker.js';
 import * as assessmentRepository from '../repositories/assessmentRepository.js';
 import { recordActivity } from './activityService.js';
 import * as documentRepository from '../repositories/documentRepository.js';
@@ -67,11 +68,11 @@ export async function deleteAssessment(userId, id) {
   return { ok: true };
 }
 
-async function loadOwnedMaterialText(userId, documentIds) {
+async function loadOwnedMaterialFiles(userId, documentIds) {
   const ids = [...new Set((documentIds || []).map((id) => String(id || '').trim()).filter(Boolean))];
-  if (!ids.length) return { materialText: '', sourceDocumentIds: [] };
+  if (!ids.length) return { files: [], sourceDocumentIds: [] };
 
-  const parts = [];
+  const files = [];
   const sourceDocumentIds = [];
   for (const id of ids) {
     const doc = await documentRepository.findOwned(userId, id);
@@ -85,10 +86,10 @@ async function loadOwnedMaterialText(userId, documentIds) {
         400,
       );
     }
-    parts.push(`--- ${doc.originalName || id} ---\n${text}`);
+    files.push({ id: doc.id, name: doc.originalName || id, text });
     sourceDocumentIds.push(doc.id);
   }
-  return { materialText: parts.join('\n\n'), sourceDocumentIds };
+  return { files, sourceDocumentIds };
 }
 
 export async function generateAssessment(userId, body) {
@@ -96,53 +97,61 @@ export async function generateAssessment(userId, body) {
     ...(Array.isArray(body.documentIds) ? body.documentIds : []),
     ...(body.documentId ? [body.documentId] : []),
   ];
-  let materialText = body.materialText || '';
+  let materialText = String(body.materialText || '').trim();
   let sourceDocumentIds = [];
   if (requestedIds.length) {
-    const loaded = await loadOwnedMaterialText(userId, requestedIds);
-    materialText = loaded.materialText;
+    const loaded = await loadOwnedMaterialFiles(userId, requestedIds);
     sourceDocumentIds = loaded.sourceDocumentIds;
+    const topicHints = String(body.topicsInclude || '')
+      .split(/[,;\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    const packed = packSourceMaterial(loaded.files, {
+      topics: topicHints,
+      totalBudget: 5500,
+    });
+    materialText = packed.materialText;
+  } else if (materialText) {
+    materialText = materialText.slice(0, 5500);
   }
-  if (!String(materialText).trim()) {
+  if (!materialText) {
     throw new AppError('Source material is required to generate an assessment.');
   }
 
-  const count = Number(body.count || 10);
+  const count = Math.max(1, Math.min(Number(body.count || 10) || 10, 25));
   const difficulty = body.difficulty || 'Intermediate';
+  const marksPerQuestion = Number(body.marksPerQuestion || 2) || 2;
+  const questionTypes = (body.questionTypes || ['multiple-choice', 'true-false', 'short-answer']).slice(0, 4);
   const { data } = await completeJson(
-    'You are an expert assessment designer. Return JSON only.',
-    `Create a ${body.kind || body.type || 'quiz'} with ${count} questions at ${difficulty} difficulty from this material.
+    'Expert assessment designer. Return compact JSON only. Ground every question in the source.',
+    `Create a ${body.kind || body.type || 'quiz'} with exactly ${count} questions (${difficulty}).
 
-Material:
-${String(materialText).slice(0, 12000)}
+Source:
+${materialText}
 
-Question types allowed: ${(body.questionTypes || ['multiple-choice', 'true-false', 'short-answer']).join(', ')}
-Marks per question: ${body.marksPerQuestion || 2}
-Total marks target: ${body.totalMarks || count * 2}
-Time allowed: ${body.timeAllowed || 'Not specified. Leave timeAllowed empty.'}
-Topics include: ${body.topicsInclude || 'any'}
-Topics exclude: ${body.topicsExclude || 'none'}
+Types: ${questionTypes.join(', ')}
+Marks/question: ${marksPerQuestion}
+Total marks: ${body.totalMarks || count * marksPerQuestion}
+Include topics: ${body.topicsInclude || 'any from source'}
+Exclude topics: ${body.topicsExclude || 'none'}
+Keep prompts short. Options only for multiple-choice/true-false. No long explanations.
 
-Return JSON:
-{
-  "title": "string",
-  "kind": "quiz|test",
-  "instructions": "string",
-  "timeAllowed": "string",
-  "totalMarks": number,
-  "difficulty": "string",
-  "questions": [
+JSON shape:
+{"title":"","kind":"quiz","instructions":"","timeAllowed":"","totalMarks":0,"difficulty":"","questions":[{"id":"q1","type":"multiple-choice","prompt":"","options":["A","B","C","D"],"answer":"","marks":${marksPerQuestion}}]}`,
+    [],
     {
-      "id": "q1",
-      "type": "multiple-choice|true-false|short-answer",
-      "prompt": "string",
-      "options": ["A","B","C","D"],
-      "answer": "string",
-      "marks": number,
-      "explanation": "string"
-    }
-  ]
-}`,
+      temperature: 0.3,
+      maxOutputTokens: Math.min(4096, 700 + count * 160),
+      timeout: 45000,
+      retries: 0,
+      preferredModels: [
+        process.env.GEMINI_ASSESSMENT_MODEL,
+        process.env.GEMINI_MODEL,
+        'gemini-3.5-flash-lite',
+        'gemini-3.5-flash',
+      ],
+    },
   );
 
   if (!data?.questions?.length) throw new AppError('AI could not generate the assessment. Try again.', 502);
@@ -158,6 +167,10 @@ Return JSON:
       sourceDocumentId: sourceDocumentIds[0] || body.documentId || null,
       sourceDocumentIds,
       difficulty,
+      courseName: body.courseName || body.subjectName || '',
+      courseCode: body.courseCode || '',
+      institution: body.institution || '',
+      timeAllowed: body.timeAllowed || data.timeAllowed || '',
     },
   });
   await notify(userId, {

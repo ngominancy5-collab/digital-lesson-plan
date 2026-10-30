@@ -3,7 +3,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 import { recordUsageAfterSuccess, requireUsageAllowance } from '../middleware/usageLimits.js';
 import * as c from '../controllers/apiControllers.js';
-import { exportLessonPlan } from '../controllers/workspaceController.js';
+import { exportAssessment, exportLessonPlan, exportQuiz } from '../controllers/workspaceController.js';
 
 export const dashboardRoutes = Router();
 dashboardRoutes.get('/', requireAuth, c.dashboard);
@@ -33,12 +33,14 @@ lessonPlanRoutes.post('/regenerate', requireAuth, requireUsageAllowance('ai'), r
 export const assessmentRoutes = Router();
 assessmentRoutes.get('/', requireAuth, c.listAssessments);
 assessmentRoutes.post('/', requireAuth, c.createAssessment);
+assessmentRoutes.get('/:id/export', requireAuth, exportAssessment);
 assessmentRoutes.put('/:id', requireAuth, c.updateAssessment);
 assessmentRoutes.delete('/:id', requireAuth, c.deleteAssessment);
 
 export const quizRoutes = Router();
 quizRoutes.get('/', requireAuth, c.listQuizzes);
 quizRoutes.post('/', requireAuth, c.createQuiz);
+quizRoutes.get('/:id/export', requireAuth, exportQuiz);
 quizRoutes.get('/:id', requireAuth, c.getQuiz);
 quizRoutes.put('/:id', requireAuth, c.updateQuiz);
 quizRoutes.delete('/:id', requireAuth, c.deleteQuiz);

@@ -323,22 +323,64 @@ export async function* streamText(system, user, history = []) {
   if (provider === 'gemini') {
     const key = geminiKey() || openaiKey();
     let lastError;
-    for (const model of geminiModelNames()) {
+    const models = geminiModelNames([
+      process.env.GEMINI_CHAT_MODEL,
+      process.env.GEMINI_MODEL,
+      'gemini-3.5-flash-lite',
+      'gemini-3.5-flash',
+    ]);
+    for (const model of models) {
       try {
         const response = await axios.post(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent`,
           {
             ...geminiContents(system, user, history),
-            generationConfig: { temperature: 0.55 },
+            generationConfig: { temperature: 0.55, maxOutputTokens: 2048 },
           },
-          { params: { key, alt: 'sse' }, responseType: 'stream', timeout: 60000 },
+          { params: { key, alt: 'sse' }, responseType: 'stream', timeout: 25000 },
         );
-        yield* readOpenAiStyleStream(response.data);
-        return;
+        let produced = false;
+        for await (const token of readOpenAiStyleStream(response.data)) {
+          produced = true;
+          yield token;
+        }
+        if (produced) return;
+        // Empty stream — fall through to non-stream completion on the same model.
+        const fallback = await completeGemini(system, user, history, {
+          json: false,
+          temperature: 0.55,
+          maxOutputTokens: 2048,
+          timeout: 25000,
+          preferredModels: [model],
+          retries: 0,
+        });
+        if (fallback) {
+          yield fallback;
+          return;
+        }
       } catch (error) {
         lastError = error;
         const status = error.response?.status;
-        if (status === 404 || status === 400 || status === 429 || status === 503) continue;
+        const timedOut = error.code === 'ECONNABORTED' || /timeout/i.test(String(error.message || ''));
+        if (!timedOut && (status === 404 || status === 400 || status === 429 || status === 503)) continue;
+        // On timeout/empty stream, try a quick non-stream reply before the next model.
+        try {
+          const fallback = await completeGemini(system, user, history, {
+            json: false,
+            temperature: 0.55,
+            maxOutputTokens: 2048,
+            timeout: 20000,
+            preferredModels: [model],
+            retries: 0,
+          });
+          if (fallback) {
+            yield fallback;
+            return;
+          }
+        } catch (fallbackError) {
+          lastError = fallbackError;
+        }
+        if (timedOut) continue;
         break;
       }
     }

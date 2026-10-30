@@ -292,15 +292,26 @@ export default function FloatingAssistant({
 
     const controller = new AbortController();
     abortRef.current = controller;
+    const timeoutId = window.setTimeout(() => controller.abort(), 45000);
 
     try {
+      setMessages((current) => current.map((item) => (
+        item.id === botId
+          ? { ...item, text: item.text || 'Thinking…', streaming: true }
+          : item
+      )));
+
       const response = await streamAiChat(payload, { signal: controller.signal });
-      if (!response.ok || !response.body) throw new Error('stream unavailable');
+      if (!response.ok || !response.body) {
+        const detail = await response.text().catch(() => '');
+        throw new Error(detail || `Assistant unavailable (${response.status || 'offline'})`);
+      }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       let finalResult = null;
+      let gotDelta = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -309,20 +320,35 @@ export default function FloatingAssistant({
         const frames = buffer.split('\n\n');
         buffer = frames.pop() || '';
         frames.forEach((frame) => {
-          const event = (frame.match(/^event: (.+)$/m) || [])[1];
+          const event = (frame.match(/^event:\s*(.+)$/m) || [])[1]?.trim();
           const dataLine = frame
             .split('\n')
             .filter((line) => line.startsWith('data: '))
             .map((line) => line.slice(6))
             .join('');
           if (!event || !dataLine) return;
-          const data = JSON.parse(dataLine);
+          let data;
+          try {
+            data = JSON.parse(dataLine);
+          } catch {
+            return;
+          }
           if (event === 'delta') {
+            const piece = typeof data === 'string' ? data : '';
+            if (!piece) return;
+            gotDelta = true;
             setMessages((current) => current.map((item) => (
               item.id === botId
-                ? { ...item, text: `${item.text || ''}${typeof data === 'string' ? data : ''}`, streaming: true }
+                ? {
+                  ...item,
+                  text: `${(item.text === 'Thinking…' ? '' : item.text) || ''}${piece}`,
+                  streaming: true,
+                }
                 : item
             )));
+          }
+          if (event === 'error') {
+            throw new Error(data?.error || 'AI stream failed.');
           }
           if (event === 'meta' || event === 'done' || event === 'saved') {
             finalResult = { ...(finalResult || {}), ...(typeof data === 'object' ? data : {}) };
@@ -337,7 +363,10 @@ export default function FloatingAssistant({
           ? {
             ...item,
             streaming: false,
-            text: parsed.text || item.text.replace(/CALENDAR_SUGGESTION:[\s\S]*$/, '').trim() || 'I could not complete that reply. Try again.',
+            text: parsed.text
+              || (gotDelta ? item.text.replace(/CALENDAR_SUGGESTION:[\s\S]*$/, '').trim() : '')
+              || finalResult?.reply
+              || 'I could not complete that reply. Try again.',
             calendarSuggestion: parsed.suggestion,
           }
           : item
@@ -345,7 +374,9 @@ export default function FloatingAssistant({
     } catch (error) {
       if (error.name === 'AbortError') {
         setMessages((current) => current.map((item) => (
-          item.id === botId ? { ...item, streaming: false, text: item.text || 'Stopped.' } : item
+          item.id === botId
+            ? { ...item, streaming: false, text: item.text && item.text !== 'Thinking…' ? item.text : 'The assistant took too long. Please try again.' }
+            : item
         )));
       } else {
         setMessages((current) => current.map((item) => (
@@ -353,12 +384,15 @@ export default function FloatingAssistant({
             ? {
               ...item,
               streaming: false,
-              text: 'I could not reach the live AI right now. Open the full AI Assistant page, or try again in a moment.',
+              text: error.message && !/stream unavailable/i.test(error.message)
+                ? error.message
+                : 'I could not reach the live AI right now. Check that the API is running, then try again.',
             }
             : item
         )));
       }
     } finally {
+      window.clearTimeout(timeoutId);
       abortRef.current = null;
       setBusy(false);
     }

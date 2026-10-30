@@ -135,8 +135,8 @@ export const lessonPlanApi = {
   create: (payload) => api.post('/lesson-plans', payload).then((r) => r.data.plan),
   update: (id, payload) => api.put(`/lesson-plans/${id}`, payload).then((r) => r.data.plan),
   remove: (id) => api.delete(`/lesson-plans/${id}`).then((r) => r.data),
-  generate: (payload) => api.post('/lesson-plans/generate', payload, { timeout: 90000 }).then((r) => r.data),
-  regenerate: (payload) => api.post('/lesson-plans/regenerate', payload, { timeout: 60000 }).then((r) => r.data),
+  generate: (payload) => api.post('/lesson-plans/generate', payload, { timeout: 180000 }).then((r) => r.data),
+  regenerate: (payload) => api.post('/lesson-plans/regenerate', payload, { timeout: 90000 }).then((r) => r.data),
 };
 
 export const assessmentApi = {
@@ -144,7 +144,7 @@ export const assessmentApi = {
   create: (payload) => api.post('/assessments', payload).then((r) => r.data.assessment),
   update: (id, payload) => api.put(`/assessments/${id}`, payload).then((r) => r.data.assessment),
   remove: (id) => api.delete(`/assessments/${id}`).then((r) => r.data),
-  generate: (payload) => api.post('/ai/generate-assessment', payload).then((r) => r.data.assessment),
+  generate: (payload) => api.post('/ai/generate-assessment', payload, { timeout: 120000 }).then((r) => r.data.assessment),
 };
 
 export const quizApi = {
@@ -152,7 +152,7 @@ export const quizApi = {
   create: (payload) => api.post('/quizzes', payload).then((r) => r.data.quiz),
   update: (id, payload) => api.put(`/quizzes/${id}`, payload).then((r) => r.data.quiz),
   remove: (id) => api.delete(`/quizzes/${id}`).then((r) => r.data),
-  generate: (payload) => api.post('/ai/generate-quiz', payload).then((r) => r.data.quiz),
+  generate: (payload) => api.post('/ai/generate-quiz', payload, { timeout: 120000 }).then((r) => r.data.quiz),
 };
 
 export const calendarApi = {
@@ -180,13 +180,13 @@ export const documentApi = {
   remove: (id) => api.delete(`/documents/${id}`).then((r) => r.data),
 };
 
-export async function downloadLessonPlanPdf(id) {
+async function downloadPdfFromPath(path, fallbackName) {
   const token = getToken();
-  const response = await fetch(`${API_BASE}/lesson-plans/${id}/export`, {
+  const response = await fetch(`${API_BASE}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!response.ok) {
-    let message = 'Could not export the lesson plan.';
+    let message = 'Could not export the document.';
     try {
       const body = await response.json();
       message = body.message || body.error || message;
@@ -197,7 +197,7 @@ export async function downloadLessonPlanPdf(id) {
   }
   const blob = await response.blob();
   const named = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') || '');
-  const filename = named?.[1] || 'PlanWise-Lesson-Plan.pdf';
+  const filename = named?.[1] || fallbackName;
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -206,6 +206,18 @@ export async function downloadLessonPlanPdf(id) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+export async function downloadLessonPlanPdf(id) {
+  return downloadPdfFromPath(`/lesson-plans/${id}/export`, 'PlanWise-Lesson-Plan.pdf');
+}
+
+export async function downloadAssessmentPdf(id) {
+  return downloadPdfFromPath(`/assessments/${id}/export`, 'PlanWise-Assessment.pdf');
+}
+
+export async function downloadQuizPdf(id) {
+  return downloadPdfFromPath(`/quizzes/${id}/export`, 'PlanWise-Assessment.pdf');
 }
 
 export const attendanceApi = {

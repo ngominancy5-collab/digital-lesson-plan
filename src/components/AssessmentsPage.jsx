@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from 'react';
-import { Check, ClipboardCheck, FileUp, FolderOpen, Plus, Trash2, X } from 'lucide-react';
-import { DIFFICULTY_LEVELS, QUESTION_TYPES, suggestCalendarFromAssessment } from '../../shared/learningEngine.js';
-import { resourceApi } from '../services/api.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Download, FileUp, FolderOpen, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
+import { DIFFICULTY_LEVELS, QUESTION_TYPES } from '../../shared/learningEngine.js';
+import { downloadAssessmentPdf, downloadQuizPdf, resourceApi } from '../services/api.js';
 import Notice from './Notice.jsx';
 
 const ACCEPT = '.pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain';
@@ -34,12 +34,61 @@ function formatDate(value) {
   }
 }
 
+function optionLetter(index) {
+  return String.fromCharCode(65 + index);
+}
+
+function cloneAssessment(item) {
+  if (!item) return null;
+  return {
+    ...item,
+    questions: (item.questions || []).map((question) => ({
+      ...question,
+      options: Array.isArray(question.options) ? [...question.options] : [],
+    })),
+  };
+}
+
+function sectionMeta(type) {
+  const value = String(type || '').toLowerCase();
+  if (value.includes('true') || value.includes('false')) {
+    return { key: 'true-false', title: 'TRUE / FALSE QUESTIONS', order: 1 };
+  }
+  if (value.includes('multiple') || value.includes('mcq') || value.includes('choice')) {
+    return { key: 'multiple-choice', title: 'MULTIPLE-CHOICE QUESTIONS', order: 2 };
+  }
+  if (value.includes('short')) {
+    return { key: 'short-answer', title: 'SHORT-ANSWER QUESTIONS', order: 3 };
+  }
+  if (value.includes('scenario')) {
+    return { key: 'scenario', title: 'SCENARIO-BASED QUESTIONS', order: 4 };
+  }
+  if (value.includes('practical') || value.includes('application')) {
+    return { key: 'practical', title: 'PRACTICAL / APPLICATION QUESTIONS', order: 5 };
+  }
+  if (value.includes('long') || value.includes('essay')) {
+    return { key: 'essay', title: 'ESSAY / LONG-ANSWER QUESTIONS', order: 6 };
+  }
+  return { key: 'general', title: 'QUESTIONS', order: 7 };
+}
+
+function groupPaperSections(questions = []) {
+  const map = new Map();
+  questions.forEach((question) => {
+    const meta = sectionMeta(question.type);
+    if (!map.has(meta.key)) map.set(meta.key, { ...meta, questions: [] });
+    map.get(meta.key).questions.push(question);
+  });
+  return [...map.values()].sort((a, b) => a.order - b.order);
+}
+
 export default function AssessmentsPage({
   assessments,
   quizzes = [],
   resources = [],
   courses = [],
   difficulty,
+  user,
   onGenerate,
   onSave,
   onDelete,
@@ -58,6 +107,7 @@ export default function AssessmentsPage({
   const [pendingFiles, setPendingFiles] = useState([]);
   const [uploadedResources, setUploadedResources] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [generateProgress, setGenerateProgress] = useState({ percent: 0, label: '' });
   const [generator, setGenerator] = useState({
     count: 10,
     difficulty: difficulty || 'Intermediate',
@@ -69,11 +119,33 @@ export default function AssessmentsPage({
     kind: 'quiz',
   });
   const [error, setError] = useState('');
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveNotice, setSaveNotice] = useState('');
+  const [editingPaper, setEditingPaper] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const fileInputRef = useRef(null);
 
   const selected = useMemo(
     () => library.find((item) => item.id === selectedId) || library[0] || null,
     [library, selectedId],
+  );
+
+  useEffect(() => {
+    setDraft(cloneAssessment(selected));
+    setSaveNotice('');
+    setEditingPaper(false);
+  }, [selectedId, selected?.updatedAt, selected?.id]);
+
+  const paperSections = useMemo(
+    () => groupPaperSections(draft?.questions || []),
+    [draft?.questions],
+  );
+
+  const paperTotalMarks = useMemo(
+    () => Number(draft?.totalMarks || draft?.marks)
+      || (draft?.questions || []).reduce((sum, item) => sum + Number(item.marks || 0), 0),
+    [draft],
   );
 
   const subjectOptions = useMemo(() => [...new Set([
@@ -159,9 +231,12 @@ export default function AssessmentsPage({
     }
 
     setBusy(true);
+    setGenerateProgress({ percent: 8, label: 'Preparing your materials…' });
+    let progressTimer;
     try {
       let documentIds = [];
       if (materialSource === 'upload') {
+        setGenerateProgress({ percent: 18, label: 'Uploading selected files…' });
         documentIds = await ensureUploadedDocumentIds();
       } else {
         documentIds = [...selectedResourceIds];
@@ -170,27 +245,126 @@ export default function AssessmentsPage({
         }
       }
 
+      setGenerateProgress({
+        percent: 32,
+        label: `Reading key content from ${documentIds.length} file${documentIds.length === 1 ? '' : 's'}…`,
+      });
+      const startedAt = Date.now();
+      progressTimer = setInterval(() => {
+        const elapsed = Date.now() - startedAt;
+        const soft = Math.min(88, 38 + Math.floor(elapsed / 1800) * 6);
+        const label = elapsed > 22000
+          ? 'Almost there — finishing your questions…'
+          : elapsed > 10000
+            ? 'Writing questions from your materials…'
+            : 'Asking AI to build your assessment…';
+        setGenerateProgress((previous) => ({
+          percent: Math.max(previous.percent || 38, soft),
+          label,
+        }));
+      }, 1800);
+
+      setGenerateProgress({ percent: 42, label: 'Asking AI to build your assessment…' });
       const result = await onGenerate({
         ...generator,
         documentId: documentIds[0],
         documentIds,
+        courseName: subjectName || '',
+        subjectName: subjectName || '',
+        institution: user?.institution || '',
       });
+      if (progressTimer) clearInterval(progressTimer);
+      setGenerateProgress({ percent: 96, label: 'Saving assessment…' });
       setSelectedId(result.id);
+      setEditingPaper(false);
       if (materialSource === 'upload') {
         setPendingFiles([]);
         setUploadedResources([]);
       }
+      setGenerateProgress({ percent: 100, label: 'Assessment ready' });
     } catch (err) {
+      if (progressTimer) clearInterval(progressTimer);
+      setGenerateProgress({ percent: 0, label: '' });
       setError(err.message || 'The AI could not generate questions.');
     } finally {
+      if (progressTimer) clearInterval(progressTimer);
       setBusy(false);
     }
   }
 
+  function updateDraft(patch) {
+    setDraft((current) => (current ? { ...current, ...patch } : current));
+    setSaveNotice('');
+  }
+
   function updateQuestion(questionId, patch) {
-    if (!selected) return;
-    const questions = selected.questions.map((question) => (question.id === questionId ? { ...question, ...patch } : question));
-    onSave({ ...selected, questions, totalMarks: questions.reduce((sum, item) => sum + Number(item.marks || 0), 0) });
+    setDraft((current) => {
+      if (!current) return current;
+      const questions = (current.questions || []).map((question) => (
+        question.id === questionId ? { ...question, ...patch } : question
+      ));
+      return {
+        ...current,
+        questions,
+        totalMarks: questions.reduce((sum, item) => sum + Number(item.marks || 0), 0),
+      };
+    });
+    setSaveNotice('');
+  }
+
+  function updateOption(questionId, optionIndex, nextValue) {
+    setDraft((current) => {
+      if (!current) return current;
+      const questions = (current.questions || []).map((question) => {
+        if (question.id !== questionId) return question;
+        const previous = question.options[optionIndex];
+        const options = question.options.map((item, idx) => (idx === optionIndex ? nextValue : item));
+        const answer = question.answer === previous ? nextValue : question.answer;
+        return { ...question, options, answer };
+      });
+      return { ...current, questions };
+    });
+    setSaveNotice('');
+  }
+
+  async function saveDraft() {
+    if (!draft) return;
+    setSaving(true);
+    setError('');
+    try {
+      await onSave({
+        ...draft,
+        totalMarks: (draft.questions || []).reduce((sum, item) => sum + Number(item.marks || 0), 0),
+        meta: {
+          ...(draft.meta || {}),
+          courseName: draft.meta?.courseName || subjectName || '',
+          institution: draft.meta?.institution || user?.institution || '',
+        },
+      });
+      setSaveNotice('Changes saved.');
+      setEditingPaper(false);
+    } catch (err) {
+      setError(err?.message || 'Could not save your edits.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function downloadPaper() {
+    if (!draft?.id) {
+      setError('Save the assessment before downloading the PDF.');
+      return;
+    }
+    setDownloading(true);
+    setError('');
+    try {
+      if (draft.recordKind === 'quiz') await downloadQuizPdf(draft.id);
+      else await downloadAssessmentPdf(draft.id);
+    } catch (err) {
+      setError(err?.message || 'Could not download the assessment PDF.');
+    } finally {
+      setDownloading(false);
+    }
   }
 
   return (
@@ -199,12 +373,28 @@ export default function AssessmentsPage({
         <div>
           <span className="section-kicker">ASSESSMENT STUDIO</span>
           <h1>AI-generated assessments</h1>
-          <p>Create quizzes and tests from uploaded course materials, then edit every question before publishing.</p>
+          <p>Generate a complete assessment paper from your course materials, preview it as a document, then download a printable PDF.</p>
         </div>
       </div>
 
       <div className="assessments-with-ai">
         <div className="assessments-layout">
+          {busy ? (
+            <div className="panel-card generation-screen assessment-generation-screen">
+              <div className="loader-ring" />
+              <h3>{generateProgress.label || 'Creating your assessment…'}</h3>
+              <div
+                className="lesson-plan-progress"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={generateProgress.percent}
+              >
+                <div className="lesson-plan-progress-bar" style={{ width: `${generateProgress.percent}%` }} />
+              </div>
+              <strong className="lesson-plan-progress-label">{generateProgress.percent}%</strong>
+            </div>
+          ) : (
           <form className="panel-card assessment-builder" onSubmit={generate}>
             <div className="panel-head"><h3>Generate from uploaded material</h3></div>
 
@@ -405,65 +595,210 @@ export default function AssessmentsPage({
               ))}
             </div>
             {error ? <Notice message={error} /> : null}
-            <button className="primary-button" type="submit" disabled={busy || !materialSource}>
-              <Plus size={15} /> {busy ? 'Generating...' : 'Generate with AI'}
+            <button className="primary-button" type="submit" disabled={!materialSource}>
+              <Plus size={15} /> Generate with AI
             </button>
           </form>
-
-          <div className="panel-card assessment-list">
-            <div className="panel-head"><h3>Your assessments</h3></div>
-            {library.length ? library.map((item) => (
-              <button type="button" className={`assessment-row ${selected?.id === item.id ? 'active' : ''}`} key={item.id} onClick={() => setSelectedId(item.id)}>
-                <strong>{item.title}</strong>
-                <small>{item.difficulty} · {item.questions?.length || 0} questions · {item.status}</small>
-              </button>
-            )) : <p className="muted-text">No assessments yet.</p>}
-          </div>
+          )}
         </div>
       </div>
 
-      {selected && (
-        <div className="panel-card assessment-editor">
-          <div className="panel-head">
+      {draft ? (
+        <div className="assessment-paper-shell">
+          <div className="panel-card assessment-paper-toolbar">
             <div>
-              <span className="section-kicker">{selected.status}</span>
-              <h3>{selected.title}</h3>
+              <span className="section-kicker">ASSESSMENT DOCUMENT</span>
+              <h3>Document preview</h3>
+              <p className="muted-text">Review the generated question paper, then download the full PDF for printing or distribution.</p>
             </div>
             <div className="plan-actions">
-              <button className="secondary-button" onClick={() => onSave({ ...selected, status: 'approved' })}><Check size={14} /> Approve</button>
-              <button className="primary-button" onClick={() => onSave({ ...selected, status: 'published' })}><ClipboardCheck size={14} /> Publish</button>
-              <button className="secondary-button" onClick={() => onSchedule(suggestCalendarFromAssessment(selected))}><ClipboardCheck size={14} /> Suggest date</button>
-              <button className="secondary-button danger" onClick={() => onDelete(selected)}><Trash2 size={14} /> Delete</button>
+              <button type="button" className="primary-button" disabled={downloading} onClick={() => void downloadPaper()}>
+                <Download size={14} /> {downloading ? 'Preparing PDF…' : 'Download Assessment'}
+              </button>
+              <button type="button" className="secondary-button" onClick={() => setEditingPaper((value) => !value)}>
+                <Pencil size={14} /> {editingPaper ? 'Hide editor' : 'Edit before download'}
+              </button>
+              {editingPaper ? (
+                <button type="button" className="secondary-button" disabled={saving} onClick={() => void saveDraft()}>
+                  <Save size={14} /> {saving ? 'Saving…' : 'Save edits'}
+                </button>
+              ) : null}
+              <button type="button" className="secondary-button danger" onClick={() => onDelete(draft)}>
+                <Trash2 size={14} /> Delete
+              </button>
             </div>
           </div>
-          <label className="field"><span>Title</span><input value={selected.title} onChange={(event) => onSave({ ...selected, title: event.target.value })} /></label>
-          <div className="review-meta">
-            <span>{selected.questions.length} questions</span>
-            <span>{selected.totalMarks} marks</span>
-            <span>{selected.timeAllowed}</span>
-            <span>{selected.sourceFile || 'Uploaded material'}</span>
-          </div>
-          {selected.questions.map((question, index) => (
-            <div className="question-card" key={question.id}>
-              <div className="question-card-head">
-                <strong>Q{index + 1}. {question.type.replace('-', ' ')}</strong>
-                <input className="marks-input" type="number" min="1" value={question.marks} onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) })} />
-              </div>
-              <textarea rows={3} value={question.prompt} onChange={(event) => updateQuestion(question.id, { prompt: event.target.value })} />
-              {question.options?.length ? question.options.map((option, optionIndex) => (
-                <label className="option-inline" key={`${question.id}-${optionIndex}`}>
-                  <input type="radio" name={`sel-${question.id}`} checked={question.answer === option} onChange={() => updateQuestion(question.id, { answer: option })} />
-                  <input value={option} onChange={(event) => {
-                    const options = question.options.map((item, idx) => (idx === optionIndex ? event.target.value : item));
-                    updateQuestion(question.id, { options, answer: question.answer === option ? event.target.value : question.answer });
-                  }} />
+
+          {saveNotice ? <p className="assessment-save-notice">{saveNotice}</p> : null}
+          {error ? <Notice message={error} /> : null}
+
+          {editingPaper ? (
+            <div className="panel-card assessment-edit-panel">
+              <div className="grid-2">
+                <label className="field assessment-edit-field">
+                  <span>Assessment title</span>
+                  <input value={draft.title || ''} onChange={(event) => updateDraft({ title: event.target.value })} />
                 </label>
-              )) : <textarea rows={2} value={question.answer} onChange={(event) => updateQuestion(question.id, { answer: event.target.value })} />}
-              {question.sourceExcerpt ? <small className="source-excerpt">From source: {question.sourceExcerpt}</small> : null}
+                <label className="field assessment-edit-field">
+                  <span>Course / subject</span>
+                  <input
+                    value={draft.meta?.courseName || ''}
+                    onChange={(event) => updateDraft({ meta: { ...(draft.meta || {}), courseName: event.target.value } })}
+                  />
+                </label>
+                <label className="field assessment-edit-field">
+                  <span>Course code</span>
+                  <input
+                    value={draft.meta?.courseCode || ''}
+                    onChange={(event) => updateDraft({ meta: { ...(draft.meta || {}), courseCode: event.target.value } })}
+                  />
+                </label>
+                <label className="field assessment-edit-field">
+                  <span>Time allowed</span>
+                  <input value={draft.timeAllowed || ''} onChange={(event) => updateDraft({ timeAllowed: event.target.value })} />
+                </label>
+              </div>
+              <label className="field assessment-edit-field">
+                <span>Instructions to candidates</span>
+                <textarea
+                  rows={3}
+                  value={draft.instructions || ''}
+                  onChange={(event) => updateDraft({ instructions: event.target.value })}
+                />
+              </label>
+              {(draft.questions || []).map((question, index) => (
+                <div className="assessment-edit-question" key={question.id || `edit-${index}`}>
+                  <div className="question-card-head">
+                    <strong>Question {index + 1}</strong>
+                    <label className="marks-field">
+                      <span>Marks</span>
+                      <input
+                        className="marks-input"
+                        type="number"
+                        min="1"
+                        value={question.marks ?? 1}
+                        onChange={(event) => updateQuestion(question.id, { marks: Number(event.target.value) })}
+                      />
+                    </label>
+                  </div>
+                  <label className="field assessment-edit-field">
+                    <span>Question text</span>
+                    <textarea
+                      rows={3}
+                      value={question.prompt || ''}
+                      onChange={(event) => updateQuestion(question.id, { prompt: event.target.value })}
+                    />
+                  </label>
+                  {question.options?.length ? (
+                    <div className="assessment-edit-options">
+                      {question.options.map((option, optionIndex) => (
+                        <label className="field assessment-edit-field" key={`${question.id}-opt-${optionIndex}`}>
+                          <span>Option {optionLetter(optionIndex)}</span>
+                          <input
+                            value={option}
+                            onChange={(event) => updateOption(question.id, optionIndex, event.target.value)}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
             </div>
-          ))}
+          ) : null}
+
+          <article className="assessment-paper-preview" aria-label="Assessment document preview">
+            <header className="assessment-paper-header">
+              <p className="assessment-paper-institution">
+                {draft.meta?.institution || user?.institution || 'PlanWise AI Assessment'}
+              </p>
+              <h2>{draft.title || 'Untitled assessment'}</h2>
+              <dl className="assessment-paper-meta">
+                {(draft.meta?.courseName || draft.meta?.courseCode) ? (
+                  <div>
+                    <dt>Course</dt>
+                    <dd>{[draft.meta?.courseName, draft.meta?.courseCode].filter(Boolean).join(' · ')}</dd>
+                  </div>
+                ) : null}
+                <div>
+                  <dt>Assessment type</dt>
+                  <dd>{String(draft.kind || draft.type || 'assessment').replace(/-/g, ' ')}</dd>
+                </div>
+                {draft.difficulty || draft.meta?.difficulty ? (
+                  <div>
+                    <dt>Difficulty</dt>
+                    <dd>{draft.difficulty || draft.meta?.difficulty}</dd>
+                  </div>
+                ) : null}
+                <div>
+                  <dt>Date</dt>
+                  <dd>{formatDate(draft.dueDate || draft.createdAt)}</dd>
+                </div>
+                {draft.timeAllowed ? (
+                  <div>
+                    <dt>Time allowed</dt>
+                    <dd>{draft.timeAllowed}</dd>
+                  </div>
+                ) : null}
+                <div>
+                  <dt>Total marks</dt>
+                  <dd>{paperTotalMarks}</dd>
+                </div>
+              </dl>
+            </header>
+
+            <section className="assessment-paper-instructions">
+              <h3>Instructions to candidates</h3>
+              <p>{draft.instructions || 'Answer all questions. Show your working where required.'}</p>
+            </section>
+
+            {paperSections.map((section, sectionIndex) => {
+              const sectionMarks = section.questions.reduce((sum, item) => sum + Number(item.marks || 0), 0);
+              const sectionLetter = optionLetter(sectionIndex);
+              let runningNumber = paperSections
+                .slice(0, sectionIndex)
+                .reduce((sum, item) => sum + item.questions.length, 0);
+              return (
+                <section className="assessment-paper-section" key={section.key}>
+                  <h3>SECTION {sectionLetter}: {section.title}</h3>
+                  <p className="assessment-paper-section-note">
+                    Answer all questions in this section. This section carries {sectionMarks} mark{sectionMarks === 1 ? '' : 's'}.
+                  </p>
+                  {section.questions.map((question) => {
+                    runningNumber += 1;
+                    const marks = Number(question.marks || 1);
+                    return (
+                      <div className="assessment-paper-question" key={question.id || `paper-q-${runningNumber}`}>
+                        <h4>
+                          Question {runningNumber}
+                          <span> ({marks} Mark{marks === 1 ? '' : 's'})</span>
+                        </h4>
+                        <p className="assessment-paper-prompt">{question.prompt}</p>
+                        {question.options?.length ? (
+                          <ol className="assessment-paper-options" type="A">
+                            {question.options.map((option, optionIndex) => (
+                              <li key={`${question.id}-${optionIndex}`}>
+                                <span className="assessment-paper-option-letter">{optionLetter(optionIndex)}.</span>
+                                <span>{option}</span>
+                              </li>
+                            ))}
+                          </ol>
+                        ) : (
+                          <div className="assessment-paper-answer-lines" aria-hidden="true">
+                            <span />
+                            <span />
+                            <span />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </section>
+              );
+            })}
+          </article>
         </div>
-      )}
+      ) : null}
     </section>
   );
 }

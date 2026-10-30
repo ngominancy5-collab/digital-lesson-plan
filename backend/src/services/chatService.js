@@ -114,6 +114,22 @@ export async function chat(userId, body, user) {
   };
 }
 
+function withTimeout(promise, ms, label = 'Timed out') {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(label)), ms);
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export async function chatStream(userId, body, user, res) {
   const message = String(body.message || '').trim();
 
@@ -133,22 +149,59 @@ export async function chatStream(userId, body, user, res) {
     return;
   }
 
-  const conversation = await ensureConversation(userId, body.conversationId);
-  const historyRows = await conversationRepository.recentMessages(conversation.id);
-  const history = historyRows.map((row) => ({
-    role: row.sender === 'assistant' ? 'assistant' : 'user',
-    content: row.message,
-  }));
-  const [lessonPlans, documents] = await Promise.all([
-    lessonPlanRepository.titlesForUser(userId),
-    documentRepository.titlesForUser(userId),
-  ]);
+  // Acknowledge immediately so the UI is not stuck on "..." during DB cold starts.
+  send('meta', { status: 'started', reply: '' });
+
+  let conversation = null;
+  let history = Array.isArray(body.history) ? body.history : [];
+  let lessonPlans = [];
+  let documents = [];
+
+  try {
+    conversation = await withTimeout(
+      ensureConversation(userId, body.conversationId),
+      6000,
+      'Conversation lookup timed out',
+    );
+    if (!history.length) {
+      const historyRows = await withTimeout(
+        conversationRepository.recentMessages(conversation.id),
+        5000,
+        'Chat history lookup timed out',
+      );
+      history = historyRows.map((row) => ({
+        role: row.sender === 'assistant' ? 'assistant' : 'user',
+        content: row.message,
+      }));
+    }
+  } catch (error) {
+    send('meta', {
+      status: 'degraded',
+      detail: error.message || 'Continuing without saved chat history.',
+      reply: '',
+    });
+  }
+
+  try {
+    const titles = await withTimeout(
+      Promise.all([
+        lessonPlanRepository.titlesForUser(userId),
+        documentRepository.titlesForUser(userId),
+      ]),
+      5000,
+      'Workspace titles timed out',
+    );
+    lessonPlans = titles[0] || [];
+    documents = titles[1] || [];
+  } catch {
+    // Optional context only — do not block the reply.
+  }
 
   let finalResult = null;
   try {
     for await (const chunk of runLearningTurnStream({
       message,
-      history: body.history || history,
+      history,
       materialText: body.materialText || '',
       materialName: body.materialName || '',
       difficulty: body.difficulty || 'Intermediate',
@@ -165,17 +218,25 @@ export async function chatStream(userId, body, user, res) {
       send(chunk.event, chunk.data);
     }
 
-    if (finalResult?.reply) {
-      const saved = await persistMessages(
-        conversation,
-        message,
-        finalResult.reply,
-        body.materialName || message,
-      );
-      send('saved', {
-        conversationId: saved.id,
-        conversationTitle: saved.title,
-      });
+    if (finalResult?.reply && conversation?.id) {
+      try {
+        const saved = await withTimeout(
+          persistMessages(
+            conversation,
+            message,
+            finalResult.reply,
+            body.materialName || message,
+          ),
+          6000,
+          'Saving chat timed out',
+        );
+        send('saved', {
+          conversationId: saved.id,
+          conversationTitle: saved.title,
+        });
+      } catch (error) {
+        send('meta', { status: 'unsaved', detail: error.message || 'Reply was not saved.' });
+      }
     }
   } catch (error) {
     send('error', { error: error.message || 'AI stream failed.' });

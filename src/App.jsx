@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   adminApi,
   attendanceApi,
@@ -1451,6 +1452,7 @@ function App() {
   const [resources, setResources] = useState([]);
   const [deletingMaterialId, setDeletingMaterialId] = useState('');
   const [fileDeleteTarget, setFileDeleteTarget] = useState(null);
+  const [planDeleteTarget, setPlanDeleteTarget] = useState(null);
   const [uploadingMaterials, setUploadingMaterials] = useState(false);
   const [quizzes, setQuizzes] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -1491,6 +1493,8 @@ function App() {
       const user = await authApi.me();
       setCurrentUser(user);
       setIsAuthenticated(true);
+      // Unlock nav as soon as identity is known — do not wait for full workspace fetch.
+      setSessionChecked(true);
       if (user.mustChangePassword) {
         setMustChangePassword(true);
         setActiveSection('dashboard');
@@ -1951,9 +1955,12 @@ function App() {
         courseName: form.courseName || primary.courseName || primary.fileName || 'Generated lesson plan',
         courseCode: form.courseCode || primary.courseCode || '',
         topics: derivedTopics.length ? derivedTopics : topics.filter(Boolean).map((topic) => topic.trim()),
-        numberOfWeeks: Number(form.numberOfWeeks || 4),
+        numberOfWeeks: Number(form.numberOfWeeks || 2),
         lessonsPerWeek: Number(form.lessonsPerWeek || 2),
         lessonDuration: form.lessonDuration || '60 minutes',
+        institution: currentUser?.institution || '',
+        level: form.level || currentUser?.educationLevel || '',
+        lecturer: form.lecturer || currentUser?.name || currentUser?.fullName || '',
         holidays: (form.holidays || []).map((holiday) => ({ date: holiday.date || holiday, name: holiday.name || 'Holiday' })),
         lessonNotes: '',
         materialText: '',
@@ -2051,6 +2058,53 @@ function App() {
     }
   }
 
+  function requestDeletePlan(plan) {
+    if (!plan) return;
+    setPlanDeleteTarget(plan);
+  }
+
+  async function confirmDeletePlan() {
+    const plan = planDeleteTarget;
+    if (!plan) return;
+    setPlanDeleteTarget(null);
+    try {
+      if (plan.id) await lessonPlanApi.remove(plan.id);
+      setSavedPlans((current) => current.filter((item) => item.id !== plan.id));
+      if (generated && (generated.id === plan.id || (!plan.id && generated === plan))) {
+        setGenerated(null);
+        setEditingLesson(null);
+        setSelectedLessonIndex(0);
+        setStep(1);
+      }
+    } catch (error) {
+      setErrors({ general: error.message || 'Unable to remove this lesson plan.' });
+    }
+  }
+
+  async function removeLessonFromPlan(lessonIndex) {
+    if (!generated || lessonIndex < 0) return;
+    const lessons = [...(generated.lessons || [])];
+    if (lessons.length <= 1) {
+      setEditingLesson(null);
+      requestDeletePlan(generated);
+      return;
+    }
+    lessons.splice(lessonIndex, 1);
+    const nextPlan = { ...generated, lessons };
+    setGenerated(nextPlan);
+    setEditingLesson(null);
+    setSelectedLessonIndex((current) => Math.min(current, lessons.length - 1));
+    if (nextPlan.id) {
+      try {
+        const saved = await lessonPlanApi.update(nextPlan.id, nextPlan);
+        setGenerated(saved);
+        setSavedPlans((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+      } catch (error) {
+        setErrors({ general: error.message || 'Lesson removed locally but could not be saved to the server.' });
+      }
+    }
+  }
+
   function printPlan() {
     if (!generated) return;
     window.print();
@@ -2069,22 +2123,34 @@ function App() {
     event.preventDefault();
     if (!editingLesson || !generated) return;
     const draft = editingLesson.draft || {};
+    const assessmentMethods = textToList(draft.assessmentMethodsText ?? listFieldToText(draft.assessmentMethods || (draft.assessmentMethod ? [draft.assessmentMethod] : [])));
+    const subtopics = textToList(draft.subtopicsText ?? listFieldToText(draft.subtopics || (draft.subtopic ? [draft.subtopic] : [])));
     const nextLesson = {
       ...draft,
       topic: String(draft.topic || '').trim(),
-      subtopic: String(draft.subtopic || '').trim(),
-      assessmentMethod: String(draft.assessmentMethod || '').trim(),
+      subtopic: String(draft.subtopic || subtopics[0] || '').trim(),
+      subtopics,
+      concepts: textToList(draft.conceptsText ?? listFieldToText(draft.concepts)),
+      assessmentMethod: assessmentMethods.join('; ') || String(draft.assessmentMethod || '').trim(),
+      assessmentMethods,
+      conclusion: String(draft.conclusion || '').trim(),
+      homework: String(draft.homework || '').trim(),
       learningObjectives: textToList(draft.learningObjectivesText ?? listFieldToText(draft.learningObjectives)),
       learningOutcomes: textToList(draft.learningOutcomesText ?? listFieldToText(draft.learningOutcomes)),
       teacherActivities: textToList(draft.teacherActivitiesText ?? listFieldToText(draft.teacherActivities)),
       studentActivities: textToList(draft.studentActivitiesText ?? listFieldToText(draft.studentActivities)),
       learningResources: textToList(draft.learningResourcesText ?? listFieldToText(draft.learningResources)),
+      teachingMethods: textToList(draft.teachingMethodsText ?? listFieldToText(draft.teachingMethods)),
     };
     delete nextLesson.learningObjectivesText;
     delete nextLesson.learningOutcomesText;
     delete nextLesson.teacherActivitiesText;
     delete nextLesson.studentActivitiesText;
     delete nextLesson.learningResourcesText;
+    delete nextLesson.teachingMethodsText;
+    delete nextLesson.assessmentMethodsText;
+    delete nextLesson.subtopicsText;
+    delete nextLesson.conceptsText;
     const lessons = [...(generated.lessons || [])];
     lessons[editingLesson.index] = nextLesson;
     const nextPlan = { ...generated, lessons };
@@ -2128,26 +2194,43 @@ function App() {
         const saved = await quizApi.update(next.id, {
           title: next.title,
           difficulty: next.difficulty,
+          instructions: next.instructions,
           questions: (next.questions || []).map((question) => ({
+            id: question.id,
             question: question.prompt || question.question,
             questionType: question.type || question.questionType,
             marks: question.marks,
             correctAnswer: question.answer || question.correctAnswer,
-            options: question.options || [],
+            options: (question.options || []).map((option) => (
+              typeof option === 'string' ? option : (option?.optionText || option?.text || '')
+            )),
           })),
         });
-        setQuizzes((current) => current.map((item) => item.id === saved.id ? saved : item));
-        return;
+        setQuizzes((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+        return saved;
       }
+      const payload = {
+        ...next,
+        questions: (next.questions || []).map((question) => ({
+          ...question,
+          prompt: question.prompt || question.question || '',
+          answer: question.answer || question.correctAnswer || '',
+          options: (question.options || []).map((option) => (
+            typeof option === 'string' ? option : (option?.optionText || option?.text || '')
+          )),
+        })),
+      };
       const saved = next.id && assessments.some((item) => item.id === next.id)
-        ? await assessmentApi.update(next.id, next)
-        : await assessmentApi.create(next);
+        ? await assessmentApi.update(next.id, payload)
+        : await assessmentApi.create(payload);
       setAssessments((current) => {
         const exists = current.some((item) => item.id === saved.id);
-        return exists ? current.map((item) => item.id === saved.id ? saved : item) : [saved, ...current];
+        return exists ? current.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...current];
       });
+      return saved;
     } catch (error) {
       setErrors({ general: error.message || 'Unable to save assessment.' });
+      throw error;
     }
   }
 
@@ -2479,7 +2562,7 @@ function App() {
         tabIndex={sidebarOpen ? 0 : -1}
         onClick={() => setSidebarOpen(false)}
       />
-      <aside className={`glass-sidebar ${sidebarOpen ? 'is-open' : ''}`} aria-label="Workspace navigation" inert={mustChangePassword || (isAuthenticated && !sessionChecked) ? true : undefined}>
+      <aside className={`glass-sidebar ${sidebarOpen ? 'is-open' : ''}`} aria-label="Workspace navigation" inert={mustChangePassword ? true : undefined}>
         <div className="sidebar-brand">
           <div className="sidebar-logo-lockup" aria-label="PlanWise AI — Plan • Teach • Inspire">
             <PlanWiseMark className="sidebar-logo-mark" />
@@ -2503,15 +2586,16 @@ function App() {
                 key={id}
                 type="button"
                 className={active ? 'active' : ''}
-                onClick={() => {
+                onClick={(event) => {
+                  event.preventDefault();
                   if (mustChangePassword) return;
                   if (id === 'assistant') {
                     setAiDrawerOpen(true);
+                    setSidebarOpen(false);
                     return;
                   }
+                  // Navigate immediately — avoid waiting on heavy section mounts/fetches in the click handler.
                   navigateTo(id);
-                  if (id === 'plans') setStep(5);
-                  if (id === 'dashboard') setStep(5);
                 }}
                 disabled={mustChangePassword}
               >
@@ -2814,21 +2898,27 @@ function App() {
                 <div className="lesson-plan-options">
                   <button
                     type="button"
-                    className={`lesson-plan-option ${planFileMode === 'existing' ? 'active' : ''}`}
+                    className={`lesson-plan-option lesson-plan-option-existing ${planFileMode === 'existing' ? 'active' : ''}`}
                     onClick={() => setPlanFileMode('existing')}
                   >
-                    <Folder size={20} />
+                    <span className="lesson-plan-option-icon" aria-hidden="true"><Folder size={22} /></span>
                     <strong>Use existing course/subject files</strong>
                     <span>Pick files already saved in Courses / Subjects</span>
+                    {planFileMode === 'existing' ? (
+                      <span className="lesson-plan-option-check" aria-hidden="true"><CheckCircle2 size={18} /></span>
+                    ) : null}
                   </button>
                   <button
                     type="button"
-                    className={`lesson-plan-option ${planFileMode === 'upload' ? 'active' : ''}`}
+                    className={`lesson-plan-option lesson-plan-option-upload ${planFileMode === 'upload' ? 'active' : ''}`}
                     onClick={() => setPlanFileMode('upload')}
                   >
-                    <UploadCloud size={20} />
+                    <span className="lesson-plan-option-icon" aria-hidden="true"><UploadCloud size={22} /></span>
                     <strong>Upload my own files</strong>
                     <span>Browse PDF, DOC, DOCX or TXT for this plan</span>
+                    {planFileMode === 'upload' ? (
+                      <span className="lesson-plan-option-check" aria-hidden="true"><CheckCircle2 size={18} /></span>
+                    ) : null}
                   </button>
                 </div>
 
@@ -2890,6 +2980,11 @@ function App() {
                                 <FileText size={22} />
                                 <span>{(ext || 'FILE').toUpperCase()}</span>
                               </div>
+                              {selected ? (
+                                <span className="lesson-plan-file-check" aria-hidden="true">
+                                  <CheckCircle2 size={18} />
+                                </span>
+                              ) : null}
                               <div className="course-file-body">
                                 <strong className="course-file-name">{name}</strong>
                                 <div className="course-file-meta">
@@ -3078,14 +3173,21 @@ function App() {
                       >
                         Export PDF
                       </button>
+                      <button
+                        type="button"
+                        className="secondary-button danger"
+                        onClick={() => requestDeletePlan(generated)}
+                      >
+                        <Trash2 size={14} /> Remove plan
+                      </button>
                     </div>
                   </div>
 
                   <div className="lesson-plan-overview">
-                    <h4>What was created</h4>
+                    <h4>Lesson plan overview</h4>
                     <div className="lesson-plan-overview-grid">
                       <div>
-                        <span>Topics</span>
+                        <span>Lesson topics</span>
                         <ul>
                           {[...new Set((generated.lessons || []).map((lesson) => lesson.topic).filter(Boolean))].slice(0, 8).map((topic) => (
                             <li key={topic}>{topic}</li>
@@ -3101,9 +3203,9 @@ function App() {
                         </ul>
                       </div>
                       <div>
-                        <span>Activities</span>
+                        <span>Teaching methods</span>
                         <ul>
-                          {(generated.lessons || []).flatMap((lesson) => [...(lesson.studentActivities || []), ...(lesson.teacherActivities || [])]).slice(0, 6).map((item) => (
+                          {[...new Set((generated.lessons || []).flatMap((lesson) => lesson.teachingMethods || []))].slice(0, 6).map((item) => (
                             <li key={item}>{item}</li>
                           ))}
                         </ul>
@@ -3111,7 +3213,11 @@ function App() {
                       <div>
                         <span>Assessment</span>
                         <ul>
-                          {[...new Set((generated.lessons || []).map((lesson) => lesson.assessmentMethod).filter(Boolean))].slice(0, 6).map((item) => (
+                          {[...new Set((generated.lessons || []).flatMap((lesson) => (
+                            lesson.assessmentMethods?.length
+                              ? lesson.assessmentMethods
+                              : (lesson.assessmentMethod ? [lesson.assessmentMethod] : [])
+                          )))].slice(0, 6).map((item) => (
                             <li key={item}>{item}</li>
                           ))}
                         </ul>
@@ -3181,37 +3287,126 @@ function App() {
                                 <div key={`${lesson.lessonDate}-${idx}-${lesson.topic}`} className={`lesson-block ${selectedLessonIndex === lessonIndex ? 'is-selected' : ''}`}>
                                   <div className="lesson-block-header">
                                     <div>
-                                      <strong>{lesson.topic}</strong>
-                                      <span>{lesson.subtopic}</span>
+                                      <strong>Lesson {lesson.lessonNumber || lessonIndex + 1}: {lesson.topic}</strong>
+                                      <span>
+                                        {[lesson.subject || generated.courseName, lesson.level, lesson.duration || `${lesson.durationMinutes || ''} min`, lesson.lessonDate]
+                                          .filter(Boolean)
+                                          .join(' · ')}
+                                      </span>
                                     </div>
                                     <div className="lesson-block-actions">
                                       <button type="button" className="small-link" onClick={() => setSelectedLessonIndex(lessonIndex)}>Select</button>
                                       <button
                                         type="button"
                                         className="small-link"
-                                        onClick={() => setEditingLesson({
-                                          index: lessonIndex,
-                                          draft: {
-                                            ...lesson,
-                                            learningObjectivesText: listFieldToText(lesson.learningObjectives),
-                                            learningOutcomesText: listFieldToText(lesson.learningOutcomes),
-                                            teacherActivitiesText: listFieldToText(lesson.teacherActivities),
-                                            studentActivitiesText: listFieldToText(lesson.studentActivities),
-                                            learningResourcesText: listFieldToText(lesson.learningResources),
-                                          },
-                                        })}
+                                        onClick={() => {
+                                          const index = lessonIndex >= 0
+                                            ? lessonIndex
+                                            : (generated.lessons || []).findIndex((item) => (
+                                              item?.lessonNumber === lesson?.lessonNumber
+                                              && item?.topic === lesson?.topic
+                                              && item?.lessonDate === lesson?.lessonDate
+                                            ));
+                                          setEditingLesson({
+                                            index: index >= 0 ? index : 0,
+                                            draft: {
+                                              ...lesson,
+                                              learningObjectivesText: listFieldToText(lesson.learningObjectives),
+                                              learningOutcomesText: listFieldToText(lesson.learningOutcomes),
+                                              teacherActivitiesText: listFieldToText(lesson.teacherActivities),
+                                              studentActivitiesText: listFieldToText(lesson.studentActivities),
+                                              learningResourcesText: listFieldToText(lesson.learningResources),
+                                              teachingMethodsText: listFieldToText(lesson.teachingMethods),
+                                              assessmentMethodsText: listFieldToText(lesson.assessmentMethods?.length ? lesson.assessmentMethods : (lesson.assessmentMethod ? [lesson.assessmentMethod] : [])),
+                                              subtopicsText: listFieldToText(lesson.subtopics?.length ? lesson.subtopics : (lesson.subtopic ? [lesson.subtopic] : [])),
+                                              conceptsText: listFieldToText(lesson.concepts),
+                                            },
+                                          });
+                                        }}
                                       >
                                         Edit
                                       </button>
                                     </div>
                                   </div>
+
+                                  <div className="lesson-info-strip">
+                                    {lesson.institution || generated.meta?.institution ? <span><strong>Institution:</strong> {lesson.institution || generated.meta?.institution}</span> : null}
+                                    {lesson.subject || generated.courseName ? <span><strong>Subject:</strong> {lesson.subject || generated.courseName}</span> : null}
+                                    {lesson.level ? <span><strong>Level:</strong> {lesson.level}</span> : null}
+                                    <span><strong>Duration:</strong> {lesson.duration || `${lesson.durationMinutes || 60} minutes`}</span>
+                                  </div>
+
+                                  <div className="lesson-grid lesson-grid-rich">
+                                    <div>
+                                      <label>Topics / content</label>
+                                      <ul>
+                                        {(lesson.subtopics?.length ? lesson.subtopics : (lesson.subtopic ? [lesson.subtopic] : [])).map((item) => <li key={`sub-${item}`}>{item}</li>)}
+                                        {(lesson.concepts || []).map((item) => <li key={`concept-${item}`}>{item}</li>)}
+                                      </ul>
+                                    </div>
+                                    <div>
+                                      <label>Learning objectives</label>
+                                      <ul>{(lesson.learningObjectives || []).map((item) => <li key={item}>{item}</li>)}</ul>
+                                    </div>
+                                    <div>
+                                      <label>Teaching &amp; learning materials</label>
+                                      <ul>{(lesson.learningResources || []).map((item) => <li key={item}>{item}</li>)}</ul>
+                                    </div>
+                                    <div>
+                                      <label>Teaching methods</label>
+                                      <ul>{(lesson.teachingMethods || []).map((item) => <li key={item}>{item}</li>)}</ul>
+                                    </div>
+                                  </div>
+
+                                  {Array.isArray(lesson.procedure) && lesson.procedure.length ? (
+                                    <div className="lesson-procedure">
+                                      <label>Lesson procedure</label>
+                                      <div className="lesson-procedure-list">
+                                        {lesson.procedure.map((stage) => (
+                                          <article key={`${lesson.topic}-${stage.stage}`} className="lesson-procedure-stage">
+                                            <header>
+                                              <strong>{stage.stage}</strong>
+                                              <span>{stage.durationMinutes || '?'} min</span>
+                                            </header>
+                                            {stage.content ? <p>{stage.content}</p> : null}
+                                            <div className="lesson-procedure-cols">
+                                              <div>
+                                                <span>Lecturer activities</span>
+                                                <ul>{(stage.teacherActivities || []).map((item) => <li key={item}>{item}</li>)}</ul>
+                                              </div>
+                                              <div>
+                                                <span>Student activities</span>
+                                                <ul>{(stage.studentActivities || []).map((item) => <li key={item}>{item}</li>)}</ul>
+                                              </div>
+                                            </div>
+                                          </article>
+                                        ))}
+                                      </div>
+                                      <small className="lesson-time-total">
+                                        Time total: {(lesson.procedure || []).reduce((sum, stage) => sum + Number(stage.durationMinutes || 0), 0)} / {lesson.durationMinutes || 60} minutes
+                                      </small>
+                                    </div>
+                                  ) : (
+                                    <div className="lesson-grid">
+                                      <div><label>Teacher activities</label><ul>{(lesson.teacherActivities || []).map((item) => <li key={item}>{item}</li>)}</ul></div>
+                                      <div><label>Student activities</label><ul>{(lesson.studentActivities || []).map((item) => <li key={item}>{item}</li>)}</ul></div>
+                                    </div>
+                                  )}
+
                                   <div className="lesson-grid">
-                                    <div><label>Objectives</label><ul>{(lesson.learningObjectives || []).map((item) => <li key={item}>{item}</li>)}</ul></div>
-                                    <div><label>Outcomes</label><ul>{(lesson.learningOutcomes || []).map((item) => <li key={item}>{item}</li>)}</ul></div>
-                                    <div><label>Teacher activities</label><ul>{(lesson.teacherActivities || []).map((item) => <li key={item}>{item}</li>)}</ul></div>
-                                    <div><label>Student activities</label><ul>{(lesson.studentActivities || []).map((item) => <li key={item}>{item}</li>)}</ul></div>
-                                    <div><label>Resources</label><ul>{(lesson.learningResources || []).map((item) => <li key={item}>{item}</li>)}</ul></div>
-                                    <div><label>Assessment</label><p>{lesson.assessmentMethod}</p></div>
+                                    <div>
+                                      <label>Assessment / evaluation</label>
+                                      {(lesson.assessmentMethods || []).length ? (
+                                        <ul>{lesson.assessmentMethods.map((item) => <li key={item}>{item}</li>)}</ul>
+                                      ) : (
+                                        <p>{lesson.assessmentMethod}</p>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <label>Conclusion / follow-up</label>
+                                      <p>{lesson.conclusion || '—'}</p>
+                                      {lesson.homework ? <p><strong>Homework:</strong> {lesson.homework}</p> : null}
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -3222,25 +3417,6 @@ function App() {
                     ))}
                   </div>
 
-                  {editingLesson ? (
-                    <div className="admin-dialog-backdrop" role="presentation">
-                      <form className="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-lesson-title" onSubmit={applyLessonEdit}>
-                        <h2 id="edit-lesson-title">Edit lesson</h2>
-                        <label className="field"><span>Topic</span><input value={editingLesson.draft.topic || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, topic: event.target.value } }))} /></label>
-                        <label className="field"><span>Subtopic</span><input value={editingLesson.draft.subtopic || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, subtopic: event.target.value } }))} /></label>
-                        <label className="field"><span>Objectives (one per line)</span><textarea rows={3} value={editingLesson.draft.learningObjectivesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningObjectivesText: event.target.value } }))} /></label>
-                        <label className="field"><span>Outcomes (one per line)</span><textarea rows={3} value={editingLesson.draft.learningOutcomesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningOutcomesText: event.target.value } }))} /></label>
-                        <label className="field"><span>Teacher activities (one per line)</span><textarea rows={3} value={editingLesson.draft.teacherActivitiesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, teacherActivitiesText: event.target.value } }))} /></label>
-                        <label className="field"><span>Student activities (one per line)</span><textarea rows={3} value={editingLesson.draft.studentActivitiesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, studentActivitiesText: event.target.value } }))} /></label>
-                        <label className="field"><span>Resources (one per line)</span><textarea rows={2} value={editingLesson.draft.learningResourcesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningResourcesText: event.target.value } }))} /></label>
-                        <label className="field"><span>Assessment</span><textarea rows={2} value={editingLesson.draft.assessmentMethod || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, assessmentMethod: event.target.value } }))} /></label>
-                        <div className="admin-actions">
-                          <button type="submit" className="primary">Save lesson</button>
-                          <button type="button" onClick={() => setEditingLesson(null)}>Cancel</button>
-                        </div>
-                      </form>
-                    </div>
-                  ) : null}
                 </div>
 
                 <aside className="side-summary">
@@ -3262,6 +3438,13 @@ function App() {
                           <div key={plan.id} className="saved-item">
                             <button type="button" className="text-button" onClick={() => { setGenerated(plan); setStep(5); }}><strong>{plan.courseName || plan.title}</strong></button>
                             <small>{plan.status} · {(plan.lessons || []).length} lessons</small>
+                            <button
+                              type="button"
+                              className="small-link danger-link"
+                              onClick={() => requestDeletePlan(plan)}
+                            >
+                              Remove
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -3286,6 +3469,7 @@ function App() {
             resources={resources}
             courses={courses}
             difficulty={aiDifficulty}
+            user={currentUser}
             onGenerate={generateCheckedWork}
             onSave={saveAssessment}
             onResourcesChange={async () => {
@@ -3517,6 +3701,91 @@ function App() {
         </div>
       )}
       {sessionChecked && !mustChangePassword && !awaitingRoleConfirmation(currentUser) && floatingAssistant}
+      {planDeleteTarget ? (
+        <div className="dialog-backdrop" role="presentation">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="plan-delete-title">
+            <div className="dialog-icon"><Trash2 size={19} /></div>
+            <h2 id="plan-delete-title">Remove this lesson plan?</h2>
+            <p>{planDeleteTarget.courseName || planDeleteTarget.title || 'Selected lesson plan'}</p>
+            <p className="muted-text">This permanently removes it from your saved plans.</p>
+            <div className="dialog-actions">
+              <button type="button" className="secondary-button" onClick={() => setPlanDeleteTarget(null)}>Cancel</button>
+              <button type="button" className="logout-confirm" onClick={() => void confirmDeletePlan()}>Remove</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {editingLesson && createPortal(
+        <div
+          className="admin-dialog-backdrop lesson-edit-backdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setEditingLesson(null);
+          }}
+        >
+          <form
+            className="admin-dialog admin-dialog-wide lesson-edit-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-lesson-title"
+            onSubmit={applyLessonEdit}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="edit-lesson-title">Edit lesson</h2>
+            <div className="lesson-edit-grid">
+              <label className="field lesson-edit-field lesson-edit-span-2">
+                <span>Topic</span>
+                <input value={editingLesson.draft.topic || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, topic: event.target.value } }))} />
+              </label>
+              <label className="field lesson-edit-field">
+                <span>Subtopics (one per line)</span>
+                <textarea rows={3} value={editingLesson.draft.subtopicsText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, subtopicsText: event.target.value } }))} />
+              </label>
+              <label className="field lesson-edit-field">
+                <span>Concepts (one per line)</span>
+                <textarea rows={3} value={editingLesson.draft.conceptsText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, conceptsText: event.target.value } }))} />
+              </label>
+              <label className="field lesson-edit-field lesson-edit-span-2">
+                <span>Learning objectives (one per line)</span>
+                <textarea rows={3} value={editingLesson.draft.learningObjectivesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningObjectivesText: event.target.value } }))} />
+              </label>
+              <label className="field lesson-edit-field">
+                <span>Teaching methods (one per line)</span>
+                <textarea rows={3} value={editingLesson.draft.teachingMethodsText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, teachingMethodsText: event.target.value } }))} />
+              </label>
+              <label className="field lesson-edit-field">
+                <span>Materials (one per line)</span>
+                <textarea rows={3} value={editingLesson.draft.learningResourcesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningResourcesText: event.target.value } }))} />
+              </label>
+              <label className="field lesson-edit-field lesson-edit-span-2">
+                <span>Assessment methods (one per line)</span>
+                <textarea rows={3} value={editingLesson.draft.assessmentMethodsText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, assessmentMethodsText: event.target.value } }))} />
+              </label>
+              <label className="field lesson-edit-field">
+                <span>Conclusion</span>
+                <textarea rows={3} value={editingLesson.draft.conclusion || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, conclusion: event.target.value } }))} />
+              </label>
+              <label className="field lesson-edit-field">
+                <span>Homework / follow-up</span>
+                <textarea rows={3} value={editingLesson.draft.homework || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, homework: event.target.value } }))} />
+              </label>
+            </div>
+            <p className="muted-text">Procedure stages stay with the lesson and are updated when you use AI revise. Core fields above can be edited manually.</p>
+            <div className="admin-actions lesson-edit-actions">
+              <button
+                type="button"
+                className="lesson-edit-remove"
+                onClick={() => void removeLessonFromPlan(editingLesson.index)}
+              >
+                <Trash2 size={14} /> Remove this lesson
+              </button>
+              <button type="button" className="secondary-button" onClick={() => setEditingLesson(null)}>Cancel</button>
+              <button type="submit" className="primary">Save lesson</button>
+            </div>
+          </form>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

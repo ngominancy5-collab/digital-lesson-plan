@@ -1360,9 +1360,13 @@
   user-select: none;
 }
 
-.dlp-shell.is-session-checking .glass-sidebar,
+/* Keep sidebar clickable while workspace data loads — only dim the main stage. */
+.dlp-shell.is-session-checking .glass-sidebar {
+  pointer-events: auto;
+}
 .dlp-shell.is-session-checking .glass-stage {
   pointer-events: none;
+  opacity: 0.72;
 }
 
 .dlp-shell.is-password-locked > .pw-password-lock,
