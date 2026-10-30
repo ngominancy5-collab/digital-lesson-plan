@@ -40,10 +40,17 @@ assertPgUrl('DATABASE_URL', process.env.DATABASE_URL);
 assertPgUrl('DATABASE_URL_UNPOOLED', process.env.DATABASE_URL_UNPOOLED);
 
 try {
-  const host = new URL(process.env.DATABASE_URL.replace(/^postgresql:/i, 'postgres:')).host;
-  console.info(`Using database host: ${host}`);
+  const pooledHost = new URL(process.env.DATABASE_URL.replace(/^postgresql:/i, 'postgres:')).host;
+  const directHost = new URL(process.env.DATABASE_URL_UNPOOLED.replace(/^postgresql:/i, 'postgres:')).host;
+  const pooledOk = /-pooler\./i.test(pooledHost);
+  const directOk = Boolean(directHost) && !/-pooler\./i.test(directHost);
+  console.info(`Using pooled database host: ${pooledHost} (${pooledOk ? 'ok' : 'WARNING: expected -pooler'})`);
+  console.info(`Using direct database host: ${directHost} (${directOk ? 'ok' : 'WARNING: expected non-pooler'})`);
+  if (!pooledOk || !directOk) {
+    console.warn('Neon URL shape looks incorrect. DATABASE_URL should use the pooler host; DATABASE_URL_UNPOOLED should be direct.');
+  }
 } catch {
-  console.warn('Could not parse DATABASE_URL host for logging.');
+  console.warn('Could not parse DATABASE_URL hosts for logging.');
 }
 
 function run(command, args) {

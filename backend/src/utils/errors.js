@@ -17,8 +17,8 @@ function readableError(err, status) {
   if (/Authentication failed against database server/i.test(raw)) {
     return 'The database rejected the PlanWise login. The username or password in DATABASE_URL is not valid.';
   }
-  if (/Can't reach database server|ECONNREFUSED .*5432|connect ECONNREFUSED/i.test(raw)) {
-    return 'PlanWise cannot reach the database. Make sure PostgreSQL is running.';
+  if (/Can't reach database server|ECONNREFUSED .*5432|connect ECONNREFUSED|P1001|P1002|P1017|P2024|waking up or temporarily unavailable/i.test(raw)) {
+    return 'The database is waking up or temporarily unavailable. Please wait a moment and try again.';
   }
   if (status >= 500) return 'Something went wrong. Please try again.';
   return raw || 'Request failed.';

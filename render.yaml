@@ -76,6 +76,8 @@ services:
         value: mailjet
 
       # Uploaded-file storage (ephemeral on the free plan; extracted text lives in Neon).
+      # For persistent originals after Render restarts, point these at external object
+      # storage (e.g. Cloudflare R2 / S3 / Neon-compatible blob) — do not migrate yet.
       - key: FILE_STORAGE_PATH
         value: ./uploads
       - key: FILE_STORAGE_URL

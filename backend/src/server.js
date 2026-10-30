@@ -6,6 +6,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { assertEnv, env } from './config/env.js';
+import { checkDatabaseHealth, logDatabaseTarget } from './config/database.js';
 import { errorHandler } from './utils/errors.js';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
@@ -70,12 +71,28 @@ const apiLimiter = rateLimit({
 });
 app.use('/api', apiLimiter);
 
-app.get('/api/health', (_req, res) => {
-  res.json({
-    ok: true,
-    message: 'PlanWise AI API is running',
-    llm: getLlmStatus(),
-  });
+app.get('/api/health', async (_req, res) => {
+  const llm = getLlmStatus();
+  const database = await checkDatabaseHealth();
+  const payload = {
+    ok: database.ok,
+    status: database.ok ? 'healthy' : 'degraded',
+    message: database.ok
+      ? 'PlanWise AI API is running and the database is reachable.'
+      : 'PlanWise AI API is running, but the database is unavailable or still waking.',
+    api: { ok: true, status: 'up' },
+    database: {
+      ok: database.ok,
+      status: database.status,
+      latencyMs: database.latencyMs,
+      ...(database.error ? { error: database.error } : {}),
+    },
+    llm: {
+      configured: Boolean(llm.configured),
+      label: llm.label || null,
+    },
+  };
+  res.status(database.ok ? 200 : 503).json(payload);
 });
 
 app.use('/api/auth', authRoutes);
@@ -129,6 +146,7 @@ if (!process.env.PAYMENT_PROVIDER) {
 
 app.listen(env.port, () => {
   const llm = getLlmStatus();
+  logDatabaseTarget();
   console.log(`PlanWise backend running on http://localhost:${env.port}`);
   console.log(llm.configured ? `LLM connected: ${llm.label}` : 'LLM not configured — add GEMINI_API_KEY to .env');
 });
