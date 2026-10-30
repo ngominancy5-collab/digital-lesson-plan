@@ -91,33 +91,35 @@ function toOpenAiMessages(system, user, history = []) {
   ].filter((item) => item.content);
 }
 
-async function completeOpenAi(system, user, history, { json }) {
+async function completeOpenAi(system, user, history, { json, temperature, maxOutputTokens, timeout }) {
   const key = openaiKey();
   if (!key) return null;
   const body = {
     model: process.env.AI_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
-    temperature: json ? 0.4 : 0.6,
+    temperature: temperature ?? (json ? 0.4 : 0.6),
     messages: toOpenAiMessages(system, user, history),
   };
   if (json) body.response_format = { type: 'json_object' };
+  if (maxOutputTokens) body.max_tokens = maxOutputTokens;
   const response = await axios.post('https://api.openai.com/v1/chat/completions', body, {
     headers: {
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
     },
-    timeout: 45000,
+    timeout: timeout || 60000,
   });
   return response.data.choices?.[0]?.message?.content || '';
 }
 
-async function completeGitHub(system, user, history, { json }) {
+async function completeGitHub(system, user, history, { json, temperature, maxOutputTokens, timeout }) {
   const key = githubKey();
   if (!key) return null;
   const body = {
     model: process.env.GITHUB_MODEL || 'openai/gpt-4o-mini',
-    temperature: json ? 0.4 : 0.6,
+    temperature: temperature ?? (json ? 0.4 : 0.6),
     messages: toOpenAiMessages(system, user, history),
   };
+  if (maxOutputTokens) body.max_tokens = maxOutputTokens;
   const headers = {
     Authorization: `Bearer ${key}`,
     'Content-Type': 'application/json',
@@ -127,7 +129,7 @@ async function completeGitHub(system, user, history, { json }) {
   try {
     const response = await axios.post('https://models.github.ai/inference/chat/completions', body, {
       headers,
-      timeout: 45000,
+      timeout: timeout || 60000,
     });
     return response.data.choices?.[0]?.message?.content || '';
   } catch (error) {
@@ -137,7 +139,7 @@ async function completeGitHub(system, user, history, { json }) {
         Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json',
       },
-      timeout: 45000,
+      timeout: timeout || 60000,
     });
     return response.data.choices?.[0]?.message?.content || '';
   }
@@ -160,13 +162,16 @@ function geminiContents(system, user, history = []) {
   };
 }
 
-function geminiModelNames() {
+function geminiModelNames(preferred = []) {
   return [...new Set([
+    ...((preferred || []).map((name) => String(name || '').trim()).filter(Boolean)),
     process.env.GEMINI_MODEL,
-    'gemini-flash-latest',
+    // Prefer current fast Flash models; skip deprecated 2.x / hanging "latest" aliases.
+    'gemini-3.5-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.8-flash',
+    'gemini-flash-lite-latest',
     'gemini-3.1-flash-lite',
-    'gemini-3-flash-preview',
-    'gemini-2.5-flash',
   ].map((name) => String(name || '').trim()).filter(Boolean))];
 }
 
@@ -180,18 +185,19 @@ function aiUnavailable(error) {
 
 async function postGemini(key, model, payload, options = {}) {
   let lastError;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const retries = options.retries ?? 1;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
       return await axios.post(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         payload,
-        { params: { key }, timeout: options.timeout || 45000, responseType: options.responseType },
+        { params: { key }, timeout: options.timeout || 60000, responseType: options.responseType },
       );
     } catch (error) {
       lastError = error;
       const status = error.response?.status;
-      if ((status === 429 || status === 503) && attempt === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 700));
+      if ((status === 429 || status === 503) && attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
         continue;
       }
       throw error;
@@ -200,28 +206,38 @@ async function postGemini(key, model, payload, options = {}) {
   throw lastError;
 }
 
-async function completeGemini(system, user, history, { json }) {
+async function completeGemini(system, user, history, options = {}) {
+  const json = Boolean(options.json);
   const key = geminiKey() || (detectProviderFromKey(openaiKey()) === 'gemini' ? openaiKey() : '');
   if (!key) return null;
 
   let lastError;
-  for (const model of geminiModelNames()) {
+  const models = geminiModelNames(options.preferredModels);
+  for (const model of models) {
     try {
       const payload = {
         ...geminiContents(system, user, history),
         generationConfig: {
-          temperature: json ? 0.4 : 0.6,
+          temperature: options.temperature ?? (json ? 0.4 : 0.6),
           ...(json ? { responseMimeType: 'application/json' } : {}),
+          ...(options.maxOutputTokens ? { maxOutputTokens: options.maxOutputTokens } : {}),
         },
       };
-      const response = await postGemini(key, model, payload);
+      const response = await postGemini(key, model, payload, {
+        timeout: options.timeout || 60000,
+        retries: options.retries ?? 1,
+      });
       const parts = response.data.candidates?.[0]?.content?.parts || [];
       const text = parts.map((part) => part.text || '').join('\n').trim();
       if (text) return text;
     } catch (error) {
       lastError = error;
       const status = error.response?.status;
-      if (status === 404 || status === 400 || status === 429 || status === 503) continue;
+      const timedOut = error.code === 'ECONNABORTED' || /timeout/i.test(String(error.message || ''));
+      // Try the next model for missing/unsupported models or transient quota pressure.
+      // Do not walk the full list after a hard timeout — that stacks latency.
+      if (!timedOut && (status === 404 || status === 400 || status === 429 || status === 503)) continue;
+      break;
     }
   }
   if (lastError) throw aiUnavailable(lastError);
@@ -232,20 +248,21 @@ async function completeRaw(system, user, history = [], options = {}) {
   const json = Boolean(options.json);
   const provider = resolveLlmProvider();
   if (!provider) return { provider: null, content: '' };
+  const callOptions = { ...options, json };
 
-  if (provider === 'openai') return { provider, content: await completeOpenAi(system, user, history, { json }) };
-  if (provider === 'gemini') return { provider, content: await completeGemini(system, user, history, { json }) };
-  if (provider === 'github') return { provider, content: await completeGitHub(system, user, history, { json }) };
+  if (provider === 'openai') return { provider, content: await completeOpenAi(system, user, history, callOptions) };
+  if (provider === 'gemini') return { provider, content: await completeGemini(system, user, history, callOptions) };
+  if (provider === 'github') return { provider, content: await completeGitHub(system, user, history, callOptions) };
   return { provider: null, content: '' };
 }
 
-export async function completeJson(system, user, history = []) {
-  const { provider, content } = await completeRaw(system, user, history, { json: true });
+export async function completeJson(system, user, history = [], options = {}) {
+  const { provider, content } = await completeRaw(system, user, history, { ...options, json: true });
   return { provider, data: safeJson(content) };
 }
 
-export async function completeText(system, user, history = []) {
-  const result = await completeRaw(system, user, history, { json: false });
+export async function completeText(system, user, history = [], options = {}) {
+  const result = await completeRaw(system, user, history, { ...options, json: false });
   return result;
 }
 

@@ -15,6 +15,7 @@ import {
   notificationApi,
   quizApi,
   reportApi,
+  billingApi,
   resourceApi,
   searchApi,
   setToken,
@@ -96,6 +97,7 @@ import './components/dashboard-glass.css';
 import './components/dashboard-reference.css';
 import './components/dashboard-premium.css';
 import { suggestCalendarFromPlan } from '../shared/learningEngine.js';
+import { findUnauthorizedFeature, isStrongFeatureQuery, matchFeatures, resolveFeatureNavigation } from './lib/featureSearch.js';
 
 const teachingMethodsList = ['Lecture', 'Discussion', 'Demonstration', 'Group work', 'Practical', 'Problem solving', 'Case study', 'Project-based learning'];
 const learningActivitiesList = ['Individual exercises', 'Group activities', 'Practical exercises', 'Discussions', 'Presentations', 'Research', 'Demonstrations'];
@@ -187,59 +189,407 @@ function courseMetrics(course) {
   return { topics, total, completed, inProgress, percent: total ? Math.round((completed / total) * 100) : 0, modulesCompleted: (course?.modules || []).filter((module) => module.topics.length && module.topics.every((topic) => topic.status === 'completed')).length };
 }
 
-function UploadCoursePage({ onCreate, onUploaded }) {
-  const [status, setStatus] = useState('idle');
-  const [fileName, setFileName] = useState('');
-  const [error, setError] = useState('');
-  const [errorDetail, setErrorDetail] = useState('');
-  const [manual, setManual] = useState(false);
-  const [detected, setDetected] = useState({ name: false, code: false, description: false, topics: false });
-  const [fields, setFields] = useState({ name: '', code: '', description: '', topics: '' });
-  const inputRef = useRef(null);
-  const retryFiles = useRef([]);
-  const supported = ['.pdf', '.doc', '.docx', '.txt'];
-  async function analyze(fileList) {
-    const files = [...(fileList || [])];
-    if (!files.length) return;
-    const unsupported = files.find((file) => !supported.includes(`.${file.name.split('.').pop().toLowerCase()}`));
-    if (unsupported) { setError('That file type is not supported.'); setErrorDetail('Upload a PDF, DOC, DOCX, or TXT file.'); return; }
-    setError('');
-    setErrorDetail('');
-    retryFiles.current = files;
-    setFileName(files.map((file) => file.name).join(', '));
-    setStatus('processing');
-    try {
-      let resource = null;
-      for (const file of files) {
-        resource = await resourceApi.upload(file);
-        onUploaded?.(resource);
-      }
-      const next = {
-        name: resource.courseName || '',
-        code: resource.courseCode || '',
-        description: resource.description || '',
-        topics: (resource.topics || []).join('\n'),
-      };
-      setFields(next);
-      setDetected({
-        name: Boolean(resource.courseName),
-        code: Boolean(resource.courseCode),
-        description: Boolean(resource.description),
-        topics: Boolean(resource.topics?.length),
-      });
-      setStatus('success');
-      if (resource.extractionNote) {
-        setError('Some pages could not be read.');
-        setErrorDetail(resource.extractionNote);
-      }
-    } catch (err) {
-      setStatus('error');
-      setError(err.message || 'Could not read this file.');
-      setErrorDetail(err.detail || '');
+function formatUploadSize(bytes) {
+  const size = Number(bytes) || 0;
+  if (size <= 0) return '';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function courseFileExt(name = '') {
+  const parts = String(name).split('.');
+  return parts.length > 1 ? parts.pop().toLowerCase() : '';
+}
+
+function isUploadLimitError(err) {
+  return err?.status === 402
+    || err?.details?.code === 'usage_limit'
+    || /monthly file uploads limit|upgrade to continue/i.test(String(err?.message || ''));
+}
+
+async function getUploadAllowance() {
+  try {
+    const data = await billingApi.subscription();
+    const used = Number(data?.usage?.uploadCount || 0);
+    const limit = Number(data?.usage?.uploadLimit ?? 10);
+    if (limit < 0) return { remaining: Number.POSITIVE_INFINITY, used, limit };
+    return { remaining: Math.max(0, limit - used), used, limit };
+  } catch {
+    return { remaining: null, used: null, limit: 10 };
+  }
+}
+
+async function mapPool(items, concurrency, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function run() {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await worker(items[index], index);
     }
   }
-  function submit(event) { event.preventDefault(); const topics = fields.topics.split(/\r?\n|,|;/).map((topic) => topic.trim()).filter(Boolean); onCreate(buildCourse({ ...fields, topics, fileName })); }
-  return <section className="course-upload-page"><div className="account-heading"><div><span className="section-kicker">COURSE WORKSPACE</span><h1>Upload your course outline</h1><p>Let PlanWise turn your source document into a trackable teaching structure.</p></div></div>{status === 'processing' && <p className="pw-stage">Extracting text from {fileName}</p>}{status !== 'processing' && <><div className="upload-layout"><button className="panel-card upload-dropzone" onClick={() => inputRef.current?.click()}><UploadCloud size={34} /><strong>Drop your file here or browse</strong><span>PDF, DOC, DOCX, or TXT. Select more than one file if you need to.</span><input ref={inputRef} type="file" accept=".pdf,.doc,.docx,.txt" multiple onChange={(event) => { analyze(event.target.files); event.target.value = ''; }} /></button><div className="panel-card manual-card"><div className="settings-title"><Pencil size={18} /><div><h3>Enter course manually</h3><span>For outlines you would rather type in</span></div></div><button className="secondary-button" onClick={() => setManual(true)}>Start manually</button></div></div>{error && <Notice tone={status === 'success' ? 'warning' : 'error'} message={error} detail={errorDetail} onRetry={status === 'error' && retryFiles.current.length ? () => analyze(retryFiles.current) : undefined} />}{(manual || status === 'success') && <form className="panel-card extracted-form" onSubmit={submit}><div className="panel-head"><div><span className="section-kicker">{status === 'success' ? 'REVIEW EXTRACTED INFORMATION' : 'MANUAL COURSE'}</span><h2>{status === 'success' ? 'File read. Review what was detected.' : 'Create your course'}</h2></div></div><div className="grid-2"><label className="field"><span>Course Name</span><input value={fields.name} onChange={(event) => setFields({ ...fields, name: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.name && <small className="field-error">Not detected</small>}<label className="field"><span>Course Code</span><input value={fields.code} onChange={(event) => setFields({ ...fields, code: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.code && <small className="field-error">Not detected</small>}<label className="field full-span"><span>Course Description</span><textarea rows={3} value={fields.description} onChange={(event) => setFields({ ...fields, description: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.description && <small className="field-error">Not detected</small>}<label className="field full-span"><span>Topics, one per line</span><textarea rows={7} value={fields.topics} onChange={(event) => setFields({ ...fields, topics: event.target.value })} placeholder="Not detected" /></label>{status === 'success' && !detected.topics && <small className="field-error">Not detected</small>}</div><div className="footer-actions-row"><button type="submit" className="primary-button">Create Progress Tracker</button></div></form>}</>}{status === 'success' && <div className="success-toast"><CheckCircle2 size={16} /> The file was read and saved to Resources.</div>}</section>;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, () => run());
+  await Promise.all(runners);
+  return results;
+}
+
+function resourceToFileCard(resource) {
+  const name = resource.fileName || resource.originalName || 'Untitled file';
+  return {
+    localId: resource.id,
+    name,
+    ext: courseFileExt(name),
+    size: resource.fileSize || resource.size || 0,
+    status: 'success',
+    error: '',
+    resource,
+    file: null,
+    courseName: resource.courseName || '',
+    courseCode: resource.courseCode || '',
+  };
+}
+
+function UploadCoursePage({ resources = [], onUploaded, onRemoved, onNavigate, onCourseSaved, onResourcesLoaded }) {
+  const [saved, setSaved] = useState(() => (resources || []).map(resourceToFileCard));
+  const [pending, setPending] = useState([]);
+  const [loadingSaved, setLoadingSaved] = useState(true);
+  const [error, setError] = useState('');
+  const [dragActive, setDragActive] = useState(false);
+  const [removingId, setRemovingId] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [limitReached, setLimitReached] = useState(false);
+  const [allowance, setAllowance] = useState({ used: 0, limit: 10, remaining: 10 });
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const inputRef = useRef(null);
+  const supported = ['.pdf', '.doc', '.docx', '.txt'];
+
+  async function loadSavedFiles() {
+    setLoadingSaved(true);
+    setError('');
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const list = await resourceApi.list();
+        const cards = (list || []).map(resourceToFileCard);
+        setSaved(cards);
+        onResourcesLoaded?.(list || []);
+        setLoadingSaved(false);
+        return;
+      } catch (err) {
+        lastError = err;
+        // Neon can be briefly unreachable after idle — retry before showing empty.
+        if (attempt < 2) {
+          await new Promise((resolve) => window.setTimeout(resolve, 1200 * (attempt + 1)));
+        }
+      }
+    }
+    setError(lastError?.message || 'Could not load saved files.');
+    setLoadingSaved(false);
+  }
+
+  useEffect(() => {
+    loadSavedFiles();
+    getUploadAllowance().then((next) => {
+      if (next.used == null) return;
+      setAllowance(next);
+      if (next.remaining === 0) setLimitReached(true);
+    }).catch(() => {});
+    // Fetch once when Courses / Subjects opens — do not wait for Upload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // Stay in sync if parent workspace already loaded resources.
+    if (!Array.isArray(resources) || !resources.length) return;
+    setSaved((current) => {
+      const byId = new Map(current.map((item) => [item.localId, item]));
+      for (const resource of resources) {
+        byId.set(resource.id, resourceToFileCard(resource));
+      }
+      return [...byId.values()].sort((a, b) => String(b.resource?.createdAt || '').localeCompare(String(a.resource?.createdAt || '')));
+    });
+  }, [resources]);
+
+  const files = useMemo(() => [...saved, ...pending], [saved, pending]);
+
+  function patchPending(localId, patch) {
+    setPending((current) => current.map((entry) => (
+      entry.localId === localId ? { ...entry, ...patch } : entry
+    )));
+  }
+
+  async function analyze(fileList) {
+    const incoming = [...(fileList || [])];
+    if (!incoming.length) return;
+    const unsupported = incoming.find((file) => !supported.includes(`.${courseFileExt(file.name)}`));
+    if (unsupported) {
+      setError('Use PDF, DOC, DOCX, or TXT.');
+      return;
+    }
+
+    setError('');
+    const allowanceNow = await getUploadAllowance();
+    if (allowanceNow.used != null) setAllowance(allowanceNow);
+
+    const batch = incoming.map((file, index) => ({
+      localId: `upload-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+      name: file.name,
+      ext: courseFileExt(file.name),
+      size: file.size,
+      status: 'queued',
+      error: '',
+      resource: null,
+      file,
+      courseName: '',
+      courseCode: '',
+    }));
+
+    const remaining = allowanceNow.remaining;
+    if (remaining === 0) {
+      setLimitReached(true);
+      setPending((current) => [
+        ...current,
+        ...batch.map((item) => ({ ...item, status: 'limit', error: 'Limit reached', file: null })),
+      ]);
+      return;
+    }
+
+    const allowed = remaining == null ? batch : batch.slice(0, remaining);
+    const blocked = remaining == null ? [] : batch.slice(remaining).map((item) => ({
+      ...item,
+      status: 'limit',
+      error: 'Limit reached',
+      file: null,
+    }));
+
+    setPending((current) => [...current, ...allowed, ...blocked]);
+    if (blocked.length) setLimitReached(true);
+    setUploading(true);
+
+    await mapPool(allowed, 3, async (item) => {
+      patchPending(item.localId, { status: 'uploading' });
+      try {
+        const resource = await resourceApi.upload(item.file);
+        onUploaded?.(resource);
+        setSaved((current) => [resourceToFileCard(resource), ...current.filter((entry) => entry.localId !== resource.id)]);
+        await onCourseSaved?.(resource);
+        // Drop local pending card — saved list now owns this file.
+        setPending((current) => current.filter((entry) => entry.localId !== item.localId));
+        return resource;
+      } catch (err) {
+        if (isUploadLimitError(err)) {
+          setLimitReached(true);
+          patchPending(item.localId, { status: 'limit', error: 'Limit reached', file: null });
+          return null;
+        }
+        patchPending(item.localId, { status: 'error', error: err.message || 'Upload failed' });
+        return null;
+      }
+    });
+
+    const refreshed = await getUploadAllowance();
+    if (refreshed.used != null) {
+      setAllowance(refreshed);
+      if (refreshed.remaining === 0) setLimitReached(true);
+    }
+    setUploading(false);
+  }
+
+  async function removeFile(item) {
+    if (!item || removingId) return;
+    const isSaved = Boolean(item.resource?.id);
+    if (isSaved) {
+      setDeleteTarget(item);
+      return;
+    }
+    setPending((current) => current.filter((entry) => entry.localId !== item.localId));
+  }
+
+  async function confirmRemoveSavedFile() {
+    const item = deleteTarget;
+    if (!item || removingId) return;
+    setDeleteTarget(null);
+    setRemovingId(item.localId);
+    try {
+      if (item.resource?.id) {
+        await resourceApi.remove(item.resource.id);
+        onRemoved?.(item.resource);
+        setSaved((current) => current.filter((entry) => entry.localId !== item.resource.id && entry.localId !== item.localId));
+      }
+      setPending((current) => current.filter((entry) => entry.localId !== item.localId));
+      const refreshed = await getUploadAllowance();
+      if (refreshed.used != null) {
+        setAllowance(refreshed);
+        setLimitReached(refreshed.remaining === 0);
+      }
+    } catch (err) {
+      setError(err.message || 'Could not remove file.');
+    } finally {
+      setRemovingId('');
+    }
+  }
+
+  function onDrop(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragActive(false);
+    analyze(event.dataTransfer?.files);
+  }
+
+  const busy = uploading || Boolean(removingId);
+  const showLimitBanner = limitReached || (allowance.limit >= 0 && allowance.remaining === 0);
+
+  return (
+    <section className="course-upload-page">
+      <div className="account-heading">
+        <div>
+          <span className="section-kicker">COURSES / SUBJECTS</span>
+          <h1>Upload course files</h1>
+          <p>
+            Free plan includes {allowance.limit < 0 ? 'unlimited' : allowance.limit} uploads this month
+            {allowance.used != null && allowance.limit >= 0 ? ` · ${Math.max(0, allowance.limit - allowance.used)} left` : ''}.
+          </p>
+        </div>
+      </div>
+
+      <div
+        className={`panel-card upload-dropzone upload-dropzone-solo ${dragActive ? 'is-dragging' : ''} ${busy ? 'is-busy' : ''}`}
+        onClick={() => { if (!busy) inputRef.current?.click(); }}
+        onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }}
+        onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
+        onDragLeave={(event) => { event.preventDefault(); setDragActive(false); }}
+        onDrop={onDrop}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            if (!busy) inputRef.current?.click();
+          }
+        }}
+      >
+        <div className="upload-dropzone-icon"><UploadCloud size={34} /></div>
+        <strong>Drag and drop your course files here</strong>
+        <span>PDF, DOC, DOCX, TXT</span>
+        <button
+          type="button"
+          className="secondary-button upload-browse-btn"
+          disabled={busy}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            inputRef.current?.click();
+          }}
+        >
+          Browse Files
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".pdf,.doc,.docx,.txt"
+          multiple
+          onChange={(event) => {
+            analyze(event.target.files);
+            event.target.value = '';
+          }}
+        />
+      </div>
+
+      {showLimitBanner ? (
+        <div className="upload-limit-banner">
+          <div>
+            <strong>Free upload limit reached</strong>
+            <p>You’ve used all {allowance.limit} free uploads this month. Upgrade to keep uploading.</p>
+          </div>
+          <button type="button" className="primary-button" onClick={() => onNavigate?.('billing')}>
+            <CreditCard size={16} /> Pay &amp; upgrade
+          </button>
+        </div>
+      ) : null}
+
+      {loadingSaved && !files.length ? (
+        <p className="muted-text course-file-empty">Loading saved files…</p>
+      ) : null}
+
+      {files.length ? (
+        <div className="course-file-section">
+          <div className="course-file-section-head">
+            <span className="section-kicker">UPLOADED FILES</span>
+            <h2>{saved.length} saved{pending.length ? ` · ${pending.length} in progress` : ''}</h2>
+          </div>
+          <div className="course-file-grid">
+            {files.map((item) => (
+              <article
+                key={item.localId}
+                className={`course-file-card is-${item.status} ${removingId === item.localId ? 'is-removing' : ''}`}
+                title={item.name}
+              >
+                <button
+                  type="button"
+                  className="course-file-remove"
+                  aria-label={`Remove ${item.name}`}
+                  title="Remove"
+                  disabled={item.status === 'uploading' || item.status === 'queued' || Boolean(removingId)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void removeFile(item);
+                  }}
+                >
+                  <X size={14} />
+                </button>
+                <div className={`course-file-icon type-${item.ext || 'file'}`} aria-hidden="true">
+                  <FileText size={22} />
+                  <span>{(item.ext || 'FILE').toUpperCase()}</span>
+                </div>
+                <div className="course-file-body">
+                  <strong className="course-file-name">{item.name}</strong>
+                  <div className="course-file-meta">
+                    <span>{(item.ext || 'file').toUpperCase()}</span>
+                    {formatUploadSize(item.size) ? <span>{formatUploadSize(item.size)}</span> : null}
+                    {item.courseName ? <span>{item.courseName}</span> : null}
+                  </div>
+                  <div className="course-file-status">
+                    {(item.status === 'queued' || item.status === 'uploading') && (
+                      <><i className="course-file-spinner" /><span>Uploading…</span></>
+                    )}
+                    {item.status === 'success' && (
+                      <><CheckCircle2 size={14} /><span>Complete</span></>
+                    )}
+                    {item.status === 'limit' && <span>Limit reached</span>}
+                    {item.status === 'error' && <span>{item.error || 'Failed'}</span>}
+                    {removingId === item.localId ? <span>Removing…</span> : null}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : !loadingSaved ? (
+        <p className="muted-text course-file-empty">No course files uploaded yet.</p>
+      ) : null}
+
+      {error && !showLimitBanner ? (
+        <Notice tone="error" message={error} onDismiss={() => setError('')} />
+      ) : null}
+
+      {deleteTarget ? (
+        <div className="dialog-backdrop" role="presentation">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="course-file-delete-title">
+            <div className="dialog-icon"><Trash2 size={19} /></div>
+            <h2 id="course-file-delete-title">Do you want to delete this file?</h2>
+            <p>{deleteTarget.name || 'Selected file'}</p>
+            <div className="dialog-actions">
+              <button type="button" className="secondary-button" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button type="button" className="logout-confirm" onClick={() => void confirmRemoveSavedFile()}>Delete</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function CourseCard({ course, onOpen }) {
@@ -376,7 +726,7 @@ function LoginPage({ onLogin, onNavigate, notice = '' }) {
       const result = await authApi.login({
         identifier: identifier.trim(),
         email: identifier.trim(),
-        password: password.trim(),
+        password,
       });
       onLogin(result.user, remember, result.token);
     } catch (err) {
@@ -566,6 +916,7 @@ function ForgotPasswordPage({ onNavigate }) {
   const [loading, setLoading] = useState(false);
   async function submit(event) {
     event.preventDefault();
+    if (loading) return;
     if (!/^\S+@\S+\.\S+$/.test(email)) { setError('Enter a valid email address.'); return; }
     setError('');
     setLoading(true);
@@ -1017,11 +1368,7 @@ function AccountsPage({ onAccountsChanged }) {
         onClose={() => setAssigning(null)}
         onApproved={(result) => {
           setAssigning(null);
-          if (result?.credentialsSent === false) {
-            showPopup('error', 'Credentials have not been sent.');
-          } else {
-            showPopup('ok', 'Credentials have successfully been sent.');
-          }
+          showPopup('ok', result?.message || 'Account approved. Login email is being sent now.');
           refresh().catch((err) => setError(err.message || 'Could not load accounts.'));
         }}
       />
@@ -1078,9 +1425,14 @@ function App() {
   const [topics, setTopics] = useState(['']);
   const [errors, setErrors] = useState({});
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generateProgress, setGenerateProgress] = useState({ percent: 0, label: '' });
+  const [planFileMode, setPlanFileMode] = useState('existing');
+  const [planAiInstruction, setPlanAiInstruction] = useState('');
+  const [planAiBusy, setPlanAiBusy] = useState(false);
   const [generated, setGenerated] = useState(null);
   const [selectedLessonIndex, setSelectedLessonIndex] = useState(0);
   const [editingLesson, setEditingLesson] = useState(null);
+  const planUploadRef = useRef(null);
   const [savedPlans, setSavedPlans] = useState([]);
   const [openWeeks, setOpenWeeks] = useState({ 1: true });
   const [profileOpen, setProfileOpen] = useState(false);
@@ -1098,12 +1450,15 @@ function App() {
   const [report, setReport] = useState(null);
   const [resources, setResources] = useState([]);
   const [deletingMaterialId, setDeletingMaterialId] = useState('');
+  const [fileDeleteTarget, setFileDeleteTarget] = useState(null);
+  const [uploadingMaterials, setUploadingMaterials] = useState(false);
   const [quizzes, setQuizzes] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
   const [searchError, setSearchError] = useState('');
+  const [featureSuggestions, setFeatureSuggestions] = useState([]);
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [adminOverview, setAdminOverview] = useState(null);
   const [adminOverviewLoading, setAdminOverviewLoading] = useState(false);
@@ -1152,7 +1507,7 @@ function App() {
       if (user.role === 'Administrator' && (window.location.pathname === '/' || window.location.pathname === '/login')) {
         setActiveSection('admin-overview');
       }
-      const [plans, events, assessmentList, courseList, attendance, reportData, resourceList, quizList, papers, notes] = await Promise.all([
+      const settled = await Promise.allSettled([
         lessonPlanApi.list(),
         calendarApi.list(),
         assessmentApi.list(),
@@ -1164,19 +1519,25 @@ function App() {
         markingApi.list(),
         notificationApi.list(),
       ]);
-      setSavedPlans(plans);
-      setCalendarEvents(events);
-      setAssessments(assessmentList);
-      setCourses(courseList.map(normalizeCourse));
-      setActiveClock(attendance.active || null);
-      setAttendanceHistory(attendance.history || []);
-      setReport(reportData);
-      setResources(resourceList);
-      setQuizzes(quizList);
-      setMarkingHistory(papers);
+      const value = (index, fallback) => (settled[index].status === 'fulfilled' ? settled[index].value : fallback);
+      setSavedPlans(value(0, []));
+      setCalendarEvents(value(1, []));
+      setAssessments(value(2, []));
+      setCourses((value(3, []) || []).map(normalizeCourse));
+      setActiveClock(value(4, {})?.active || null);
+      setAttendanceHistory(value(4, {})?.history || []);
+      setReport(value(5, null));
+      setResources(value(6, []));
+      setQuizzes(value(7, []));
+      setMarkingHistory(value(8, []));
+      const notes = value(9, { notifications: [], unread: 0 });
       setNotifications(notes.notifications || []);
       setUnreadCount(notes.unread || 0);
       setIsAuthenticated(true);
+      const failed = settled.find((item) => item.status === 'rejected');
+      if (failed) {
+        setDataError(failed.reason?.message || 'Some workspace data could not be loaded.');
+      }
     } catch (err) {
       const message = err.message || '';
       const blockedAccount = err.status === 403 && /waiting for administrator|not approved|suspended|inactive/i.test(message);
@@ -1222,14 +1583,35 @@ function App() {
     if (mustChangePassword || awaitingRoleConfirmation(currentUser)) {
       setSearchResults(null);
       setSearchError('');
+      setFeatureSuggestions([]);
       return undefined;
     }
     const query = searchQuery.trim();
     if (query.length < 2) {
       setSearchResults(null);
       setSearchError('');
+      setFeatureSuggestions([]);
       return undefined;
     }
+
+    const allowed = roleNav[currentUser?.role] || [];
+    const features = matchFeatures(query, currentUser?.role, allowed);
+    setFeatureSuggestions(features);
+
+    const blocked = findUnauthorizedFeature(query, currentUser?.role, allowed);
+    if (!features.length && blocked) {
+      setSearchResults(null);
+      setSearchError(`“${blocked.label}” isn’t available for your account.`);
+      return undefined;
+    }
+
+    // Feature navigation searches should not hit the DB (avoids Neon wake errors).
+    if (isStrongFeatureQuery(query, currentUser?.role, allowed)) {
+      setSearchResults(null);
+      setSearchError('');
+      return undefined;
+    }
+
     const timer = setTimeout(() => {
       searchApi.query(query)
         .then((results) => {
@@ -1238,9 +1620,14 @@ function App() {
         })
         .catch((err) => {
           setSearchResults(null);
-          setSearchError(err.message || 'Search failed.');
+          // Keep feature suggestions visible; only show DB error when nothing else helps.
+          if (!features.length) {
+            setSearchError(err.message || 'Search failed.');
+          } else {
+            setSearchError('');
+          }
         });
-    }, 300);
+    }, 320);
     return () => clearTimeout(timer);
   }, [searchQuery, mustChangePassword, currentUser]);
 
@@ -1326,6 +1713,7 @@ function App() {
   async function attachLessonSource(fileList) {
     const files = [...(fileList || [])];
     if (!files.length) return;
+    if (uploadingMaterials) return;
     const rejected = files.find((file) => !/\.(pdf|docx?|txt)$/i.test(file.name) || file.size > 15 * 1024 * 1024);
     if (rejected && !/\.(pdf|docx?|txt)$/i.test(rejected.name)) {
       lessonRetryFiles.current = [];
@@ -1339,6 +1727,7 @@ function App() {
     }
     const pendingNames = files.map((file) => file.name).join(', ');
     setErrors({});
+    setUploadingMaterials(true);
     setForm((previous) => ({
       ...previous,
       sourceFileName: previous.sourceFileName
@@ -1413,15 +1802,29 @@ function App() {
           sourceDetail: notes.join(' '),
           sourceTone: 'warning',
         });
+      } else if (added.length) {
+        setErrors({
+          source: added.length === 1 ? 'Upload complete.' : `${added.length} files uploaded.`,
+          sourceTone: 'ok',
+        });
+        window.setTimeout(() => {
+          setErrors((previous) => (previous.sourceTone === 'ok' ? {} : previous));
+        }, 2800);
       }
     }
+    setUploadingMaterials(false);
   }
 
-  async function deleteLessonMaterial(item) {
+  function requestDeleteFile(item) {
+    if (!item?.id) return;
+    setFileDeleteTarget(item);
+  }
+
+  async function confirmDeleteFile() {
+    const item = fileDeleteTarget;
+    if (!item?.id) return;
     const name = item.fileName || item.originalName || 'this file';
-    if (!window.confirm(`Delete "${name}" permanently?\n\nThis removes the file from your library and cannot be undone.`)) {
-      return;
-    }
+    setFileDeleteTarget(null);
     setDeletingMaterialId(item.id);
     setErrors((previous) => {
       const next = { ...previous };
@@ -1520,35 +1923,76 @@ function App() {
   }
 
   async function generateLessonPlan() {
-    const payload = {
-      ...form,
-      topics: topics.filter(Boolean).map((topic) => topic.trim()),
-      numberOfWeeks: Number(form.numberOfWeeks || Math.ceil((new Date(form.endDate) - new Date(form.startDate)) / (1000 * 60 * 60 * 24 * 7)) || 1),
-      holidays: (form.holidays || []).map((holiday) => ({ date: holiday.date || holiday, name: holiday.name || 'Holiday' })),
-      lessonNotes: form.lessonNotes,
-      materialText: form.lessonNotes,
-      documentId: form.sourceDocumentId || undefined,
-      documentIds: form.sourceDocumentIds || [],
-    };
-    if (!payload.topics.length && !String(form.lessonNotes || '').trim() && !(form.sourceDocumentIds || []).length && !form.sourceDocumentId) {
-      setErrors({ general: 'Add topics, lesson notes, or an uploaded file before generating.' });
-      setStep(2);
+    const documentIds = [...new Set((form.sourceDocumentIds || []).filter(Boolean))];
+    if (!documentIds.length) {
+      setErrors({ general: 'Select or upload at least one file before generating.' });
       return;
     }
 
+    const selectedFiles = resources.filter((item) => documentIds.includes(item.id));
+    const primary = selectedFiles[0] || {};
+    const derivedTopics = [...new Set(selectedFiles.flatMap((item) => item.topics || []).map((topic) => String(topic || '').trim()).filter(Boolean))];
+
+    // Keep current file selection in `form` so a failed generate can be retried as-is.
     setIsGenerating(true);
+    setGenerated(null);
     setErrors({});
     setActiveSection('plans');
+    setGenerateProgress({ percent: 6, label: 'Checking selected files…' });
 
+    let progressTimer;
     try {
+      setGenerateProgress({
+        percent: 18,
+        label: `Selecting key content from ${documentIds.length} file${documentIds.length === 1 ? '' : 's'}…`,
+      });
+      const payload = {
+        ...form,
+        courseName: form.courseName || primary.courseName || primary.fileName || 'Generated lesson plan',
+        courseCode: form.courseCode || primary.courseCode || '',
+        topics: derivedTopics.length ? derivedTopics : topics.filter(Boolean).map((topic) => topic.trim()),
+        numberOfWeeks: Number(form.numberOfWeeks || 4),
+        lessonsPerWeek: Number(form.lessonsPerWeek || 2),
+        lessonDuration: form.lessonDuration || '60 minutes',
+        holidays: (form.holidays || []).map((holiday) => ({ date: holiday.date || holiday, name: holiday.name || 'Holiday' })),
+        lessonNotes: '',
+        materialText: '',
+        documentId: documentIds[0],
+        documentIds,
+        customInstructions: form.customInstructions || 'Generate a practical teaching plan from the selected source files only.',
+      };
+
+      setGenerateProgress({ percent: 35, label: 'Asking AI to build your lesson plan…' });
+      const startedAt = Date.now();
+      progressTimer = setInterval(() => {
+        const elapsed = Date.now() - startedAt;
+        const soft = Math.min(86, 35 + Math.floor(elapsed / 2000) * 5);
+        const label = elapsed > 25000
+          ? 'Almost there — finishing the lesson structure…'
+          : elapsed > 12000
+            ? 'Writing lessons from your selected materials…'
+            : 'Asking AI to build your lesson plan…';
+        setGenerateProgress((previous) => ({
+          percent: Math.max(previous.percent || 35, soft),
+          label,
+        }));
+      }, 2000);
+
       const plan = await lessonPlanApi.generate(payload);
+      clearInterval(progressTimer);
+      setGenerateProgress({ percent: 94, label: 'Saving lesson plan…' });
       setGenerated(plan);
       setSavedPlans((previous) => [plan, ...previous.filter((item) => item.id !== plan.id)]);
       setSelectedLessonIndex(0);
+      setOpenWeeks({ 1: true });
       setStep(5);
+      setGenerateProgress({ percent: 100, label: 'Lesson plan ready' });
     } catch (error) {
+      if (progressTimer) clearInterval(progressTimer);
+      setGenerateProgress({ percent: 0, label: '' });
       setErrors({ general: error.message || 'Unable to generate the lesson plan. Please try again.' });
     } finally {
+      if (progressTimer) clearInterval(progressTimer);
       setIsGenerating(false);
     }
   }
@@ -1558,8 +2002,28 @@ function App() {
     const nextLesson = regenerated.lesson || regenerated;
     setGenerated((previous) => ({
       ...previous,
-      lessons: (previous?.lessons || []).map((item) => item.lessonDate === lesson.lessonDate && item.topic === lesson.topic ? nextLesson : item),
+      lessons: (previous?.lessons || []).map((item) => (
+        item.lessonDate === lesson.lessonDate && item.topic === lesson.topic ? nextLesson : item
+      )),
     }));
+    return nextLesson;
+  }
+
+  async function applyPlanAiInstruction() {
+    const instruction = planAiInstruction.trim();
+    if (!instruction || !generated?.lessons?.length || planAiBusy) return;
+    const lesson = generated.lessons[selectedLessonIndex] || generated.lessons[0];
+    if (!lesson) return;
+    setPlanAiBusy(true);
+    setErrors({});
+    try {
+      await regenerateLesson(lesson, instruction);
+      setPlanAiInstruction('');
+    } catch (error) {
+      setErrors({ general: error.message || 'Could not apply AI changes to this lesson.' });
+    } finally {
+      setPlanAiBusy(false);
+    }
   }
 
   async function savePlan(status = 'Saved') {
@@ -1745,6 +2209,9 @@ function App() {
       setGenerated(null);
       setErrors({});
       setStep(1);
+      setPlanFileMode('existing');
+      setGenerateProgress({ percent: 0, label: '' });
+      setPlanAiInstruction('');
       setActiveSection('plans');
       setProfileOpen(false);
       window.history.pushState({}, '', '/');
@@ -1911,6 +2378,17 @@ function App() {
   const currentDate = new Date();
   const dateLabel = currentDate.toLocaleDateString(undefined, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 
+  useEffect(() => {
+    if (activeSection !== 'plans' || resources.length) return undefined;
+    let cancelled = false;
+    resourceApi.list()
+      .then((list) => {
+        if (!cancelled) setResources(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeSection, resources.length]);
+
   const groupedLessons = useMemo(() => {
     if (!generated?.lessons) return [];
     return generated.lessons.reduce((acc, lesson) => {
@@ -2071,18 +2549,74 @@ function App() {
           <div className="glass-search">
             <Search size={16} />
             <input
-              type="text"
+              type="search"
               value={searchQuery}
               placeholder={currentUser.role === 'Administrator'
-                ? 'Search users, lesson plans, assessments, quizzes'
-                : 'Search lessons, resources, assessments, quizzes, calendar'}
+                ? 'Go to Users, Lesson Plans, Assessments…'
+                : 'Go to Assessments, Lesson Plans, Calendar…'}
+              aria-label="Search features and content"
               onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                const allowed = roleNav[currentUser?.role] || [];
+                const match = resolveFeatureNavigation(searchQuery, currentUser?.role, allowed);
+                if (match) {
+                  setSearchQuery('');
+                  setSearchResults(null);
+                  setSearchError('');
+                  setFeatureSuggestions([]);
+                  navigateTo(match.section);
+                  return;
+                }
+                const blocked = findUnauthorizedFeature(searchQuery, currentUser?.role, allowed);
+                if (blocked) {
+                  setSearchResults(null);
+                  setFeatureSuggestions([]);
+                  setSearchError(`“${blocked.label}” isn’t available for your account.`);
+                  return;
+                }
+                if (featureSuggestions.length) {
+                  const first = featureSuggestions[0];
+                  setSearchQuery('');
+                  setSearchResults(null);
+                  setSearchError('');
+                  setFeatureSuggestions([]);
+                  navigateTo(first.section);
+                  return;
+                }
+                if (!searchResults && searchQuery.trim().length >= 2) {
+                  setSearchError('No matching page found. Try Assessments, Lesson Plans, Calendar, or Settings.');
+                }
+              }}
             />
-            {(searchResults || searchError) && (
+            {(featureSuggestions.length || searchResults || searchError) && (
               <div className="profile-menu" style={{ left: 0, right: 'auto', width: 'min(420px, 70vw)' }}>
+                {featureSuggestions.length ? (
+                  <div>
+                    <small>Go to</small>
+                    {featureSuggestions.map((item) => (
+                      <button
+                        key={`${item.section}-${item.id}`}
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery('');
+                          setSearchResults(null);
+                          setSearchError('');
+                          setFeatureSuggestions([]);
+                          navigateTo(item.section);
+                        }}
+                      >
+                        {item.label}
+                        <small>{item.subtitle}</small>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 {searchError ? (
                   <p className="muted-text">{searchError}</p>
-                ) : (
+                ) : null}
+                {searchResults ? (
                   <>
                     {[
                       ...(currentUser.role === 'Administrator' ? [['users', 'Users', 'admin-users']] : []),
@@ -2098,16 +2632,19 @@ function App() {
                       <div key={key}>
                         <small>{label}</small>
                         {(searchResults?.[key] || []).length ? searchResults[key].map((item) => (
-                          <button key={item.id} type="button" onClick={() => { setSearchQuery(''); setSearchResults(null); navigateTo(section); }}>{item.title}<small>{item.subtitle}</small></button>
+                          <button key={item.id} type="button" onClick={() => { setSearchQuery(''); setSearchResults(null); setFeatureSuggestions([]); navigateTo(section); }}>{item.title}<small>{item.subtitle}</small></button>
                         )) : <p className="muted-text">No {label.toLowerCase()} match</p>}
                       </div>
                     ))}
                     {!['users', 'lessonPlans', 'assessments', 'quizzes', 'resources', 'courses', 'calendar']
-                      .some((key) => (searchResults?.[key] || []).length) && (
+                      .some((key) => (searchResults?.[key] || []).length) && !featureSuggestions.length && (
                       <p className="muted-text">No results match “{searchQuery.trim()}”.</p>
                     )}
                   </>
-                )}
+                ) : null}
+                {!featureSuggestions.length && !searchResults && !searchError && searchQuery.trim().length >= 2 ? (
+                  <p className="muted-text">No matching page found.</p>
+                ) : null}
               </div>
             )}
           </div>
@@ -2190,8 +2727,48 @@ function App() {
         )}
         {activeSection === 'profile' && <ProfilePage user={currentUser} onSave={saveUser} onNavigate={navigateTo} startEditing={profileEditing} />}
         {activeSection === 'settings' && <SettingsPage user={currentUser} onNavigate={navigateTo} onLogout={() => setLogoutOpen(true)} darkMode={darkMode} setDarkMode={setDarkMode} />}
-        {activeSection === 'courses' && <CoursesPage courses={courses} onOpen={navigateCourse} onUpload={() => navigateTo('upload-course')} />}
-        {activeSection === 'upload-course' && <UploadCoursePage onCreate={createCourse} onUploaded={(resource) => setResources((current) => [resource, ...current.filter((item) => item.id !== resource.id)])} />}
+        {(activeSection === 'courses' || activeSection === 'upload-course') && (
+          <UploadCoursePage
+            resources={resources}
+            onNavigate={navigateTo}
+            onResourcesLoaded={(list) => setResources(Array.isArray(list) ? list : [])}
+            onUploaded={(resource) => setResources((current) => [resource, ...current.filter((item) => item.id !== resource.id)])}
+            onRemoved={(resource) => setResources((current) => current.filter((item) => item.id !== resource.id))}
+            onCourseSaved={async (resource) => {
+              const name = String(resource?.courseName || '').trim();
+              if (!name) return;
+              const existing = courses.find((course) => String(course.name || '').trim().toLowerCase() === name.toLowerCase());
+              if (existing) {
+                try {
+                  const fileName = [existing.fileName, resource.fileName].filter(Boolean).join(', ');
+                  const saved = await courseApi.update(existing.id, {
+                    ...existing,
+                    code: existing.code || resource.courseCode || '',
+                    description: existing.description || resource.description || '',
+                    fileName,
+                  });
+                  setCourses((current) => current.map((course) => (course.id === saved.id ? normalizeCourse(saved) : course)));
+                } catch {
+                  // File is already persisted on the Document; course link is best-effort.
+                }
+                return;
+              }
+              try {
+                const draft = buildCourse({
+                  name,
+                  code: resource.courseCode || '',
+                  description: resource.description || '',
+                  topics: resource.topics || [],
+                  fileName: resource.fileName || '',
+                });
+                const saved = await courseApi.create(draft);
+                setCourses((current) => [normalizeCourse(saved), ...current.filter((course) => course.id !== saved.id)]);
+              } catch {
+                // File remains saved even if course creation fails.
+              }
+            }}
+          />
+        )}
         {activeSection === 'course-detail' && <CourseDetailPage course={courses.find((course) => course.id === selectedCourseId)} resources={resources} onBack={() => navigateTo('courses')} onStatusChange={updateTopicStatus} />}
         {activeSection === 'progress' && <ProgressPage courses={courses} onOpen={navigateCourse} onStatusChange={updateTopicStatus} />}
         {activeSection === 'dashboard' && (
@@ -2210,397 +2787,491 @@ function App() {
           />
         )}
         {activeSection === 'plans' && (
-          <section className="generator-shell">
-            <div className="wizard-steps">
-              {['Course', 'Topics', 'Schedule', 'Preferences', 'Generate'].map((label, index) => {
-                const value = index + 1;
-                return (
-                <div key={value} className={`wizard-step ${step >= value ? 'active' : ''}`}>
-                  <span className="wizard-number">{step > value ? '✓' : value}</span>
-                  <span className="wizard-label">{label}</span>
-                </div>
-                );
-              })}
+          <section className="generator-shell lesson-plan-simple">
+            <div className="account-heading">
+              <div>
+                <span className="section-kicker">LESSON PLANS</span>
+                <h1>Generate a lesson plan</h1>
+                <p>Choose existing course files or upload new ones, then generate.</p>
+              </div>
+              {generated ? (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setGenerated(null);
+                    setGenerateProgress({ percent: 0, label: '' });
+                    setErrors({});
+                  }}
+                >
+                  New plan
+                </button>
+              ) : null}
             </div>
 
-            <div className="generator-layout">
-              <div className="panel-card main-form-panel">
-                {step === 1 && (
-                  <>
-                    <div className="section-title-row"><h2>Create Your Lesson Plan</h2></div>
-                    {courses.length ? (
-                      <label className="field">
-                        <span>Saved subject</span>
-                        <select value={form.courseId || ''} onChange={(event) => {
-                          const course = courses.find((item) => item.id === event.target.value);
-                          setForm((previous) => ({
-                            ...previous,
-                            courseId: event.target.value,
-                            courseName: course?.name || previous.courseName,
-                            courseCode: course?.code || previous.courseCode,
-                            sourceDocumentId: '',
-                            sourceDocumentIds: [],
-                            sourceFileName: '',
-                          }));
-                        }}>
-                          <option value="">Choose a subject, or type one below</option>
-                          {courses.map((course) => <option key={course.id} value={course.id}>{course.name}</option>)}
-                        </select>
-                      </label>
-                    ) : null}
-                    <div className="grid-2">
-                      <label className="field"><span>Course Name</span><input value={form.courseName} onChange={(e) => updateField('courseName', e.target.value)} /></label>
-                      <label className="field"><span>Course Code</span><input value={form.courseCode} onChange={(e) => updateField('courseCode', e.target.value)} /></label>
-                      <label className="field"><span>Programme</span><input value={form.programme} onChange={(e) => updateField('programme', e.target.value)} /></label>
-                      <label className="field"><span>Class/Level</span><input value={form.level} onChange={(e) => updateField('level', e.target.value)} /></label>
-                      <label className="field"><span>Department</span><input value={form.department} onChange={(e) => updateField('department', e.target.value)} /></label>
-                      <label className="field"><span>Lecturer/Teacher</span><input value={form.lecturer} onChange={(e) => updateField('lecturer', e.target.value)} /></label>
-                      <label className="field"><span>Semester/Term</span><input value={form.semester} onChange={(e) => updateField('semester', e.target.value)} /></label>
-                      <label className="field"><span>Academic Year</span><input value={form.academicYear} onChange={(e) => updateField('academicYear', e.target.value)} /></label>
-                    </div>
-                    {errors.courseName || errors.courseCode || errors.startDate || errors.endDate ? <div className="error-box">{errors.courseName || errors.courseCode || errors.startDate || errors.endDate}</div> : null}
-                  </>
-                )}
+            {!generated && !isGenerating ? (
+              <div className="panel-card lesson-plan-setup">
+                <div className="lesson-plan-options">
+                  <button
+                    type="button"
+                    className={`lesson-plan-option ${planFileMode === 'existing' ? 'active' : ''}`}
+                    onClick={() => setPlanFileMode('existing')}
+                  >
+                    <Folder size={20} />
+                    <strong>Use existing course/subject files</strong>
+                    <span>Pick files already saved in Courses / Subjects</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`lesson-plan-option ${planFileMode === 'upload' ? 'active' : ''}`}
+                    onClick={() => setPlanFileMode('upload')}
+                  >
+                    <UploadCloud size={20} />
+                    <strong>Upload my own files</strong>
+                    <span>Browse PDF, DOC, DOCX or TXT for this plan</span>
+                  </button>
+                </div>
 
-                {step === 2 && (
-                  <>
-                    <div className="section-title-row"><h2>Topics</h2></div>
-                    <div className="topic-list">
-                      {topics.map((topic, index) => (
-                        <div key={`topic-${index}`} className="topic-card">
-                          <div className="topic-card-head">
-                            <span className="topic-index">Topic {index + 1}</span>
-                            <div className="topic-card-actions">
-                              <button type="button" className="icon-button small" onClick={() => moveTopic(index, -1)} aria-label="Move topic up"><ArrowRight size={14} className="rotate-up" /></button>
-                              <button type="button" className="icon-button small" onClick={() => moveTopic(index, 1)} aria-label="Move topic down"><ArrowRight size={14} /></button>
-                              <button type="button" className="secondary-button danger" onClick={() => removeTopic(index)}>Delete</button>
-                            </div>
-                          </div>
-                          <input value={topic} onChange={(e) => updateTopic(index, e.target.value)} placeholder="Topic title" />
-                        </div>
-                      ))}
+                {planFileMode === 'existing' ? (
+                  <div className="lesson-plan-files">
+                    <div className="course-file-section-head">
+                      <span className="section-kicker">SELECT FILES</span>
+                      <h3>{(form.sourceDocumentIds || []).length} selected · {resources.length} available</h3>
                     </div>
-                    <div className="footer-actions-row topic-add-row"><button className="secondary-button" onClick={addTopic}>+ Add Topic</button></div>
-                    <label className="field full-span">
-                      <span>Lesson notes</span>
-                      <textarea rows={5} value={form.lessonNotes} onChange={(event) => updateField('lessonNotes', event.target.value)} placeholder="Paste the notes, objectives, or instructions this lesson must follow" />
-                    </label>
-                    <div className="field">
-                      <span>Subject materials</span>
-                      <div className="choice-group wrap material-chip-group">
-                        {(() => {
-                          const materials = resources.filter((item) => (
-                            !form.courseName
-                            || !item.courseName
-                            || String(item.courseName).toLowerCase() === form.courseName.trim().toLowerCase()
-                          ));
-                          if (!materials.length) {
-                            return <p className="muted-text material-chip-hint">No uploaded files yet. Use Upload notes below to add PDFs, DOC, DOCX, or TXT files.</p>;
-                          }
-                          return materials.map((item) => {
-                            const selected = (form.sourceDocumentIds || []).includes(item.id);
-                            const busy = deletingMaterialId === item.id;
-                            function syncSourceNames(nextIds) {
-                              return resources
-                                .filter((resource) => nextIds.includes(resource.id))
-                                .map((resource) => resource.fileName)
-                                .filter(Boolean)
-                                .join(', ');
-                            }
+                    {resources.length ? (
+                      <div className="course-file-grid">
+                        {resources.map((item) => {
+                          const selected = (form.sourceDocumentIds || []).includes(item.id);
+                          const name = item.fileName || item.originalName || 'Untitled file';
+                          const ext = courseFileExt(name);
+                          return (
+                            <article
+                              key={item.id}
+                              className={`course-file-card lesson-plan-file-card ${selected ? 'is-success is-selected' : ''}`}
+                              title={name}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setForm((previous) => {
+                                const ids = new Set(previous.sourceDocumentIds || []);
+                                if (ids.has(item.id)) ids.delete(item.id);
+                                else ids.add(item.id);
+                                const nextIds = [...ids];
+                                return {
+                                  ...previous,
+                                  sourceDocumentIds: nextIds,
+                                  sourceDocumentId: nextIds[0] || '',
+                                  sourceFileName: resources.filter((row) => nextIds.includes(row.id)).map((row) => row.fileName).join(', '),
+                                  courseName: previous.courseName || item.courseName || previous.courseName,
+                                  courseCode: previous.courseCode || item.courseCode || previous.courseCode,
+                                };
+                              })}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  event.currentTarget.click();
+                                }
+                              }}
+                            >
+                              <button
+                                type="button"
+                                className="course-file-remove"
+                                aria-label={`Remove ${name}`}
+                                title="Remove file"
+                                disabled={deletingMaterialId === item.id || Boolean(deletingMaterialId)}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  requestDeleteFile(item);
+                                }}
+                              >
+                                <X size={14} />
+                              </button>
+                              <div className={`course-file-icon type-${ext || 'file'}`} aria-hidden="true">
+                                <FileText size={22} />
+                                <span>{(ext || 'FILE').toUpperCase()}</span>
+                              </div>
+                              <div className="course-file-body">
+                                <strong className="course-file-name">{name}</strong>
+                                <div className="course-file-meta">
+                                  <span>{(ext || 'file').toUpperCase()}</span>
+                                  {formatUploadSize(item.fileSize || item.size) ? <span>{formatUploadSize(item.fileSize || item.size)}</span> : null}
+                                  {item.courseName ? <span>{item.courseName}</span> : null}
+                                </div>
+                                <div className="course-file-status">
+                                  {selected ? (
+                                    <><CheckCircle2 size={14} /><span>Selected</span></>
+                                  ) : (
+                                    <span>Tap to select</span>
+                                  )}
+                                </div>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="muted-text">No saved course files yet. Upload files in Courses / Subjects, or switch to “Upload my own files”.</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="lesson-plan-files">
+                    <h3>Upload files for this lesson plan</h3>
+                    <div
+                      className="panel-card upload-dropzone upload-dropzone-solo lesson-plan-dropzone"
+                      onClick={() => planUploadRef.current?.click()}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        void attachLessonSource(event.dataTransfer?.files);
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          planUploadRef.current?.click();
+                        }
+                      }}
+                    >
+                      <div className="upload-dropzone-icon"><UploadCloud size={28} /></div>
+                      <strong>Drag and drop files here</strong>
+                      <span>PDF, DOC, DOCX, TXT</span>
+                      <button
+                        type="button"
+                        className="secondary-button upload-browse-btn"
+                        disabled={uploadingMaterials}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          planUploadRef.current?.click();
+                        }}
+                      >
+                        Browse Files
+                      </button>
+                      <input
+                        ref={planUploadRef}
+                        type="file"
+                        multiple
+                        hidden
+                        disabled={uploadingMaterials || Boolean(deletingMaterialId)}
+                        accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                        onChange={(event) => {
+                          void attachLessonSource(event.target.files);
+                          event.target.value = '';
+                        }}
+                      />
+                    </div>
+                    {uploadingMaterials ? <p className="muted-text">Uploading…</p> : null}
+                    {(form.sourceDocumentIds || []).length ? (
+                      <div className="course-file-section" style={{ marginTop: 16 }}>
+                        <div className="course-file-section-head">
+                          <span className="section-kicker">SELECTED FOR THIS PLAN</span>
+                          <h3>{(form.sourceDocumentIds || []).length} file{(form.sourceDocumentIds || []).length === 1 ? '' : 's'}</h3>
+                        </div>
+                        <div className="course-file-grid">
+                          {(form.sourceDocumentIds || []).map((id) => {
+                            const item = resources.find((row) => row.id === id);
+                            if (!item) return null;
+                            const name = item.fileName || item.originalName || 'Untitled file';
+                            const ext = courseFileExt(name);
                             return (
-                              <div key={item.id} className={`material-chip ${selected ? 'active' : ''} ${busy ? 'is-deleting' : ''}`}>
+                              <article key={id} className="course-file-card is-success" title={name}>
                                 <button
                                   type="button"
-                                  className="material-chip-select"
-                                  disabled={busy}
-                                  onClick={() => setForm((previous) => {
-                                    const ids = new Set(previous.sourceDocumentIds || []);
-                                    if (ids.has(item.id)) ids.delete(item.id);
-                                    else ids.add(item.id);
-                                    const nextIds = [...ids];
-                                    return {
-                                      ...previous,
-                                      sourceDocumentIds: nextIds,
-                                      sourceDocumentId: nextIds[0] || '',
-                                      sourceFileName: syncSourceNames(nextIds),
-                                    };
-                                  })}
-                                >
-                                  {item.fileName}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="material-chip-delete"
-                                  aria-label={`Delete ${item.fileName}`}
-                                  title="Delete file permanently"
-                                  disabled={Boolean(deletingMaterialId)}
+                                  className="course-file-remove"
+                                  aria-label={`Remove ${name}`}
+                                  title="Remove"
                                   onClick={(event) => {
                                     event.preventDefault();
                                     event.stopPropagation();
-                                    void deleteLessonMaterial(item);
+                                    setForm((previous) => {
+                                      const nextIds = (previous.sourceDocumentIds || []).filter((entry) => entry !== id);
+                                      return {
+                                        ...previous,
+                                        sourceDocumentIds: nextIds,
+                                        sourceDocumentId: nextIds[0] || '',
+                                        sourceFileName: resources.filter((row) => nextIds.includes(row.id)).map((row) => row.fileName).join(', '),
+                                      };
+                                    });
                                   }}
                                 >
-                                  <Trash2 size={14} />
-                                  <span className="material-chip-delete-label">{busy ? 'Deleting…' : 'Delete'}</span>
+                                  <X size={14} />
                                 </button>
-                              </div>
+                                <div className={`course-file-icon type-${ext || 'file'}`} aria-hidden="true">
+                                  <FileText size={22} />
+                                  <span>{(ext || 'FILE').toUpperCase()}</span>
+                                </div>
+                                <div className="course-file-body">
+                                  <strong className="course-file-name">{name}</strong>
+                                  <div className="course-file-meta">
+                                    <span>{(ext || 'file').toUpperCase()}</span>
+                                    {formatUploadSize(item.fileSize || item.size) ? <span>{formatUploadSize(item.fileSize || item.size)}</span> : null}
+                                  </div>
+                                  <div className="course-file-status">
+                                    <CheckCircle2 size={14} />
+                                    <span>Ready</span>
+                                  </div>
+                                </div>
+                              </article>
                             );
-                          });
-                        })()}
+                          })}
+                        </div>
                       </div>
-                      {resources.some((item) => (
-                        !form.courseName
-                        || !item.courseName
-                        || String(item.courseName).toLowerCase() === form.courseName.trim().toLowerCase()
-                      )) ? (
-                        <p className="muted-text material-chip-hint">Click a file name to select it for this lesson. Use Delete to permanently remove a file from your library.</p>
-                      ) : null}
+                    ) : null}
+                    {errors.source ? (
+                      <Notice
+                        tone={errors.sourceTone || 'error'}
+                        message={errors.source}
+                        detail={errors.sourceDetail}
+                        onRetry={!errors.sourceTone && lessonRetryFiles.current.length ? () => attachLessonSource(lessonRetryFiles.current) : undefined}
+                      />
+                    ) : null}
+                  </div>
+                )}
+
+                {errors.general ? <Notice tone="error" message={errors.general} onDismiss={() => setErrors({})} /> : null}
+
+                <div className="lesson-plan-generate-row">
+                  <button
+                    type="button"
+                    className="primary-button lesson-plan-generate-btn"
+                    disabled={isGenerating || uploadingMaterials || !(form.sourceDocumentIds || []).length}
+                    onClick={() => void generateLessonPlan()}
+                  >
+                    <Wand2 size={16} /> Generate Lesson Plan
+                  </button>
+                  <small>{(form.sourceDocumentIds || []).length || 0} file{(form.sourceDocumentIds || []).length === 1 ? '' : 's'} selected</small>
+                </div>
+              </div>
+            ) : null}
+
+            {isGenerating ? (
+              <div className="panel-card generation-screen">
+                <div className="loader-ring" />
+                <h3>{generateProgress.label || 'Creating your lesson plan…'}</h3>
+                <div className="lesson-plan-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={generateProgress.percent}>
+                  <div className="lesson-plan-progress-bar" style={{ width: `${generateProgress.percent}%` }} />
+                </div>
+                <strong className="lesson-plan-progress-label">{generateProgress.percent}%</strong>
+              </div>
+            ) : null}
+
+            {generated && !isGenerating ? (
+              <div className="generator-layout">
+                <div className="panel-card main-form-panel plan-result">
+                  {errors.general ? <Notice tone="error" message={errors.general} onDismiss={() => setErrors({})} /> : null}
+                  <div className="plan-header-row">
+                    <div>
+                      <div className="eyebrow">Generated lesson plan</div>
+                      <h3>{generated.courseName || generated.title}</h3>
+                      <small>{generated.courseCode || 'No code'} · {(generated.lessons || []).length} lessons</small>
+                    </div>
+                    <div className="plan-actions">
+                      <button type="button" className="primary-button" onClick={() => savePlan()}>Save</button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => (generated?.id
+                          ? downloadLessonPlanPdf(generated.id)
+                          : Promise.reject(new Error('Save the lesson plan before exporting.')))
+                          .catch((error) => setErrors({ general: error.message }))}
+                      >
+                        Export PDF
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="lesson-plan-overview">
+                    <h4>What was created</h4>
+                    <div className="lesson-plan-overview-grid">
+                      <div>
+                        <span>Topics</span>
+                        <ul>
+                          {[...new Set((generated.lessons || []).map((lesson) => lesson.topic).filter(Boolean))].slice(0, 8).map((topic) => (
+                            <li key={topic}>{topic}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <span>Learning objectives</span>
+                        <ul>
+                          {(generated.lessons || []).flatMap((lesson) => lesson.learningObjectives || []).slice(0, 6).map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <span>Activities</span>
+                        <ul>
+                          {(generated.lessons || []).flatMap((lesson) => [...(lesson.studentActivities || []), ...(lesson.teacherActivities || [])]).slice(0, 6).map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <span>Assessment</span>
+                        <ul>
+                          {[...new Set((generated.lessons || []).map((lesson) => lesson.assessmentMethod).filter(Boolean))].slice(0, 6).map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="lesson-plan-ai-box">
+                    <div className="settings-title">
+                      <Sparkles size={18} />
+                      <div>
+                        <h3>AI assistant</h3>
+                        <span>Ask for changes to the selected lesson without starting over</span>
+                      </div>
                     </div>
                     <label className="field">
-                      <span>Upload notes</span>
-                      <input type="file" multiple accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={(event) => { const picked = event.target.files; void attachLessonSource(picked); event.target.value = ''; }} />
+                      <span>Selected lesson</span>
+                      <select
+                        value={selectedLessonIndex}
+                        onChange={(event) => setSelectedLessonIndex(Number(event.target.value))}
+                      >
+                        {(generated.lessons || []).map((lesson, index) => (
+                          <option key={`${lesson.topic}-${index}`} value={index}>
+                            {lesson.topic || `Lesson ${index + 1}`}
+                          </option>
+                        ))}
+                      </select>
                     </label>
-                    {form.sourceFileName ? <p className="muted-text">{/Uploading /.test(form.sourceFileName) ? form.sourceFileName : `Using ${form.sourceFileName}`}</p> : null}
-                    {errors.source ? <Notice tone={errors.sourceTone || 'error'} message={errors.source} detail={errors.sourceDetail} onRetry={!errors.sourceTone && lessonRetryFiles.current.length ? () => attachLessonSource(lessonRetryFiles.current) : undefined} /> : null}
-                    {errors.topics ? <div className="error-box">{errors.topics}</div> : null}
-                  </>
-                )}
+                    <label className="field">
+                      <span>Instruction</span>
+                      <textarea
+                        rows={3}
+                        value={planAiInstruction}
+                        onChange={(event) => setPlanAiInstruction(event.target.value)}
+                        placeholder='e.g. "Add more practical activities" or "Simplify the learning objectives"'
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={planAiBusy || !planAiInstruction.trim()}
+                      onClick={() => void applyPlanAiInstruction()}
+                    >
+                      {planAiBusy ? 'Updating…' : 'Apply AI changes'}
+                    </button>
+                  </div>
 
-                {step === 3 && (
-                  <>
-                    <div className="section-title-row"><h2>Teaching Schedule</h2></div>
-                    <div className="grid-2">
-                      <label className="field"><span>Course Start Date</span><input type="date" value={form.startDate} onChange={(e) => updateField('startDate', e.target.value)} /></label>
-                      <label className="field"><span>Course End Date</span><input type="date" value={form.endDate} onChange={(e) => updateField('endDate', e.target.value)} /></label>
-                      <label className="field"><span>Number of Weeks</span><input type="number" min="1" value={form.numberOfWeeks} onChange={(e) => updateField('numberOfWeeks', e.target.value)} /></label>
-                      <label className="field"><span>Lessons per Week</span><input type="number" min="1" value={form.lessonsPerWeek} onChange={(e) => updateField('lessonsPerWeek', e.target.value)} /></label>
-                      <label className="field full-span"><span>Lesson Duration</span><input value={form.lessonDuration} onChange={(e) => updateField('lessonDuration', e.target.value)} /></label>
-                    </div>
+                  {generated.warnings?.length ? <div className="warning-box">{generated.warnings[0]}</div> : null}
 
-                    <h3 className="mini-heading">School calendar / non-teaching dates</h3>
-                    <div className="holiday-list">
-                      {(form.holidays || []).map((holiday, index) => (
-                        <div key={index} className="holiday-row">
-                          <input type="date" value={holiday.date} onChange={(e) => {
-                            const next = [...(form.holidays || [])];
-                            next[index] = { ...next[index], date: e.target.value };
-                            updateField('holidays', next);
-                          }} />
-                          <input value={holiday.name || ''} onChange={(e) => {
-                            const next = [...(form.holidays || [])];
-                            next[index] = { ...next[index], name: e.target.value };
-                            updateField('holidays', next);
-                          }} placeholder="Holiday name" />
-                          <button className="secondary-button danger" onClick={() => updateField('holidays', (form.holidays || []).filter((_, idx) => idx !== index))}>Remove</button>
+                  <div className="week-accordion">
+                    {Object.entries(groupedLessons).map(([weekKey, lessons]) => (
+                      <div key={weekKey} className="week-card">
+                        <div className="week-header">
+                          <div>
+                            <span className="week-badge">WEEK {weekKey}</span>
+                            <div className="week-meta">{lessons[0]?.lessonDate || 'Schedule pending'} · {lessons.length} lessons</div>
+                          </div>
+                          <button type="button" className="pill-button" onClick={() => setOpenWeeks((current) => ({ ...current, [weekKey]: !current[weekKey] }))}>
+                            {openWeeks[weekKey] ? 'Collapse' : 'Expand'} <ChevronDown size={14} className={openWeeks[weekKey] ? 'chevron-up' : ''} />
+                          </button>
                         </div>
-                      ))}
-                    </div>
-                    <div className="footer-actions-row"><button className="secondary-button" onClick={() => updateField('holidays', [...(form.holidays || []), { date: '', name: '' }])}>Add holiday</button></div>
-                    {errors.lessonsPerWeek || errors.lessonDuration || errors.endDate ? <div className="error-box">{errors.lessonsPerWeek || errors.lessonDuration || errors.endDate}</div> : null}
-                  </>
-                )}
-
-                {step === 4 && (
-                  <>
-                    <div className="section-title-row"><h2>Lesson Preferences</h2></div>
-                    <div className="preferences-grid">
-                      <div>
-                        <h3>Teaching Method</h3>
-                        <div className="choice-group">
-                          {teachingMethodsList.map((item) => (
-                            <button key={item} className={`choice-btn ${form.teachingMethods?.includes(item) ? 'active' : ''}`} onClick={() => toggleSelection('teachingMethods', item)}>{item}</button>
-                          ))}
-                        </div>
+                        {openWeeks[weekKey] ? (
+                          <div className="week-body">
+                            {lessons.map((lesson, idx) => {
+                              const lessonIndex = (generated.lessons || []).findIndex((item) => item === lesson);
+                              return (
+                                <div key={`${lesson.lessonDate}-${idx}-${lesson.topic}`} className={`lesson-block ${selectedLessonIndex === lessonIndex ? 'is-selected' : ''}`}>
+                                  <div className="lesson-block-header">
+                                    <div>
+                                      <strong>{lesson.topic}</strong>
+                                      <span>{lesson.subtopic}</span>
+                                    </div>
+                                    <div className="lesson-block-actions">
+                                      <button type="button" className="small-link" onClick={() => setSelectedLessonIndex(lessonIndex)}>Select</button>
+                                      <button
+                                        type="button"
+                                        className="small-link"
+                                        onClick={() => setEditingLesson({
+                                          index: lessonIndex,
+                                          draft: {
+                                            ...lesson,
+                                            learningObjectivesText: listFieldToText(lesson.learningObjectives),
+                                            learningOutcomesText: listFieldToText(lesson.learningOutcomes),
+                                            teacherActivitiesText: listFieldToText(lesson.teacherActivities),
+                                            studentActivitiesText: listFieldToText(lesson.studentActivities),
+                                            learningResourcesText: listFieldToText(lesson.learningResources),
+                                          },
+                                        })}
+                                      >
+                                        Edit
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="lesson-grid">
+                                    <div><label>Objectives</label><ul>{(lesson.learningObjectives || []).map((item) => <li key={item}>{item}</li>)}</ul></div>
+                                    <div><label>Outcomes</label><ul>{(lesson.learningOutcomes || []).map((item) => <li key={item}>{item}</li>)}</ul></div>
+                                    <div><label>Teacher activities</label><ul>{(lesson.teacherActivities || []).map((item) => <li key={item}>{item}</li>)}</ul></div>
+                                    <div><label>Student activities</label><ul>{(lesson.studentActivities || []).map((item) => <li key={item}>{item}</li>)}</ul></div>
+                                    <div><label>Resources</label><ul>{(lesson.learningResources || []).map((item) => <li key={item}>{item}</li>)}</ul></div>
+                                    <div><label>Assessment</label><p>{lesson.assessmentMethod}</p></div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : null}
                       </div>
+                    ))}
+                  </div>
 
-                      <div>
-                        <h3>Learning Activities</h3>
-                        <div className="choice-group">
-                          {learningActivitiesList.map((item) => (
-                            <button key={item} className={`choice-btn ${form.learningActivities?.includes(item) ? 'active' : ''}`} onClick={() => toggleSelection('learningActivities', item)}>{item}</button>
-                          ))}
+                  {editingLesson ? (
+                    <div className="admin-dialog-backdrop" role="presentation">
+                      <form className="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-lesson-title" onSubmit={applyLessonEdit}>
+                        <h2 id="edit-lesson-title">Edit lesson</h2>
+                        <label className="field"><span>Topic</span><input value={editingLesson.draft.topic || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, topic: event.target.value } }))} /></label>
+                        <label className="field"><span>Subtopic</span><input value={editingLesson.draft.subtopic || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, subtopic: event.target.value } }))} /></label>
+                        <label className="field"><span>Objectives (one per line)</span><textarea rows={3} value={editingLesson.draft.learningObjectivesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningObjectivesText: event.target.value } }))} /></label>
+                        <label className="field"><span>Outcomes (one per line)</span><textarea rows={3} value={editingLesson.draft.learningOutcomesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningOutcomesText: event.target.value } }))} /></label>
+                        <label className="field"><span>Teacher activities (one per line)</span><textarea rows={3} value={editingLesson.draft.teacherActivitiesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, teacherActivitiesText: event.target.value } }))} /></label>
+                        <label className="field"><span>Student activities (one per line)</span><textarea rows={3} value={editingLesson.draft.studentActivitiesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, studentActivitiesText: event.target.value } }))} /></label>
+                        <label className="field"><span>Resources (one per line)</span><textarea rows={2} value={editingLesson.draft.learningResourcesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningResourcesText: event.target.value } }))} /></label>
+                        <label className="field"><span>Assessment</span><textarea rows={2} value={editingLesson.draft.assessmentMethod || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, assessmentMethod: event.target.value } }))} /></label>
+                        <div className="admin-actions">
+                          <button type="submit" className="primary">Save lesson</button>
+                          <button type="button" onClick={() => setEditingLesson(null)}>Cancel</button>
                         </div>
-                      </div>
+                      </form>
                     </div>
+                  ) : null}
+                </div>
 
-                    <div className="difficulty-section">
-                      <h3>Lesson Difficulty</h3>
-                      <div className="choice-group">
-                        {['Beginner', 'Intermediate', 'Advanced'].map((level) => (
-                          <button key={level} className={`choice-btn ${form.difficulty === level ? 'active' : ''}`} onClick={() => updateField('difficulty', level)}>{level}</button>
+                <aside className="side-summary">
+                  <div className="panel-card summary-card">
+                    <h3>Source files</h3>
+                    <ul>
+                      {(form.sourceDocumentIds || []).map((id) => {
+                        const item = resources.find((row) => row.id === id);
+                        return <li key={id}><strong>{item?.fileName || id}</strong></li>;
+                      })}
+                    </ul>
+                  </div>
+                  <div className="panel-card summary-card">
+                    <h3>Saved Plans</h3>
+                    <input value={planQuery} onChange={(event) => setPlanQuery(event.target.value)} placeholder="Search saved plans" />
+                    {savedPlans.filter((plan) => `${plan.courseName || ''} ${plan.title || ''} ${plan.courseCode || ''}`.toLowerCase().includes(planQuery.trim().toLowerCase())).length ? (
+                      <div className="saved-list">
+                        {savedPlans.filter((plan) => `${plan.courseName || ''} ${plan.title || ''} ${plan.courseCode || ''}`.toLowerCase().includes(planQuery.trim().toLowerCase())).map((plan) => (
+                          <div key={plan.id} className="saved-item">
+                            <button type="button" className="text-button" onClick={() => { setGenerated(plan); setStep(5); }}><strong>{plan.courseName || plan.title}</strong></button>
+                            <small>{plan.status} · {(plan.lessons || []).length} lessons</small>
+                          </div>
                         ))}
                       </div>
-                    </div>
-
-                    <label className="field full-span custom-box">
-                      <span>Custom Instructions</span>
-                      <textarea rows={5} value={form.customInstructions} onChange={(e) => updateField('customInstructions', e.target.value)} />
-                    </label>
-                  </>
-                )}
-
-                {step === 5 && (
-                  <>
-                    <div className="section-title-row"><h2>Generate</h2></div>
-                    {isGenerating ? (
-                      <div className="generation-screen">
-                        <div className="loader-ring" />
-                        <h3>Creating your lesson plan...</h3>
-                        <div className="generation-list">
-                          <span className="done">✓ Understanding course structure</span>
-                          <span className="done">✓ Organizing topics</span>
-                          <span className="done">✓ Calculating teaching sessions</span>
-                          <span className="current">● Creating learning objectives</span>
-                          <span className="pending">● Designing activities</span>
-                          <span className="pending">● Building schedule</span>
-                        </div>
-                      </div>
                     ) : (
-                      <div className="generate-summary">
-                        {errors.general ? <Notice tone={/success/i.test(errors.general) ? 'success' : 'error'} message={errors.general} /> : null}
-                        {!generated ? (
-                          <div className="summary-box">
-                            <p>Review your inputs and click generate to produce a complete lesson plan.</p>
-                            <button className="primary-button" onClick={generateLessonPlan}>Generate Lesson Plan</button>
-                          </div>
-                        ) : (
-                          <div className="plan-result">
-                            <div className="plan-header-row">
-                              <div>
-                                <div className="eyebrow">Course overview</div>
-                                <h3>{generated.courseName}</h3>
-                                <small>{generated.courseCode} · {form.semester}</small>
-                              </div>
-                              <div className="plan-actions">
-                                <button className="primary-button" onClick={savePlan}>Save</button>
-                                <button className="secondary-button" onClick={() => (generated?.id ? downloadLessonPlanPdf(generated.id) : Promise.reject(new Error('Save the lesson plan before exporting.'))).catch((error) => setErrors({ general: error.message }))}>Export PDF</button>
-                                <button className="secondary-button" onClick={() => savePlan('draft')}>Save draft</button>
-                                <button className="secondary-button" onClick={printPlan}>Print</button>
-                              </div>
-                            </div>
-
-                            {generated.warnings?.length ? <div className="warning-box">{generated.warnings[0]}</div> : null}
-
-                            <div className="week-accordion">
-                              {Object.entries(groupedLessons).map(([weekKey, lessons]) => (
-                                <div key={weekKey} className="week-card">
-                                  <div className="week-header">
-                                    <div>
-                                      <span className="week-badge">WEEK {weekKey}</span>
-                                      <div className="week-meta">{lessons[0]?.lessonDate || 'Schedule pending'} · {lessons.length} lessons</div>
-                                    </div>
-                                    <button className="pill-button" onClick={() => setOpenWeeks((current) => ({ ...current, [weekKey]: !current[weekKey] }))}>{openWeeks[weekKey] ? 'Collapse' : 'Expand'} <ChevronDown size={14} className={openWeeks[weekKey] ? 'chevron-up' : ''} /></button>
-                                  </div>
-                                  {openWeeks[weekKey] && <div className="week-body">
-                                    {lessons.map((lesson, idx) => {
-                                      const lessonIndex = (generated.lessons || []).findIndex((item) => item === lesson);
-                                      return (
-                                      <div key={`${lesson.lessonDate}-${idx}-${lesson.topic}`} className="lesson-block">
-                                        <div className="lesson-block-header">
-                                          <div>
-                                            <strong>{lesson.topic}</strong>
-                                            <span>{lesson.subtopic}</span>
-                                          </div>
-                                          <div className="lesson-block-actions">
-                                            <button className="small-link" onClick={() => regenerateLesson(lesson, 'Make this lesson more practical.')}>Regenerate</button>
-                                            <button className="small-link" onClick={() => setEditingLesson({
-                                              index: lessonIndex,
-                                              draft: {
-                                                ...lesson,
-                                                learningObjectivesText: listFieldToText(lesson.learningObjectives),
-                                                learningOutcomesText: listFieldToText(lesson.learningOutcomes),
-                                                teacherActivitiesText: listFieldToText(lesson.teacherActivities),
-                                                studentActivitiesText: listFieldToText(lesson.studentActivities),
-                                                learningResourcesText: listFieldToText(lesson.learningResources),
-                                              },
-                                            })}>Edit</button>
-                                            <button className="small-link" onClick={() => duplicateLessonAt(lessonIndex)}>Duplicate</button>
-                                          </div>
-                                        </div>
-                                        <div className="lesson-grid">
-                                          <div><label>Objectives</label><ul>{(lesson.learningObjectives || []).map((o) => <li key={o}>{o}</li>)}</ul></div>
-                                          <div><label>Outcomes</label><ul>{(lesson.learningOutcomes || []).map((o) => <li key={o}>{o}</li>)}</ul></div>
-                                          <div><label>Teacher activities</label><ul>{(lesson.teacherActivities || []).map((a) => <li key={a}>{a}</li>)}</ul></div>
-                                          <div><label>Student activities</label><ul>{(lesson.studentActivities || []).map((a) => <li key={a}>{a}</li>)}</ul></div>
-                                          <div><label>Resources</label><ul>{(lesson.learningResources || []).map((r) => <li key={r}>{r}</li>)}</ul></div>
-                                          <div><label>Assessment</label><p>{lesson.assessmentMethod}</p></div>
-                                        </div>
-                                      </div>
-                                    );})}
-                                  </div>}
-                                </div>
-                              ))}
-                            </div>
-                            {editingLesson && (
-                              <div className="admin-dialog-backdrop" role="presentation">
-                                <form className="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-lesson-title" onSubmit={applyLessonEdit}>
-                                  <h2 id="edit-lesson-title">Edit lesson</h2>
-                                  <label className="field"><span>Topic</span><input value={editingLesson.draft.topic || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, topic: event.target.value } }))} /></label>
-                                  <label className="field"><span>Subtopic</span><input value={editingLesson.draft.subtopic || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, subtopic: event.target.value } }))} /></label>
-                                  <label className="field"><span>Objectives (one per line)</span><textarea rows={3} value={editingLesson.draft.learningObjectivesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningObjectivesText: event.target.value } }))} /></label>
-                                  <label className="field"><span>Outcomes (one per line)</span><textarea rows={3} value={editingLesson.draft.learningOutcomesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningOutcomesText: event.target.value } }))} /></label>
-                                  <label className="field"><span>Teacher activities (one per line)</span><textarea rows={3} value={editingLesson.draft.teacherActivitiesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, teacherActivitiesText: event.target.value } }))} /></label>
-                                  <label className="field"><span>Student activities (one per line)</span><textarea rows={3} value={editingLesson.draft.studentActivitiesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, studentActivitiesText: event.target.value } }))} /></label>
-                                  <label className="field"><span>Resources (one per line)</span><textarea rows={2} value={editingLesson.draft.learningResourcesText || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, learningResourcesText: event.target.value } }))} /></label>
-                                  <label className="field"><span>Assessment</span><textarea rows={2} value={editingLesson.draft.assessmentMethod || ''} onChange={(event) => setEditingLesson((current) => ({ ...current, draft: { ...current.draft, assessmentMethod: event.target.value } }))} /></label>
-                                  <div className="admin-actions">
-                                    <button type="submit" className="primary">Save lesson</button>
-                                    <button type="button" onClick={() => setEditingLesson(null)}>Cancel</button>
-                                  </div>
-                                </form>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      <p className="muted-text">No saved lesson plans yet.</p>
                     )}
-                  </>
-                )}
+                  </div>
+                </aside>
               </div>
-
-              <aside className="side-summary">
-                <div className="panel-card summary-card">
-                  <h3>Course overview</h3>
-                  <ul>
-                    <li><span>Course</span><strong>{form.courseName || 'Not entered'}</strong></li>
-                    <li><span>Code</span><strong>{form.courseCode || 'Not entered'}</strong></li>
-                    <li><span>Programme</span><strong>{form.programme || 'Not entered'}</strong></li>
-                    <li><span>Duration</span><strong>{form.lessonDuration || 'Not entered'}</strong></li>
-                  </ul>
-                </div>
-
-                <div className="panel-card summary-card">
-                  <h3>Saved Plans</h3>
-                  <input value={planQuery} onChange={(event) => setPlanQuery(event.target.value)} placeholder="Search saved plans" />
-                  {savedPlans.filter((plan) => `${plan.courseName || ''} ${plan.title || ''} ${plan.courseCode || ''}`.toLowerCase().includes(planQuery.trim().toLowerCase())).length ? (
-                    <div className="saved-list">
-                      {savedPlans.filter((plan) => `${plan.courseName || ''} ${plan.title || ''} ${plan.courseCode || ''}`.toLowerCase().includes(planQuery.trim().toLowerCase())).map((plan) => (
-                        <div key={plan.id} className="saved-item">
-                          <button type="button" className="text-button" onClick={() => { setGenerated(plan); setStep(5); }}><strong>{plan.courseName || plan.title}</strong></button>
-                          <span>{plan.courseCode}</span>
-                          <small>{plan.status} · {(plan.lessons || []).length} lessons</small>
-                          <button type="button" className="secondary-button" onClick={() => downloadLessonPlanPdf(plan.id).catch((error) => setDataError(error.message))}>PDF</button>
-                          <button type="button" className="secondary-button" onClick={async () => {
-                            const copy = await lessonPlanApi.create({ ...plan, title: `${plan.title || plan.courseName} copy`, status: 'draft' });
-                            setSavedPlans((current) => [copy, ...current]);
-                          }}>Duplicate</button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="muted-text">No saved lesson plans yet.</p>
-                  )}
-                </div>
-              </aside>
-            </div>
-
-            <div className="footer-actions-row">
-              {step > 1 && <button className="secondary-button" onClick={prevStep}>Previous</button>}
-              {step < 5 && <button className="primary-button" onClick={nextStep}>Next</button>}
-              {step === 5 && !isGenerating && !generated && (
-                <button className="primary-button" onClick={generateLessonPlan}>Generate Lesson Plan</button>
-              )}
-            </div>
+            ) : null}
           </section>
         )}
 
@@ -2695,24 +3366,7 @@ function App() {
                 <div className="footer-actions-row">
                   <button className="secondary-button" onClick={() => navigateTo('assessments')}>Generate assessment</button>
                   <button className="secondary-button" onClick={() => navigateTo('create-plan')}>Generate plan</button>
-                  <button className="secondary-button danger" onClick={async () => {
-                    const name = item.fileName || item.courseName || 'this file';
-                    if (!window.confirm(`Delete "${name}" permanently?\n\nThis removes the file from your library and cannot be undone.`)) return;
-                    try {
-                      await resourceApi.remove(item.id);
-                      setResources((current) => current.filter((entry) => entry.id !== item.id));
-                      setForm((previous) => {
-                        const nextIds = (previous.sourceDocumentIds || []).filter((id) => id !== item.id);
-                        return {
-                          ...previous,
-                          sourceDocumentIds: nextIds,
-                          sourceDocumentId: nextIds[0] || '',
-                        };
-                      });
-                    } catch (error) {
-                      setErrors({ general: error.message || `Could not delete ${name}.` });
-                    }
-                  }}>Delete</button>
+                  <button className="secondary-button danger" onClick={() => requestDeleteFile(item)}>Delete</button>
                 </div>
               </article>
             )) : <div className="panel-card empty-course"><h2>No resources yet</h2><p>Upload a TXT, PDF, DOC, or DOCX outline.</p></div>}
@@ -2788,6 +3442,19 @@ function App() {
         )}
         {errors.general === 'Profile updated successfully.' && <div className="success-toast"><CheckCircle2 size={16} /> Profile updated successfully.</div>}
         {logoutOpen && <div className="dialog-backdrop" role="presentation"><div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="logout-title"><div className="dialog-icon"><LogOut size={19} /></div><h2 id="logout-title">Are you sure you want to log out?</h2><p>Your session will end and you will return to the sign-in screen.</p><div className="dialog-actions"><button className="secondary-button" onClick={() => setLogoutOpen(false)}>Cancel</button><button className="logout-confirm" onClick={confirmLogout}>Log Out</button></div></div></div>}
+        {fileDeleteTarget ? (
+          <div className="dialog-backdrop" role="presentation">
+            <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="file-delete-title">
+              <div className="dialog-icon"><Trash2 size={19} /></div>
+              <h2 id="file-delete-title">Do you want to delete this file?</h2>
+              <p>{fileDeleteTarget.fileName || fileDeleteTarget.originalName || 'Selected file'}</p>
+              <div className="dialog-actions">
+                <button type="button" className="secondary-button" onClick={() => setFileDeleteTarget(null)}>Cancel</button>
+                <button type="button" className="logout-confirm" onClick={() => void confirmDeleteFile()}>Delete</button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         {welcomeOpen && !mustChangePassword && (
           <div className="dialog-backdrop welcome-backdrop" role="presentation">
             <div className="confirm-dialog welcome-dialog" role="dialog" aria-modal="true" aria-labelledby="welcome-title">

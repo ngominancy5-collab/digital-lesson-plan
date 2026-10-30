@@ -100,7 +100,12 @@ export async function sendMail({ to, subject, text, html }) {
   const { url, headers, body } = buildEmailRequest({ to, subject, text, html });
   let response;
   try {
-    response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(12000),
+    });
   } catch {
     const error = new Error('Email delivery failed.');
     error.code = 'EMAIL_NETWORK';

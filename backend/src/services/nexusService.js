@@ -223,6 +223,7 @@ export async function sendNotification({ template, to, data }) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000),
     });
   } catch (error) {
     console.error('Nexus notification request failed.', error.code || error.message || 'NETWORK');
@@ -268,9 +269,12 @@ export async function sendNotification({ template, to, data }) {
   };
   console.info('Nexus accepted notification.', accepted.requestId || 'queued');
 
-  // Nexus returns 202 before rendering. Poll briefly so missing templates
-  // fall through to the HTTP email provider instead of a silent inbox miss.
-  const delivery = await waitForNexusDelivery(accepted.requestId || accepted.id);
+  // Short poll only — a long wait made admin Approve feel frozen. Queued/pending
+  // after accept still counts as "accepted for sending".
+  const delivery = await waitForNexusDelivery(accepted.requestId || accepted.id, {
+    attempts: 2,
+    delayMs: 250,
+  });
   if (delivery && isFailedDelivery(delivery.status)) {
     console.error(
       'Nexus delivery failed after accept.',
@@ -331,6 +335,7 @@ export async function getNotificationStatus(requestId) {
   }
   const response = await fetch(`${config.baseUrl}/notifications/${encodeURIComponent(requestId)}`, {
     headers: { Authorization: `Bearer ${config.apiKey}` },
+    signal: AbortSignal.timeout(8000),
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {

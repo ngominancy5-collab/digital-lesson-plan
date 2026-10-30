@@ -23,6 +23,14 @@ export function findOwned(userId, id) {
   return prisma.document.findFirst({ where: { id, userId } });
 }
 
+export function findOwnedMany(userId, ids = []) {
+  const unique = [...new Set((ids || []).map((id) => String(id || '').trim()).filter(Boolean))];
+  if (!unique.length) return Promise.resolve([]);
+  return prisma.document.findMany({
+    where: { userId, id: { in: unique } },
+  });
+}
+
 export function create(data) {
   return prisma.document.create({ data });
 }

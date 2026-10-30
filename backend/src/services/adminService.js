@@ -125,6 +125,23 @@ async function sendCredentialEmail(user, temporary, username) {
   });
 }
 
+function queueCredentialEmail(user, temporary, username, { onAccepted, onFailed } = {}) {
+  const run = () => sendCredentialEmail(user, temporary, username)
+    .then(async (delivery) => {
+      if (onAccepted) await onAccepted(delivery);
+      return delivery;
+    })
+    .catch(async (error) => {
+      if (onFailed) await onFailed(error);
+      throw error;
+    });
+
+  // Keep tests deterministic; production returns before the email provider finishes.
+  if (captureOnly()) return run();
+  void run().catch(() => {});
+  return Promise.resolve(null);
+}
+
 export async function approveAccount(userId, input = {}, actorId) {
   if (!actorId) throw new AppError('Administrator access is required.', 403);
   if (actorId === userId) throw new AppError('You cannot approve your own account.', 403);
@@ -172,18 +189,6 @@ export async function approveAccount(userId, input = {}, actorId) {
     ? preferredUsername
     : user.email;
   const passwordHash = await hashPassword(temporary);
-  const previous = {
-    username: user.username,
-    passwordHash: user.passwordHash,
-    role: user.role,
-    accountStatus: user.accountStatus,
-    emailVerified: user.emailVerified,
-    mustChangePassword: user.mustChangePassword,
-    roleConfirmed: user.roleConfirmed,
-    credentialEmailStatus: user.credentialEmailStatus,
-    institution: user.profile?.institution || '',
-    department: user.profile?.department || '',
-  };
 
   const approved = await prisma.$transaction(async (tx) => {
     const updated = await tx.user.update({
@@ -232,57 +237,55 @@ export async function approveAccount(userId, input = {}, actorId) {
     return updated;
   }, { maxWait: 15000, timeout: 30000 });
 
-  try {
-    await sendCredentialEmail(approved, temporary, username);
-  } catch (error) {
-    await prisma.notification.deleteMany({ where: { userId: user.id, type: 'role-confirmation', isRead: false } }).catch(() => {});
-    await userRepository.updateWithProfile(user.id, {
-      username: previous.username,
-      passwordHash: await unknownPasswordHash(),
-      role: previous.role,
-      accountStatus: previous.accountStatus,
-      emailVerified: previous.emailVerified,
-      mustChangePassword: previous.mustChangePassword,
-      roleConfirmed: previous.roleConfirmed,
-      approvedAt: null,
-      approvedById: null,
-      credentialEmailStatus: 'failed',
-      profile: {
-        upsert: {
-          create: {
-            institution: previous.institution,
-            department: previous.department,
-            specialization: '',
-            educationLevel: '',
-            phone: '',
-            preferences: {},
-          },
-          update: {
-            institution: previous.institution,
-            department: previous.department,
-          },
-        },
-      },
-    }).catch(() => {});
-    console.error('Login credential email failed.', error.status || error.code || 'failed');
-    throw new AppError('The account was not approved because the login email was not accepted. You can retry approval.', 502);
-  }
-
-  await userRepository.updateWithProfile(approved.id, {
-    credentialEmailStatus: 'accepted',
-    credentialEmailSentAt: new Date(),
-  }).catch(() => {});
+  // Return as soon as the account is approved. Email runs in the background so
+  // the admin UI is not blocked for 10–15s waiting on Nexus/Mailjet.
+  await queueCredentialEmail(approved, temporary, username, {
+    onAccepted: async () => {
+      await userRepository.updateWithProfile(approved.id, {
+        credentialEmailStatus: 'accepted',
+        credentialEmailSentAt: new Date(),
+      }).catch(() => {});
+      await recordActivity({
+        userId: approved.id,
+        actorRole: assignedRole,
+        type: 'admin.approve_email',
+        summary: 'Login email accepted for delivery',
+        targetType: 'user',
+        targetId: approved.id,
+        meta: { approvedById: actorId, credentialsSent: true },
+      }).catch(() => {});
+    },
+    onFailed: async (error) => {
+      console.error('Login credential email failed after approval.', error.status || error.code || 'failed');
+      await userRepository.updateWithProfile(approved.id, {
+        credentialEmailStatus: 'failed',
+      }).catch(() => {});
+      await recordActivity({
+        userId: approved.id,
+        actorRole: assignedRole,
+        type: 'admin.approve_email',
+        summary: 'Login email failed after approval',
+        targetType: 'user',
+        targetId: approved.id,
+        meta: { approvedById: actorId, credentialsSent: false },
+      }).catch(() => {});
+    },
+  });
 
   await recordActivity({
     userId: approved.id,
     actorRole: assignedRole,
     type: 'admin.approve',
-    summary: assignedRole === 'admin' ? 'Account approved and login email sent' : `Assigned ${roleLabel} and sent login email`,
+    summary: assignedRole === 'admin' ? 'Account approved; login email queued' : `Assigned ${roleLabel}; login email queued`,
     targetType: 'user',
     targetId: approved.id,
-    meta: { approvedById: actorId },
+    meta: { approvedById: actorId, credentialsQueued: true },
   });
-  return mapUser(await userRepository.findByIdWithProfile(approved.id));
+
+  const mapped = mapUser(await userRepository.findByIdWithProfile(approved.id));
+  mapped.credentialsSent = captureOnly() ? true : null;
+  mapped.credentialsQueued = true;
+  return mapped;
 }
 
 export async function resendCredentialEmail(userId, actorId) {
@@ -302,33 +305,37 @@ export async function resendCredentialEmail(userId, actorId) {
   const temporary = temporaryPassword();
   const username = String(user.username || user.fullName || user.email).trim();
   const passwordHash = await hashPassword(temporary);
-  await userRepository.updateWithProfile(user.id, {
+  const updated = await userRepository.updateWithProfile(user.id, {
     passwordHash,
     credentialEmailStatus: 'pending',
   });
 
-  try {
-    await sendCredentialEmail(user, temporary, username);
-  } catch (error) {
-    await userRepository.updateWithProfile(user.id, { credentialEmailStatus: 'failed' }).catch(() => {});
-    console.error('Credential email retry failed.', error.status || error.code || 'failed');
-    throw new AppError('The login email was not accepted. You can retry sending credentials.', 502);
-  }
-
-  const updated = await userRepository.updateWithProfile(user.id, {
-    credentialEmailStatus: 'accepted',
-    credentialEmailSentAt: new Date(),
+  await queueCredentialEmail(user, temporary, username, {
+    onAccepted: async () => {
+      await userRepository.updateWithProfile(user.id, {
+        credentialEmailStatus: 'accepted',
+        credentialEmailSentAt: new Date(),
+      }).catch(() => {});
+    },
+    onFailed: async (error) => {
+      console.error('Credential email retry failed.', error.status || error.code || 'failed');
+      await userRepository.updateWithProfile(user.id, { credentialEmailStatus: 'failed' }).catch(() => {});
+    },
   });
+
   await recordActivity({
     userId: user.id,
     actorRole: user.role,
     type: 'admin.resend_credentials',
-    summary: 'Login credentials resent',
+    summary: 'Login credentials resend queued',
     targetType: 'user',
     targetId: user.id,
-    meta: { approvedById: actorId },
+    meta: { approvedById: actorId, credentialsQueued: true },
   });
-  return mapUser(updated);
+  const mapped = mapUser(updated);
+  mapped.credentialsQueued = true;
+  mapped.credentialsSent = captureOnly() ? true : null;
+  return mapped;
 }
 
 async function setStatus(userId, accountStatus, type) {

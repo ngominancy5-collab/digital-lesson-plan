@@ -47,10 +47,14 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    const message = error.response?.data?.message
-      || error.response?.data?.error
-      || error.message
-      || 'Request failed.';
+    const timedOut = error.code === 'ECONNABORTED'
+      || /timeout/i.test(String(error.message || ''));
+    const message = timedOut
+      ? 'Generation is taking too long. Try fewer files, or wait a moment and try again.'
+      : (error.response?.data?.message
+        || error.response?.data?.error
+        || error.message
+        || 'Request failed.');
     const err = new Error(message);
     err.status = error.response?.status;
     err.detail = error.response?.data?.detail
@@ -131,8 +135,8 @@ export const lessonPlanApi = {
   create: (payload) => api.post('/lesson-plans', payload).then((r) => r.data.plan),
   update: (id, payload) => api.put(`/lesson-plans/${id}`, payload).then((r) => r.data.plan),
   remove: (id) => api.delete(`/lesson-plans/${id}`).then((r) => r.data),
-  generate: (payload) => api.post('/lesson-plans/generate', payload).then((r) => r.data),
-  regenerate: (payload) => api.post('/lesson-plans/regenerate', payload).then((r) => r.data),
+  generate: (payload) => api.post('/lesson-plans/generate', payload, { timeout: 90000 }).then((r) => r.data),
+  regenerate: (payload) => api.post('/lesson-plans/regenerate', payload, { timeout: 60000 }).then((r) => r.data),
 };
 
 export const assessmentApi = {
@@ -230,15 +234,20 @@ export const settingsApi = {
 };
 
 export const resourceApi = {
-  list: () => api.get('/resources').then((r) => r.data.resources || []),
-  get: (id) => api.get(`/resources/${id}`).then((r) => r.data.resource),
+  list: () => api.get('/resources').then((r) => {
+    const data = r.data;
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.resources)) return data.resources;
+    return [];
+  }),
+  get: (id) => api.get(`/resources/${id}`).then((r) => r.data.resource || r.data),
   upload: (file, details = {}) => {
     const form = new FormData();
     form.append('file', file);
     if (details.courseName) form.append('courseName', details.courseName);
     if (details.courseCode) form.append('courseCode', details.courseCode);
     // Let the browser set multipart boundary — do not force Content-Type.
-    return api.post('/resources/upload', form).then((r) => r.data.resource);
+    return api.post('/resources/upload', form).then((r) => r.data.resource || r.data);
   },
   remove: (id) => api.delete(`/resources/${id}`).then((r) => r.data),
 };

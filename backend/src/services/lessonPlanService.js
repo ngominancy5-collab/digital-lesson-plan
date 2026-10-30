@@ -2,6 +2,7 @@ import { AppError } from '../utils/errors.js';
 import { mapLessonPlan } from '../utils/mappers.js';
 import { generateLessonPlan as aiGenerateLessonPlan, regenerateLesson } from './ai/lessonPlanAi.js';
 import { completeJson } from './ai/aiClient.js';
+import { deriveTopicsFromMaterial, packSourceMaterial } from './ai/sourceMaterialPacker.js';
 import * as lessonPlanRepository from '../repositories/lessonPlanRepository.js';
 import * as documentRepository from '../repositories/documentRepository.js';
 import { recordActivity } from './activityService.js';
@@ -111,19 +112,47 @@ export async function generateAndSaveLessonPlan(userId, payload) {
     ...(Array.isArray(payload.documentIds) ? payload.documentIds : []),
     payload.documentId,
   ].filter(Boolean))];
-  const parts = notes ? [notes] : [];
-  for (const documentId of documentIds) {
-    const doc = await documentRepository.findOwned(userId, documentId);
-    if (!doc) throw new AppError('Source document not found.', 404);
-    const extracted = String(doc.extractedText || '').trim();
-    if (!extracted) throw new AppError(`No readable text could be extracted from ${doc.originalName || 'that file'}.`, 422);
-    parts.push(`Source file: ${doc.originalName || 'Uploaded file'}\n${extracted}`);
+
+  const docs = documentIds.length
+    ? await documentRepository.findOwnedMany(userId, documentIds)
+    : [];
+  if (documentIds.length && docs.length !== documentIds.length) {
+    throw new AppError('Source document not found.', 404);
   }
-  const materialText = parts.join('\n\n');
-  const topics = (payload.topics || []).map((topic) => String(topic || '').trim()).filter(Boolean);
+
+  const byId = new Map(docs.map((doc) => [doc.id, doc]));
+  const files = [];
+  for (const documentId of documentIds) {
+    const doc = byId.get(documentId);
+    const extracted = String(doc?.extractedText || '').trim();
+    if (!extracted) {
+      throw new AppError(`No readable text could be extracted from ${doc?.originalName || 'that file'}.`, 422);
+    }
+    files.push({
+      id: doc.id,
+      name: doc.originalName || 'Uploaded file',
+      text: extracted,
+    });
+  }
+
+  const topicHints = (payload.topics || []).map((topic) => String(topic || '').trim()).filter(Boolean);
+  const packed = packSourceMaterial(files, {
+    topics: topicHints,
+    notes,
+    // Keep prompt compact so Gemini can finish a full plan in one fast call.
+    totalBudget: files.length > 3 ? 6500 : files.length > 1 ? 7000 : 7500,
+  });
+  const materialText = packed.materialText;
+  let topics = topicHints;
+  if (!topics.length) {
+    topics = deriveTopicsFromMaterial(materialText);
+  }
   if (!materialText && !topics.length) {
     throw new AppError('Add lesson notes, topics, or an uploaded file before generating a lesson plan.', 422);
   }
+
+  const weeks = Math.max(1, Math.min(Number(payload.numberOfWeeks) || 4, 8));
+  const lessonsPerWeek = Math.max(1, Math.min(Number(payload.lessonsPerWeek) || 2, 4));
 
   let result;
   try {
@@ -142,8 +171,8 @@ export async function generateAndSaveLessonPlan(userId, payload) {
       schedule: {
         startDate: payload.startDate,
         endDate: payload.endDate,
-        numberOfWeeks: payload.numberOfWeeks,
-        lessonsPerWeek: payload.lessonsPerWeek,
+        numberOfWeeks: weeks,
+        lessonsPerWeek,
         lessonDuration: payload.lessonDuration,
         holidays: payload.holidays || [],
       },
@@ -171,7 +200,7 @@ export async function generateAndSaveLessonPlan(userId, payload) {
     userId,
     title: result.courseName || payload.courseName || 'Generated lesson plan',
     subject: payload.courseName || '',
-    topic: first.topic || (payload.topics || [])[0] || '',
+    topic: first.topic || topics[0] || '',
     gradeLevel: payload.level || '',
     duration: payload.lessonDuration || first.duration || '',
     learningObjectives: first.learningObjectives || [],
@@ -182,14 +211,21 @@ export async function generateAndSaveLessonPlan(userId, payload) {
     assessmentMethod: first.assessmentMethod || '',
     conclusion: first.notes || '',
     difficulty: normalizeDifficulty(payload.difficulty),
-    sourceDocumentId: payload.documentId || null,
+    sourceDocumentId: payload.documentId || documentIds[0] || null,
     aiGenerated: true,
     status: 'Generated',
     courseName: result.courseName || payload.courseName,
     courseCode: result.courseCode || payload.courseCode,
     lessons: result.lessons || [],
     warnings: result.warnings || [],
-    meta: { schedule: payload },
+    meta: {
+      schedule: payload,
+      sourcePack: {
+        fileCount: packed.fileCount,
+        usedChars: packed.usedChars,
+        fromCache: packed.fromCache,
+      },
+    },
   });
   await recordActivity({
     userId,
@@ -197,7 +233,7 @@ export async function generateAndSaveLessonPlan(userId, payload) {
     summary: 'AI lesson plan generated',
     targetType: 'lessonPlan',
     targetId: plan.id,
-    meta: { title: plan.title },
+    meta: { title: plan.title, usedChars: packed.usedChars, fromCache: packed.fromCache },
   });
   return mapLessonPlan(plan);
 }

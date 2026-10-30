@@ -13,12 +13,22 @@ export const create = asyncHandler(async (req, res) => {
 
 export const approve = asyncHandler(async (req, res) => {
   const user = await adminService.approveAccount(req.params.id, req.body || {}, req.userId);
-  res.json({ message: 'Account approved. Login credentials were accepted for email delivery.', user });
+  res.json({
+    message: 'Account approved. Login email is being sent now.',
+    user,
+    credentialsQueued: true,
+    credentialsSent: null,
+  });
 });
 
 export const resendCredentials = asyncHandler(async (req, res) => {
   const user = await adminService.resendCredentialEmail(req.params.id, req.userId);
-  res.json({ message: 'Login credentials were accepted for email delivery again.', user });
+  res.json({
+    message: 'Login email is being sent again.',
+    user,
+    credentialsQueued: true,
+    credentialsSent: null,
+  });
 });
 
 export const reject = asyncHandler(async (req, res) => {

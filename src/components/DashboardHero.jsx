@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Building2, ShieldCheck, Sun, UserRound } from 'lucide-react';
+import { Building2, Sun } from 'lucide-react';
 import TypedGreeting from './TypedGreeting.jsx';
 import { apiUrl, siteImageApi } from '../services/api.js';
 
@@ -18,11 +18,9 @@ export default function DashboardHero({
   workspaceLabel,
   workspaceHint = 'Your workspace',
   roleLabel,
-  roleHint = 'Your role',
   variant = 'educator',
   aside = null,
 }) {
-  const RoleIcon = variant === 'admin' ? ShieldCheck : UserRound;
   const [slides, setSlides] = useState([]);
   const [slideIndex, setSlideIndex] = useState(0);
 
@@ -65,27 +63,22 @@ export default function DashboardHero({
       />
       <div className="pw-hero-shade" aria-hidden="true" />
       <div className="pw-hero-copy">
-        <TypedGreeting name={userName} className="pw-hero-greeting" />
+        <TypedGreeting name={userName} role={roleLabel} className="pw-hero-greeting" />
         <p className="pw-hero-sub">
           <Sun size={16} className="pw-hero-sun" aria-hidden="true" />
           <span>{subtitle}</span>
         </p>
-        <div className="pw-hero-meta">
-          <div className="pw-hero-pill">
-            <span className="pw-hero-pill-icon" aria-hidden="true"><Building2 size={15} /></span>
-            <span>
-              <strong>{workspaceLabel}</strong>
-              <small>{workspaceHint}</small>
-            </span>
+        {workspaceLabel ? (
+          <div className="pw-hero-meta">
+            <div className="pw-hero-pill">
+              <span className="pw-hero-pill-icon" aria-hidden="true"><Building2 size={15} /></span>
+              <span>
+                <strong>{workspaceLabel}</strong>
+                <small>{workspaceHint}</small>
+              </span>
+            </div>
           </div>
-          <div className="pw-hero-pill">
-            <span className="pw-hero-pill-icon" aria-hidden="true"><RoleIcon size={15} /></span>
-            <span>
-              <strong>{roleLabel}</strong>
-              <small>{roleHint}</small>
-            </span>
-          </div>
-        </div>
+        ) : null}
       </div>
       {aside ? <div className="pw-hero-aside">{aside}</div> : null}
     </section>

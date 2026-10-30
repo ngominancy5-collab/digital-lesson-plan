@@ -149,6 +149,7 @@ async function ocrWeakPages(parser, pageNumbers) {
   const worker = await createWorker('eng');
   const found = {};
   try {
+    // One worker is reused for all weak pages (init once). Generate never re-OCRs — text is stored on Document.
     for (const page of shots.pages || []) {
       if (!page?.data) continue;
       const result = await worker.recognize(Buffer.from(page.data));

@@ -3,43 +3,46 @@ import { completeJson } from './aiClient.js';
 
 dotenv.config();
 
+function compactCourse(course = {}) {
+  return [
+    course.courseName && `Name: ${course.courseName}`,
+    course.courseCode && `Code: ${course.courseCode}`,
+    course.programme && `Programme: ${course.programme}`,
+    course.level && `Level: ${course.level}`,
+    course.department && `Department: ${course.department}`,
+    course.lecturer && `Lecturer: ${course.lecturer}`,
+    course.semester && `Semester: ${course.semester}`,
+    course.academicYear && `Year: ${course.academicYear}`,
+  ].filter(Boolean).join(' | ');
+}
+
 function buildPrompt({ course, topics, schedule, preferences, customInstructions, difficulty, sourceMaterial }) {
-  const topicList = topics.map((topic, index) => `${index + 1}. ${topic}`).join('\n');
+  const weeks = Math.max(1, Number(schedule.numberOfWeeks) || 4);
+  const lessonsPerWeek = Math.max(1, Number(schedule.lessonsPerWeek) || 2);
+  const lessonCount = weeks * lessonsPerWeek;
+  const topicList = (topics || []).length
+    ? topics.map((topic, index) => `${index + 1}. ${topic}`).join('\n')
+    : 'Derive topics only from the source materials.';
   const holidays = (schedule.holidays || []).map((holiday) => holiday.date || holiday).join(', ') || 'None';
+  const methods = (preferences.teachingMethods || []).join(', ') || 'Lecture, discussion, practice';
+  const activities = (preferences.learningActivities || []).join(', ') || 'Guided practice';
 
-  return `You are a university lesson planner. Generate a structured lesson plan.
+  return `Create one complete teaching plan as JSON only.
 
-Course information:
-- Course Name: ${course.courseName}
-- Course Code: ${course.courseCode}
-- Programme: ${course.programme}
-- Level: ${course.level}
-- Department: ${course.department}
-- Lecturer: ${course.lecturer}
-- Semester: ${course.semester}
-- Academic Year: ${course.academicYear}
+Course: ${compactCourse(course) || 'Not specified'}
+Difficulty: ${difficulty || 'Intermediate'}
+Schedule: ${weeks} weeks, ${lessonsPerWeek} lessons/week (= ${lessonCount} lessons), duration ${schedule.lessonDuration || '60 minutes'}, start ${schedule.startDate || 'TBD'}, end ${schedule.endDate || 'TBD'}, holidays ${holidays}
+Methods: ${methods}
+Activities: ${activities}
+Extra instructions: ${customInstructions || 'None'}
 
-Course topics:
+Topics to cover:
 ${topicList}
 
-Schedule:
-- Start Date: ${schedule.startDate}
-- End Date: ${schedule.endDate}
-- Weeks: ${schedule.numberOfWeeks}
-- Lessons per Week: ${schedule.lessonsPerWeek}
-- Lesson Duration: ${schedule.lessonDuration}
-- Holidays/Blocked Days: ${holidays}
+Source materials (use these; do not invent unsupported facts):
+${sourceMaterial ? String(sourceMaterial).slice(0, 7800) : 'NONE PROVIDED'}
 
-Preferences:
-- Teaching Methods: ${(preferences.teachingMethods || []).join(', ') || 'Not specified'}
-- Learning Activities: ${(preferences.learningActivities || []).join(', ') || 'Not specified'}
-- Difficulty: ${difficulty || 'Intermediate'}
-- Custom Instructions: ${customInstructions || 'None'}
-
-Source materials supplied by the teacher:
-${sourceMaterial ? String(sourceMaterial).slice(0, 12000) : 'NONE PROVIDED'}
-
-Return valid JSON with this exact structure:
+Return JSON:
 {
   "courseName": "string",
   "courseCode": "string",
@@ -49,7 +52,7 @@ Return valid JSON with this exact structure:
       "lessonDate": "YYYY-MM-DD",
       "topic": "string",
       "subtopic": "string",
-      "duration": "2 hours",
+      "duration": "60 minutes",
       "learningObjectives": ["string"],
       "learningOutcomes": ["string"],
       "introduction": "string",
@@ -67,22 +70,38 @@ Return valid JSON with this exact structure:
 }
 
 Rules:
-- Use only the course fields, topics, notes, and source materials supplied above.
-- Do not invent lesson content, learning objectives, activities, examples, or facts that those materials do not support.
-- If a section cannot be filled, write "Not provided in the source materials" and add a warning that names what is missing.
-- Include homework only when the materials mention follow-up work.
-- Do not add topics the teacher did not list and that do not appear in the source materials.
-- Organize the supplied topics across the available teaching periods.
-- Respect blocked dates and avoid scheduling on holidays.
-- If required session count exceeds availability, include a warning string in warnings.
-- Do not include markdown fences or comments.
+- Exactly ${lessonCount} lessons, one AI response, no markdown.
+- Base every lesson on the source materials/topics above.
+- Keep prose concise: intro/mainContent/notes/assessment/homework ≤ 2 short sentences each; arrays ≤ 3 short items.
+- Prefer concrete teaching content from the materials over filler.
+- If a field cannot be supported by the materials, use "Not provided in the source materials" and add a short warning.
+- Respect holidays; distribute topics across the ${lessonCount} sessions.
 `;
 }
 
 export async function generateLessonPlan(payload) {
+  const weeks = Math.max(1, Number(payload.schedule?.numberOfWeeks) || 4);
+  const lessonsPerWeek = Math.max(1, Number(payload.schedule?.lessonsPerWeek) || 2);
+  const lessonCount = weeks * lessonsPerWeek;
+  // Bound output size so the model finishes faster without dropping structure.
+  const maxOutputTokens = Math.min(8192, Math.max(2800, 900 + lessonCount * 520));
+
   const { data } = await completeJson(
-    'You are a helpful educational assistant. Create a lesson plan only from the materials the teacher supplied. Return JSON only.',
+    'You are an expert lesson planner. Return compact valid JSON only. Do not invent unsupported content.',
     buildPrompt(payload),
+    [],
+    {
+      temperature: 0.25,
+      maxOutputTokens,
+      timeout: 55000,
+      preferredModels: [
+        process.env.GEMINI_LESSON_MODEL,
+        process.env.GEMINI_MODEL,
+        'gemini-3.5-flash-lite',
+        'gemini-3.5-flash',
+        'gemini-3.8-flash',
+      ],
+    },
   );
   if (!data?.lessons?.length) {
     const error = new Error('The lesson plan could not be created from the supplied materials.');
@@ -96,14 +115,27 @@ export async function regenerateLesson(payload) {
   try {
     const { data } = await completeJson(
       'You are regenerating one lesson in an existing lesson plan. Return the lesson as JSON only.',
-      `Regenerate this lesson based on the instruction. Keep structure consistent and maintain professionalism.
+      `Regenerate this lesson based on the instruction. Keep the same fields. Keep text concise (≤2 sentences per prose field, ≤3 array items).
 
 Instruction: ${payload.instruction}
 
 Current lesson:
-${JSON.stringify(payload.lesson, null, 2)}
+${JSON.stringify(payload.lesson)}
 
-Return the full lesson object with the same fields.`,
+Return the full lesson object only.`,
+      [],
+      {
+        temperature: 0.3,
+        maxOutputTokens: 1800,
+        timeout: 40000,
+        preferredModels: [
+          process.env.GEMINI_LESSON_MODEL,
+          process.env.GEMINI_MODEL,
+          'gemini-3.5-flash-lite',
+          'gemini-3.5-flash',
+          'gemini-3.8-flash',
+        ],
+      },
     );
     if (data && (data.topic || data.learningOutcomes || data.mainContent)) return data;
     const error = new Error('The AI did not return a usable regenerated lesson.');
@@ -143,70 +175,4 @@ export function generateActivities(topic, methods) {
       `Complete a guided activity using ${methods.join(', ') || 'practical exercises'}.`,
     ],
   };
-}
-
-function fallbackLessonPlan(payload) {
-  const topics = payload.topics || [];
-  const weeks = Number(payload.schedule?.numberOfWeeks || 1);
-  const lessonsPerWeek = Number(payload.schedule?.lessonsPerWeek || 1);
-  const totalSlots = Math.max(1, weeks * lessonsPerWeek);
-  const lessonList = [];
-
-  const availableDates = buildAvailableDates(payload.schedule);
-
-  topics.forEach((topic, idx) => {
-    const slotIndex = idx % totalSlots;
-    const lessonDate = availableDates[Math.min(slotIndex, availableDates.length - 1)] || new Date().toISOString().slice(0, 10);
-
-    lessonList.push({
-      weekNumber: Math.floor(slotIndex / lessonsPerWeek) + 1,
-      lessonDate,
-      topic,
-      subtopic: topic,
-      duration: payload.schedule?.lessonDuration || '2 hours',
-      learningObjectives: generateObjectives(topic, payload.difficulty),
-      learningOutcomes: [`Students can explain ${topic} confidently.`, `Students can apply ${topic} in practice.`],
-      introduction: `This lesson introduces ${topic} in a clear and structured way.`,
-      mainContent: `The class will focus on the core concepts and practical applications of ${topic}.`,
-      teacherActivities: [`Introduce ${topic}.`, 'Model a worked example.', 'Facilitate guided discussion.'],
-      studentActivities: ['Participate in class discussion.', 'Complete guided practice.', 'Ask and answer questions.'],
-      teachingMethods: payload.preferences?.teachingMethods || ['Lecture', 'Discussion'],
-      learningResources: ['Course notes', 'Projector', 'Learning materials'],
-      assessmentMethod: 'Short in-class assessment and discussion participation.',
-      homework: `Review and practice the key points from ${topic}.`,
-      notes: 'Prepared according to the stated teaching preferences and difficulty level.',
-    });
-  });
-
-  return {
-    courseName: payload.course?.courseName || 'Course',
-    courseCode: payload.course?.courseCode || 'COURSE',
-    lessons: lessonList,
-    warnings: topics.length > totalSlots ? ['There are more topics than available teaching sessions. Consider increasing lessons per week or extending the course period.'] : [],
-  };
-}
-
-function fallbackRegeneratedLesson({ lesson, instruction }) {
-  const copied = { ...lesson };
-  copied.notes = instruction || copied.notes || 'Regenerated for improved alignment.';
-  copied.teachingMethods = [...new Set([...(copied.teachingMethods || []), 'Practical'])];
-  copied.studentActivities = [...(copied.studentActivities || []), 'Complete a targeted activity based on the teacher instruction.'];
-  return copied;
-}
-
-function buildAvailableDates(schedule) {
-  const dates = [];
-  const start = schedule?.startDate ? new Date(schedule.startDate) : new Date();
-  let cursor = new Date(start);
-  const end = schedule?.endDate ? new Date(schedule.endDate) : new Date(Date.now() + 1000 * 60 * 60 * 24 * 30 * 12);
-
-  while (cursor <= end) {
-    const day = cursor.getDay();
-    if (day !== 0 && day !== 6) {
-      dates.push(cursor.toISOString().slice(0, 10));
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return dates;
 }

@@ -47,6 +47,7 @@ export default function AssignRoleDialog({ user, onClose, onApproved }) {
 
   async function submit(event) {
     event.preventDefault();
+    if (loading) return;
     if (!role) {
       setError('Select Teacher or Lecturer.');
       return;
@@ -62,14 +63,19 @@ export default function AssignRoleDialog({ user, onClose, onApproved }) {
     setLoading(true);
     setError('');
     try {
-      await adminApi.approve(user.id, {
+      const result = await adminApi.approve(user.id, {
         role,
         institution,
         department: department.trim(),
       });
-      onApproved?.({ credentialsSent: true });
+      onApproved?.({
+        credentialsQueued: result?.credentialsQueued !== false,
+        credentialsSent: result?.credentialsSent,
+        message: result?.message || 'Account approved. Login email is being sent now.',
+        user: result?.user,
+      });
     } catch (err) {
-      setError(err.message || 'Credentials have not been sent.');
+      setError(err.message || 'Could not approve this account. Try again.');
       setLoading(false);
     }
   }
@@ -133,7 +139,7 @@ export default function AssignRoleDialog({ user, onClose, onApproved }) {
         {error ? <Notice tone="error" message={error} onDismiss={() => setError('')} /> : null}
         <div className="admin-actions">
           <button type="submit" className="primary" disabled={loading || !role}>
-            {loading ? 'Approving...' : 'Approve and send login email'}
+            {loading ? 'Approving and sending email…' : 'Approve and send login email'}
           </button>
           <button type="button" onClick={onClose} disabled={loading}>Cancel</button>
         </div>

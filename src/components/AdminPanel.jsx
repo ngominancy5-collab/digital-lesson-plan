@@ -214,10 +214,8 @@ function UsersPage() {
         const id = assigning.id;
         setAssigning(null);
         setPopup({
-          tone: result?.credentialsSent === false ? 'error' : 'ok',
-          text: result?.credentialsSent === false
-            ? 'Credentials have not been sent.'
-            : 'Credentials have successfully been sent.',
+          tone: 'ok',
+          text: result?.message || 'Account approved. Login email is being sent now.',
         });
         const next = await adminApi.user(id);
         setSelected(next);

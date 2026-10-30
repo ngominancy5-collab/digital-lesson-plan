@@ -32,14 +32,16 @@ export function useTimeGreeting() {
  */
 export default function TypedGreeting({
   name = '',
+  role = '',
   className = '',
   speed = 58,
   as: Tag = 'h1',
 }) {
   const { phrase, period } = useTimeGreeting();
-  const displayName = String(name || '').trim() || 'Educator';
-  const fullText = `${phrase} ${displayName}!`;
-  const animationKey = `${period}|${displayName}`;
+  const displayName = String(name || '').trim();
+  const displayRole = String(role || '').trim();
+  const fullText = displayName ? `${phrase} ${displayName}!` : `${phrase.replace(/,$/, '')}!`;
+  const animationKey = `${period}|${displayName}|${displayRole}`;
   const reduceMotion = useMemo(() => (
     typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -78,18 +80,25 @@ export default function TypedGreeting({
   const afterPhrase = typed.length > phrase.length ? typed.slice(phrase.length) : '';
 
   return (
-    <Tag className={`pw-typed-greeting${className ? ` ${className}` : ''}`}>
-      <span className="pw-typed-ghost" aria-hidden="true">
-        <em>{phrase}</em>
-        {' '}
-        <strong>{displayName}!</strong>
-      </span>
-      <span className="pw-typed-live" aria-hidden="true">
-        <em>{phrasePart}</em>
-        {afterPhrase ? <strong>{afterPhrase}</strong> : null}
-        {!done ? <i className="pw-typed-caret" /> : null}
-      </span>
-      <span className="sr-only">{fullText}</span>
-    </Tag>
+    <div className={`pw-typed-greeting-wrap${className ? ` ${className}` : ''}`}>
+      <Tag className="pw-typed-greeting">
+        <span className="pw-typed-ghost" aria-hidden="true">
+          <em>{phrase}</em>
+          {displayName ? (
+            <>
+              {' '}
+              <strong>{displayName}!</strong>
+            </>
+          ) : <strong>!</strong>}
+        </span>
+        <span className="pw-typed-live" aria-hidden="true">
+          <em>{phrasePart}</em>
+          {afterPhrase ? <strong>{afterPhrase}</strong> : null}
+          {!done ? <i className="pw-typed-caret" /> : null}
+        </span>
+        <span className="sr-only">{fullText}</span>
+      </Tag>
+      {displayRole ? <p className="pw-typed-role">{displayRole}</p> : null}
+    </div>
   );
 }
