@@ -179,6 +179,15 @@ export async function createCheckout(userId, planCode) {
   };
 }
 
+function paymentsGatewayReady() {
+  const provider = String(process.env.PAYMENT_PROVIDER || 'internal').toLowerCase();
+  if (provider === 'flutterwave') {
+    return Boolean(String(process.env.FLUTTERWAVE_SECRET_KEY || '').trim());
+  }
+  // Internal/demo confirmation is disabled until a real gateway is configured.
+  return false;
+}
+
 export async function confirmCheckout(checkoutToken, { actorUserId } = {}) {
   const token = String(checkoutToken || '').trim();
   if (!token) throw new AppError('Checkout token is required.');
@@ -194,6 +203,14 @@ export async function confirmCheckout(checkoutToken, { actorUserId } = {}) {
     throw new AppError('This checkout session can no longer be completed.', 409);
   }
   if (!tx.plan) throw new AppError('Plan for this checkout is missing.', 500);
+
+  if (!paymentsGatewayReady()) {
+    throw new AppError(
+      'Online payments are coming soon. Your subscription has not been activated. Please try again later.',
+      503,
+      { code: 'payments_coming_soon', provider: process.env.PAYMENT_PROVIDER || 'internal' },
+    );
+  }
 
   const now = new Date();
   const end = new Date(now);

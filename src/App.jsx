@@ -2806,6 +2806,7 @@ function App() {
           <BillingPage
             mode={activeSection === 'billing-checkout' ? 'checkout' : 'plans'}
             checkoutToken={checkoutToken}
+            user={currentUser}
             onNavigate={navigateTo}
           />
         )}
